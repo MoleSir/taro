@@ -1,0 +1,28 @@
+// Variable declaration, assignment, and reading.
+
+print "=== global declaration ===";
+var a = 10;
+print a;
+var b = a + 5;
+print b;
+var name = "Taro";
+print name;
+
+print "=== global assignment ===";
+a = 20;
+print a;
+b = a * 2;
+print b;
+
+print "=== uninitialized variable ===";
+var c;
+print c;  // nil
+
+print "=== chained assignment ===";
+var x = 1;
+var y = 2;
+var z;
+z = x + y;
+print z;
+
+print "done";

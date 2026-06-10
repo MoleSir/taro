@@ -3,4 +3,11 @@ name = "taro"
 version = "0.1.0"
 edition = "2024"
 
+[[bin]]
+name = "taro"
+path = "bin/taro.rs"
+
 [dependencies]
+num_enum = "0.7.6"
+thiserror = "2.0.18"
+thiserrorctx = "2.0.0"

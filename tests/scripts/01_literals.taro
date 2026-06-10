@@ -1,0 +1,24 @@
+// Literals — numeric, boolean, nil, and string values.
+
+print "=== integer ===";
+print 0;
+print 42;
+print -1;
+print 2147483647;
+
+print "=== float ===";
+print 3.14;
+print -0.5;
+print 1.0;
+print 2.71828;
+
+print "=== boolean & nil ===";
+print true;
+print false;
+print nil;
+
+print "=== string ===";
+print "hello";
+print "";
+print "hello world";
+print "done";
