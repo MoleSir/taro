@@ -28,7 +28,7 @@ macro_rules! binary_op {
     ($vm:ident, $f:ident) => {{
         let rhs = $vm.pop_stack()?;
         let lhs = $vm.pop_stack()?;
-        let res = Value::$f(&lhs, &rhs)?;
+        let res = $vm.$f(&lhs, &rhs)?;
         $vm.push_stack(res);
     }};
 }
@@ -36,7 +36,7 @@ macro_rules! binary_op {
 macro_rules! unary_op {
     ($vm:ident, $f:ident) => {{
         let v = $vm.pop_stack()?;
-        let res = Value::$f(&v)?;
+        let res = $vm.$f(&v)?;
         $vm.push_stack(res);
     }};
 }
@@ -57,29 +57,6 @@ impl VirtualMachine {
         self.define_builtin_fn("print", builtin::print);
     }
 
-    #[allow(unused)]
-    pub(crate) fn new_with_chunk(chunk: Chunk) -> Self {
-        let mut vm = Self::new();
-        let function = vm.obj_heap.alloc_function("script", 0, chunk);
-        // Slot 0 is the sentinel — push a dummy value so that user-defined
-        // locals (which start at slot 1) map to valid stack indices.
-        vm.stack = vec![Value::Nil];
-        vm.frames = vec![CallFrame { function, ip: 0, slots_start: 0 }];
-        vm
-    }
-
-    pub fn add_callframe(&mut self, function: ObjectHandle) {
-        let frame = CallFrame { function, ip: 0, slots_start: 0 };
-        self.frames.push(frame);
-    }
-
-    /// Push a new call frame for `function` onto the frame stack.
-    /// The caller is responsible for ensuring the sentinel (slot 0) and
-    /// arguments are already on the VM stack.
-    pub fn push_frame(&mut self, function: ObjectHandle, slots_start: usize) {
-        self.frames.push(CallFrame { function, ip: 0, slots_start });
-    }
-
     /// Return a reference to the top-most (currently executing) call frame.
     #[inline]
     fn frame(&self) -> ExecuteResult<&CallFrame> {
@@ -90,6 +67,22 @@ impl VirtualMachine {
     #[inline]
     fn frame_mut(&mut self) -> ExecuteResult<&mut CallFrame> {
         self.frames.last_mut().ok_or(ExecuteError::StackEmpty)
+    }
+
+    /// Compile `source` and execute it on this VM.
+    ///
+    /// This is the main entry point for running scripts — it encapsulates the
+    /// manual stack/frame setup that every caller otherwise has to duplicate.
+    /// Globals and the object heap are preserved across calls, which is what
+    /// the REPL relies on to share state between lines.
+    pub fn interpret(&mut self, source: &str) -> Result<(), InterpretError> {
+        let function = crate::compile::compile(source, &mut self.obj_heap)
+            .map_err(InterpretError::Compile)?;
+        // Slot 0 holds the script function itself — the same layout as a
+        // normal call where the callee occupies slot 0.
+        self.stack = vec![Value::Object(function)];
+        self.frames = vec![CallFrame { function, ip: 0, slots_start: 0 }];
+        self.run().map_err(InterpretError::Runtime)
     }
 
     pub fn run(&mut self) -> ExecuteResult<()> {
@@ -187,7 +180,7 @@ impl VirtualMachine {
                     self.pop_stack()?;
                 }
                 Instruction::JumpIfFalse(offset) => {
-                    if !Value::is_truthy(self.peek_stack(0)?) {
+                    if !Self::is_truthy(self.peek_stack(0)?) {
                         ip += offset;
                     }
                 }
@@ -218,9 +211,9 @@ impl VirtualMachine {
     /// Replace the current script with a new chunk, preserving globals.
     /// Used by the REPL to run each line in a shared global scope.
     pub fn reset(&mut self) {
-        let function= self.obj_heap.alloc_function("script", 0, Chunk::new());
-        self.frames = vec![CallFrame { function, ip: 0, slots_start: 0,}];
-        self.stack.clear();
+        let function = self.obj_heap.alloc_function("script", 0, Chunk::new());
+        self.frames = vec![CallFrame { function, ip: 0, slots_start: 0 }];
+        self.stack = vec![Value::Object(function)];
     }
 
     #[inline]

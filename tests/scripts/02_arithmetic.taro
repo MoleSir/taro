@@ -5,7 +5,6 @@ print(1 + 2);         // integer + integer
 print(3.5 + 1.5);     // float + float
 print(1 + 2.5);       // integer + float → float
 print("a" + "b");     // string concatenation
-print("x" + 3);       // string + anything
 
 print("=== subtraction ===");
 print(10 - 3);

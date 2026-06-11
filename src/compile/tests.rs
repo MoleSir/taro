@@ -323,7 +323,7 @@ fn test_local_var_without_initializer() {
 fn test_local_var_read() {
     // { var x = 5; print x; }
     //   Constant(5)   ← x initializer
-    //   GetLocal(1)   ← read x from slot 1 (slot 0 is the sentinel)
+    //   GetLocal(1)   ← read x from slot 1 (slot 0 is the script fn)
     //   Print
     //   Pop           ← cleanup x
     let c = codes("{ var x = 5; print(x); }");
@@ -851,7 +851,7 @@ fn test_empty_function_declaration() {
 fn test_function_with_return_value() {
     // `fun add(a, b) { return a + b; }`
     // Function chunk should contain:
-    //   GetLocal(1)   — a (slot 1, slot 0 is sentinel)
+    //   GetLocal(1)   — a (slot 1, slot 0 is fn)
     //   GetLocal(2)   — b (slot 2)
     //   Add
     //   Return

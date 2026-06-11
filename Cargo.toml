@@ -12,6 +12,7 @@ num_enum = "0.7.6"
 paste = "1.0.15"
 thiserror = "2.0.18"
 thiserrorctx = "2.0.0"
+anyhow = "1.0"
 
 [features]
 default = [] 

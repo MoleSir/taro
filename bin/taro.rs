@@ -1,115 +1,66 @@
 use std::env;
-use std::fs;
 use std::io::{self, Write};
-
-use taro::compile::{compile, CompileError};
-use taro::execute::{CallFrame, VirtualMachine};
-use taro::Value;
+use anyhow::Context;
+use taro::compile::CompileError;
+use taro::execute::{InterpretError, VirtualMachine};
 
 fn main() {
-    let args: Vec<String> = env::args().collect();
+    if let Err(e) = result_main() {
+        eprintln!("{:?}", e);
+        std::process::exit(1);
+    }
+}
 
+fn result_main() -> anyhow::Result<()> {
+    let args: Vec<String> = env::args().collect();
     match args.len() {
-        1 => repl(),
-        2 => run_file(&args[1]),
+        1 => repl()?,
+        2 => run_file(&args[1])?,
         _ => {
             eprintln!("Usage: taro [path]");
             std::process::exit(64);
         }
     }
+    Ok(())
 }
 
-// ========================================================================== //
-//  REPL
-// ========================================================================== //
-
-fn repl() {
+fn repl() -> anyhow::Result<()> {
     println!("Taro REPL — type Ctrl-D to quit.");
     let mut buffer = String::new();
-
-    // Keep a single VM so that global variables and compiled functions
-    // survive across lines.
     let mut vm = VirtualMachine::new();
 
     loop {
-        // Prompt
-        if buffer.is_empty() {
-            print!("> ");
-        } else {
-            print!("· ");
-        }
-        io::stdout().flush().unwrap();
+        print!("{}", if buffer.is_empty() {"> "} else {"· "});
+        io::stdout().flush().context("stdout flush failed")?;
 
         let mut line = String::new();
-        match io::stdin().read_line(&mut line) {
-            Ok(0) => {
-                // EOF
-                println!();
-                break;
-            }
-            Ok(_) => {
-                buffer.push_str(&line);
-
-                // Keep reading if braces / parens / strings are unbalanced.
-                if is_incomplete(&buffer) {
-                    continue;
-                }
-
-                match compile(&buffer, &mut vm.obj_heap) {
-                    Ok(function) => {
-                        // Slot 0 is the sentinel; push a dummy so that
-                        // user locals (slot 1+) map to valid indices.
-                        vm.stack = vec![Value::Nil];
-                        vm.frames = vec![CallFrame { function, ip: 0, slots_start: 0 }];
-                        if let Err(e) = vm.run() {
-                            eprintln!("Runtime error: {e}");
-                        }
-                    }
-                    Err(e) => report_compile_error(&e),
-                }
-
-                buffer.clear();
-            }
-            Err(e) => {
-                eprintln!("Error reading input: {e}");
-                break;
-            }
+        std::io::stdin().read_line(&mut line).context("read line failed")?;
+        buffer.push_str(&line);
+        if is_incomplete(&buffer) {
+            continue;
         }
+
+        if let Err(e) = vm.interpret(&buffer) {
+            resport_error(&e);
+        }
+
+        buffer.clear();
     }
 }
 
-// ========================================================================== //
-//  File runner
-// ========================================================================== //
-
-fn run_file(path: &str) {
-    let source = fs::read_to_string(path).unwrap_or_else(|e| {
-        eprintln!("Error reading file '{path}': {e}");
-        std::process::exit(74);
-    });
+fn run_file(path: &str) -> anyhow::Result<()> {
+    let source = std::fs::read_to_string(path)
+        .with_context(|| format!("Error reading file '{path}'"))?;
 
     let mut vm = VirtualMachine::new();
-    let function = compile(&source, &mut vm.obj_heap).unwrap_or_else(|e| {
-        report_compile_error(&e);
-        std::process::exit(65);
-    });
-
-    vm.stack = vec![Value::Nil];  // sentinel at slot 0
-    vm.frames = vec![CallFrame { function, ip: 0, slots_start: 0 }];
-    if let Err(e) = vm.run() {
-        eprintln!("Runtime error: {e}");
-        std::process::exit(70);
+    if let Err(e) = vm.interpret(&source) {
+        resport_error(&e);
+        anyhow::bail!("interpret failed");
     }
+
+    Ok(())
 }
 
-// ========================================================================== //
-//  Helpers
-// ========================================================================== //
-
-/// Heuristic to detect incomplete multi-line input.
-///
-/// Returns `true` when there are unclosed `(`, `{`, or an unterminated
-/// string literal, suggesting the user hasn't finished typing yet.
 fn is_incomplete(source: &str) -> bool {
     let mut parens: i32 = 0;
     let mut braces: i32 = 0;
@@ -151,13 +102,16 @@ fn is_incomplete(source: &str) -> bool {
     in_string || parens > 0 || braces > 0
 }
 
-fn report_compile_error(e: &CompileError) {
+fn resport_error(e: &InterpretError) {
     match e {
-        CompileError::Scan(e) => eprintln!("Scan error: {e}"),
-        CompileError::Parse(errors) => {
-            for err in errors {
-                eprintln!("[line {}] Error at '{}': {}", err.line, err.lexeme, err.reason);
+        InterpretError::Compile(e) => match e {
+            CompileError::Scan(e) => eprintln!("Scan error: {e}"),
+            CompileError::Parse(errors) => {
+                for err in errors {
+                    eprintln!("[line {}] Error at '{}': {}", err.line, err.lexeme, err.reason);
+                }
             }
         }
+        InterpretError::Runtime(e) => eprintln!("Runtime error: {e}"),
     }
 }

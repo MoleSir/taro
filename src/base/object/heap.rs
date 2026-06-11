@@ -19,6 +19,8 @@ pub struct ObjectHeap {
 
     // GC 触发策略
     bytes_allocated: usize,
+    
+    #[allow(unused)]
     next_gc: usize,
 }
 

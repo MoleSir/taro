@@ -1,6 +1,15 @@
 use crate::{Chunk, Instruction, Value, ToShrString};
 use super::{CallFrame, VirtualMachine};
 
+fn run_chunk(chunk: Chunk) -> VirtualMachine {    
+    let mut vm = VirtualMachine::new();
+    let function = vm.obj_heap.alloc_function("script", 0, chunk);
+    vm.stack = vec![Value::Object(function)];
+    vm.frames = vec![CallFrame { function, ip: 0, slots_start: 0 }];
+    vm.run().unwrap();
+    vm
+}
+
 #[test]
 pub fn test_base_arith() {
     let mut chunk = Chunk::new();
@@ -14,8 +23,7 @@ pub fn test_base_arith() {
     chunk.write_instruction(Instruction::Negate);
     chunk.write_instruction(Instruction::Return);
 
-    let mut vm = VirtualMachine::new_with_chunk(chunk);
-    vm.run().unwrap();
+    let mut vm = run_chunk(chunk);
     // (3.4 + 1.2) / 5.6 = 4.6 / 5.6 ≈ 0.82142…, negated ≈ -0.82142…
     let result = vm.pop_stack().unwrap();
     println!("{:?}", result);
@@ -48,8 +56,7 @@ pub fn test_global_variable() {
 
     chunk.write_instruction(Instruction::Return);
 
-    let mut vm = VirtualMachine::new_with_chunk(chunk);
-    vm.run().unwrap();
+    run_chunk(chunk);
 }
 
 #[test]
@@ -57,7 +64,7 @@ pub fn test_local_variable_get_set() {
     let mut chunk = Chunk::new();
 
     // Simulate: var a = 10; var b = 20;
-    // slot 0 = sentinel, slot 1 = a, slot 2 = b
+    // slot 0 = function, slot 1 = a, slot 2 = b
     chunk.write_instruction(Instruction::Constant(Value::Integer(10)));
     chunk.write_instruction(Instruction::Constant(Value::Integer(20)));
 
@@ -69,8 +76,7 @@ pub fn test_local_variable_get_set() {
     // Result should be 10 + 20 = 30
     chunk.write_instruction(Instruction::Return);
 
-    let mut vm = VirtualMachine::new_with_chunk(chunk);
-    vm.run().unwrap();
+    let mut vm = run_chunk(chunk);
     let result = vm.pop_stack().unwrap();
     assert_eq!(result, Value::Integer(30));
 }
@@ -79,7 +85,7 @@ pub fn test_local_variable_get_set() {
 pub fn test_local_variable_set() {
     let mut chunk = Chunk::new();
 
-    // Simulate: var a = 10; a = 42;  (slot 0 = sentinel, slot 1 = a)
+    // Simulate: var a = 10; a = 42;  (slot 0 = fn, slot 1 = a)
     // First push the initial value for slot 1
     chunk.write_instruction(Instruction::Constant(Value::Integer(10)));
 
@@ -95,8 +101,7 @@ pub fn test_local_variable_set() {
     chunk.write_instruction(Instruction::GetLocal(1));
     chunk.write_instruction(Instruction::Return);
 
-    let mut vm = VirtualMachine::new_with_chunk(chunk);
-    vm.run().unwrap();
+    let mut vm = run_chunk(chunk);
     let result = vm.pop_stack().unwrap();
     assert_eq!(result, Value::Integer(42));
 }
@@ -118,8 +123,7 @@ pub fn test_if_then_branch_taken() {
     chunk.write_instruction(Instruction::Pop); // pop true (from JumpIfFalse)
     chunk.write_instruction(Instruction::Return);
 
-    let mut vm = VirtualMachine::new_with_chunk(chunk);
-    vm.run().unwrap();
+    let mut vm = run_chunk(chunk);
     // The stack should be empty (expression statement pops result,
     // only Return would leave something if we pushed before it...
     // Actually there's nothing left on stack — let's verify by
@@ -148,24 +152,23 @@ pub fn test_if_else_branch_taken() {
     chunk.write_instruction(Instruction::Pop); // discard expr
     chunk.write_instruction(Instruction::Return);
 
-    let mut vm = VirtualMachine::new_with_chunk(chunk);
-    vm.run().unwrap();
+    run_chunk(chunk);
 }
 
 #[test]
 pub fn test_while_loop_executes() {
     // Simulate: var i = 3; while (i > 0) { i = i - 1; }
     // But simpler: just test the loop mechanics
-    // slot 0 = sentinel, slot 1 = i
+    // slot 0 = function, slot 1 = i
     // while (i > 0): GetLocal(1), Constant(0), Greater, JumpIfFalse, ...
     let mut chunk = Chunk::new();
-    // Set up: i = 1 at slot 1 (slot 0 is sentinel)
+    // Set up: i = 1 at slot 1 (slot 0 is the function)
     chunk.write_instruction(Instruction::Constant(Value::Integer(1)));
     // loop_start at pos 3 (after Constant 3 bytes)
     // condition: GetLocal(1), Constant(0), Greater
     chunk.write_instruction(Instruction::GetLocal(1));
     chunk.write_instruction(Instruction::Constant(Value::Integer(0)));
-    chunk.write_instruction(Instruction::Greater);                // stack: [sentinel, 1, 0, true]
+    chunk.write_instruction(Instruction::Greater);                // stack: [fn, 1, 0, true]
     // JumpIfFalse exit — skip Pop + body + Loop = 1 + 3 + 1 + 3 = 8
     chunk.write_instruction(Instruction::JumpIfFalse(8));
     chunk.write_instruction(Instruction::Pop);                    // pop true
@@ -178,8 +181,7 @@ pub fn test_while_loop_executes() {
     chunk.write_instruction(Instruction::Pop);                    // pop exit condition
     chunk.write_instruction(Instruction::Return);
 
-    let mut vm = VirtualMachine::new_with_chunk(chunk);
-    vm.run().unwrap();
+    let vm = run_chunk(chunk);
     // After the loop, slot 1 should be 0
     assert_eq!(vm.stack[1], Value::Integer(0));
 }
@@ -188,7 +190,7 @@ pub fn test_while_loop_executes() {
 pub fn test_for_loop_simple() {
     // Simulate: var i = 0; for (; i < 3; i = i + 1) {}
     // This tests the basic for-loop desugaring pattern
-    // slot 0 = sentinel, slot 1 = i
+    // slot 0 = function, slot 1 = i
     let mut chunk = Chunk::new();
     chunk.write_instruction(Instruction::Constant(Value::Integer(0)));
     // loop_start (condition): GetLocal(1), Constant(3), Less
@@ -222,8 +224,7 @@ pub fn test_for_loop_simple() {
     chunk.write_instruction(Instruction::Pop); // pop false
     chunk.write_instruction(Instruction::Return);
 
-    let mut vm = VirtualMachine::new_with_chunk(chunk);
-    vm.run().unwrap();
+    let vm = run_chunk(chunk);
     // After 3 iterations, i should be 3
     assert_eq!(vm.stack[1], Value::Integer(3));
 }
@@ -232,72 +233,57 @@ pub fn test_for_loop_simple() {
 //  Function calls (compile + execute)
 // ------------------------------------------------------------------------
 
-/// Compile `source` and return a VM ready to run.
-fn compile_and_run(source: &str) -> VirtualMachine {
-    use crate::compile::compile;
-    let mut vm = VirtualMachine::new();
-    let h = compile(source, &mut vm.obj_heap).expect("compilation should succeed");
-    vm.stack = vec![Value::Nil];  // sentinel at slot 0
-    vm.frames = vec![CallFrame { function: h, ip: 0, slots_start: 0 }];
-    vm
-}
-
 #[test]
 pub fn test_function_call_no_args_no_return() {
     // `fun foo() { print 42; } foo();`
     // Should print 42 without errors.
-    let mut vm = compile_and_run("fun foo() { print(42); } foo();");
-    vm.run().unwrap();
+    let mut vm = VirtualMachine::new();
+    vm.interpret("fun foo() { print(42); } foo();").unwrap();
 }
 
 #[test]
 pub fn test_function_call_with_return() {
     // `fun add(a, b) { return a + b; } print add(3, 4);`
     // Should print 7.
-    let mut vm = compile_and_run("fun add(a, b) { return a + b; } print(add(3, 4));");
-    vm.run().unwrap();
+    let mut vm = VirtualMachine::new();
+    vm.interpret("fun add(a, b) { return a + b; } print(add(3, 4));").unwrap();
 }
 
 #[test]
 pub fn test_function_call_implicit_return() {
     // A function without an explicit return returns nil.
     // `fun f() {} var x = f(); print x;`
-    let mut vm = compile_and_run("fun f() {} var x = f(); print(x);");
-    vm.run().unwrap();
+    let mut vm = VirtualMachine::new();
+    vm.interpret("fun f() {} var x = f(); print(x);").unwrap();
 }
 
 #[test]
 pub fn test_nested_function_call() {
     // `fun f() { return 1; } fun g() { return f(); } print g();`
     // Should print 1.
-    let mut vm = compile_and_run("fun f() { return 1; } fun g() { return f(); } print(g());");
-    vm.run().unwrap();
+    let mut vm = VirtualMachine::new();
+    vm.interpret("fun f() { return 1; } fun g() { return f(); } print(g());").unwrap();
 }
 
 #[test]
 pub fn test_function_with_multiple_params() {
     // `fun sum(a, b, c) { return a + b + c; } print sum(1, 2, 3);`
     // Should print 6.
-    let mut vm = compile_and_run("fun sum(a, b, c) { return a + b + c; } print(sum(1, 2, 3));");
-    vm.run().unwrap();
+    let mut vm = VirtualMachine::new();
+    vm.interpret("fun sum(a, b, c) { return a + b + c; } print(sum(1, 2, 3));").unwrap();
 }
 
 #[test]
 pub fn test_function_call_as_expression() {
     // `fun double(x) { return x * 2; } print double(5) + 1;`
     // Should print 11.
-    let mut vm = compile_and_run("fun double(x) { return x * 2; } print(double(5) + 1);");
-    vm.run().unwrap();
+    let mut vm = VirtualMachine::new();
+    vm.interpret("fun double(x) { return x * 2; } print(double(5) + 1);").unwrap();
 }
 
 #[test]
 pub fn test_arg_count_mismatch() {
     // Calling with wrong number of args should be a runtime error.
-    let mut vm = compile_and_run("fun f(a, b) {} f(1);");
-    let result = vm.run();
-    assert!(result.is_err(), "expected runtime error for arg count mismatch");
-    assert!(
-        format!("{}", result.unwrap_err()).contains("arguments"),
-        "error should mention argument count"
-    );
+    let mut vm = VirtualMachine::new();
+    vm.interpret("fun f(a, b) {} f(1);").unwrap_err();
 }

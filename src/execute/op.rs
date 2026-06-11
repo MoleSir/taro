@@ -1,15 +1,9 @@
 use crate::execute::{ExecuteError, ExecuteResult};
+use super::{Value, VirtualMachine};
 
-use super::Value;
-
-impl Value {
-    // ------------------------------------------------------------------------
-    //  Unary ops
-    // ------------------------------------------------------------------------
-
-    /// Arithmetic negation.  Works on Float and Integer only.
-    pub fn neg(&self) -> ExecuteResult<Self> {
-        match self {
+impl VirtualMachine {
+    pub fn neg(&mut self, value: &Value) -> ExecuteResult<Value> {
+        match value {
             Value::Float(v) => Ok(Value::Float(-*v)),
             Value::Integer(v) => Ok(Value::Integer(v.wrapping_neg())),
             Value::Bool(v) => Ok(Value::Bool(!*v)),
@@ -17,9 +11,9 @@ impl Value {
         }
     }
 
-    /// Logical not
-    pub fn not(&self) -> ExecuteResult<Self> {
-        match self {
+    pub fn not(&mut self, value: &Value) -> ExecuteResult<Value> {
+        match value {
+            Value::Nil => Ok(Value::Bool(true)),
             Value::Float(v) => Ok(Value::Float(-*v)),
             Value::Integer(v) => Ok(Value::Integer(v.wrapping_neg())),
             Value::Bool(v) => Ok(Value::Bool(!*v)),
@@ -27,13 +21,7 @@ impl Value {
         }
     }
 
-    // ------------------------------------------------------------------------
-    //  Arithmetic binary ops
-    // ------------------------------------------------------------------------
-
-    /// Addition: numbers add numerically; strings concatenate.
-    /// String + non-string coerces the right operand to its display form.
-    pub fn add(lhs: &Self, rhs: &Self) -> ExecuteResult<Self> {
+    pub fn add(&mut self, lhs: &Value, rhs: &Value) -> ExecuteResult<Value> {
         match (lhs, rhs) {
             // Same numeric types
             (Value::Integer(l), Value::Integer(r)) => Ok(Value::Integer(l.wrapping_add(*r))),
@@ -50,7 +38,7 @@ impl Value {
         }
     }
 
-    pub fn sub(lhs: &Self, rhs: &Self) -> ExecuteResult<Self> {
+    pub fn sub(&mut self, lhs: &Value, rhs: &Value) -> ExecuteResult<Value> {
         match (lhs, rhs) {
             (Value::Integer(l), Value::Integer(r)) => Ok(Value::Integer(l.wrapping_sub(*r))),
             (Value::Float(l), Value::Float(r)) => Ok(Value::Float(l - r)),
@@ -60,7 +48,7 @@ impl Value {
         }
     }
 
-    pub fn mul(lhs: &Self, rhs: &Self) -> ExecuteResult<Self> {
+    pub fn mul(&mut self, lhs: &Value, rhs: &Value) -> ExecuteResult<Value> {
         match (lhs, rhs) {
             (Value::Integer(l), Value::Integer(r)) => Ok(Value::Integer(l.wrapping_mul(*r))),
             (Value::Float(l), Value::Float(r)) => Ok(Value::Float(l * r)),
@@ -70,7 +58,7 @@ impl Value {
         }
     }
 
-    pub fn div(lhs: &Self, rhs: &Self) -> ExecuteResult<Self> {
+    pub fn div(&mut self, lhs: &Value, rhs: &Value) -> ExecuteResult<Value> {
         match (lhs, rhs) {
             (Value::Integer(..), Value::Integer(0)) | (Value::Float(..), Value::Float(0.0)) => {
                 Err(ExecuteError::DivideByZero)
@@ -83,22 +71,33 @@ impl Value {
         }
     }
 
-    // ------------------------------------------------------------------------
-    //  Comparison / equality binary ops
-    // ------------------------------------------------------------------------
-
-    /// Equality.  Any two values can be compared.  Different numeric types
-    /// (Integer vs Float) are compared by value after promotion to f64.
-    pub fn eq(lhs: &Self, rhs: &Self) -> ExecuteResult<Self> {
-        Ok(Value::Bool(values_equal(lhs, rhs)))
+    pub fn eq(&mut self, lhs: &Value, rhs: &Value) -> ExecuteResult<Value> {
+        match (lhs, rhs) {
+            (Value::Nil, Value::Nil) => Ok(Value::Bool(true)),
+            (Value::Bool(l), Value::Bool(r)) => Ok(Value::Bool(l == r)),
+            (Value::Integer(l), Value::Integer(r)) => Ok(Value::Bool(l == r)),
+            (Value::Float(l), Value::Float(r)) => Ok(Value::Bool(l == r)),
+            (Value::Integer(l), Value::Float(r)) => Ok(Value::Bool(*l as f64 == *r)),
+            (Value::Float(l), Value::Integer(r)) => Ok(Value::Bool(*l == *r as f64)),
+            (Value::String(l), Value::String(r)) => Ok(Value::Bool(l.as_str() == r.as_str())),
+            (lhs, rhs) => Err(ExecuteError::BinaryOpTypeMismatch("eq", lhs.type_name(), rhs.type_name())),
+        }
     }
 
-    /// Inequality.  Inverse of `eq`.
-    pub fn ne(lhs: &Self, rhs: &Self) -> ExecuteResult<Self> {
-        Ok(Value::Bool(!values_equal(lhs, rhs)))
+    pub fn ne(&mut self, lhs: &Value, rhs: &Value) -> ExecuteResult<Value> {
+        match (lhs, rhs) {
+            (Value::Nil, Value::Nil) => Ok(Value::Bool(false)),
+            (Value::Integer(l), Value::Integer(r)) => Ok(Value::Bool(l != r)),
+            (Value::Bool(l), Value::Bool(r)) => Ok(Value::Bool(l != r)),
+            (Value::Float(l), Value::Float(r)) => Ok(Value::Bool(l != r)),
+            (Value::Integer(l), Value::Float(r)) => Ok(Value::Bool(*l as f64 != *r)),
+            (Value::Float(l), Value::Integer(r)) => Ok(Value::Bool(*l != *r as f64)),
+            (Value::String(l), Value::String(r)) => Ok(Value::Bool(l.as_str() != r.as_str())),
+            (lhs, rhs) => Err(ExecuteError::BinaryOpTypeMismatch("ne", lhs.type_name(), rhs.type_name())),
+        }
     }
 
-    pub fn gt(lhs: &Self, rhs: &Self) -> ExecuteResult<Self> {
+    pub fn gt(&mut self, lhs: &Value, rhs: &Value) -> ExecuteResult<Value> {
         match (lhs, rhs) {
             (Value::Integer(l), Value::Integer(r)) => Ok(Value::Bool(l > r)),
             (Value::Float(l), Value::Float(r)) => Ok(Value::Bool(l > r)),
@@ -109,7 +108,7 @@ impl Value {
         }
     }
 
-    pub fn ge(lhs: &Self, rhs: &Self) -> ExecuteResult<Self> {
+    pub fn ge(&mut self, lhs: &Value, rhs: &Value) -> ExecuteResult<Value> {
         match (lhs, rhs) {
             (Value::Integer(l), Value::Integer(r)) => Ok(Value::Bool(l >= r)),
             (Value::Float(l), Value::Float(r)) => Ok(Value::Bool(l >= r)),
@@ -120,7 +119,7 @@ impl Value {
         }
     }
 
-    pub fn lt(lhs: &Self, rhs: &Self) -> ExecuteResult<Self> {
+    pub fn lt(&mut self, lhs: &Value, rhs: &Value) -> ExecuteResult<Value> {
         match (lhs, rhs) {
             (Value::Integer(l), Value::Integer(r)) => Ok(Value::Bool(l < r)),
             (Value::Float(l), Value::Float(r)) => Ok(Value::Bool(l < r)),
@@ -131,7 +130,7 @@ impl Value {
         }
     }
 
-    pub fn le(lhs: &Self, rhs: &Self) -> ExecuteResult<Self> {
+    pub fn le(&mut self, lhs: &Value, rhs: &Value) -> ExecuteResult<Value> {
         match (lhs, rhs) {
             (Value::Integer(l), Value::Integer(r)) => Ok(Value::Bool(l <= r)),
             (Value::Float(l), Value::Float(r)) => Ok(Value::Bool(l <= r)),
@@ -141,37 +140,13 @@ impl Value {
             (lhs, rhs) => Err(ExecuteError::BinaryOpTypeMismatch("le", lhs.type_name(), rhs.type_name())),
         }
     }
-}
 
-// ------------------------------------------------------------------------
-//  Helper: structural + cross-numeric equality
-// ------------------------------------------------------------------------
-
-fn values_equal(lhs: &Value, rhs: &Value) -> bool {
-    match (lhs, rhs) {
-        // Cross-type numeric equality: compare by value after promoting to f64
-        (Value::Integer(l), Value::Float(r)) => *l as f64 == *r,
-        (Value::Float(l), Value::Integer(r)) => *l == *r as f64,
-        // Same variant → use derived PartialEq
-        (Value::Float(l), Value::Float(r)) => l == r,
-        (Value::Integer(l), Value::Integer(r)) => l == r,
-        (Value::Bool(l), Value::Bool(r)) => l == r,
-        (Value::Nil, Value::Nil) => true,
-        (Value::String(l), Value::String(r)) => l == r,
-        // Different variants → not equal
-        _ => false,
-    }
-}
-
-// ========================================================================== //
-//  Truthiness
-// ========================================================================== //
-
-impl Value {
-    pub fn is_truthy(&self) -> bool {
-        match self {
+    pub fn is_truthy(value: &Value) -> bool {
+        match value {
             Value::Nil => false,
             Value::Bool(false) => false,
+            Value::Float(v) => *v != 0.0,
+            Value::Integer(v) => *v != 0,
             _ => true,
         }
     }

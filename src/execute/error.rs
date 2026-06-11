@@ -1,4 +1,11 @@
-use crate::ChunkError;
+use crate::{compile::CompileError, ChunkError};
+
+/// Error that can occur during the full interpret pipeline (compile + execute).
+#[derive(Debug)]
+pub enum InterpretError {
+    Compile(CompileError),
+    Runtime(ExecuteError),
+}
 
 #[thiserrorctx::context_error]
 pub enum ExecuteError {
