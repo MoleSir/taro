@@ -11,6 +11,9 @@ pub enum ExecuteError {
     #[error("Unexpect empty stack")]
     StackEmpty,
 
+    #[error("Unexpect empty frame")]
+    CallFrameEmpty,
+
     #[error("Stack index {0} out of range")]
     StackIndexOutOfRange(usize),
 
@@ -25,4 +28,10 @@ pub enum ExecuteError {
 
     #[error("Variable not found")]
     VariableNotFound(String),
+
+    #[error("Can't call {0}")]
+    CanNotCall(&'static str),
+
+    #[error("Expected {expcted} arguments but got {got}")]
+    ArgmentCountUnmatch { expcted: usize, got: usize }
 }

@@ -1,5 +1,5 @@
 use crate::{Chunk, Instruction, Value, ToShrString};
-use super::VirtualMachine;
+use super::{CallFrame, VirtualMachine};
 
 #[test]
 pub fn test_base_arith() {
@@ -14,7 +14,7 @@ pub fn test_base_arith() {
     chunk.write_instruction(Instruction::Negate);
     chunk.write_instruction(Instruction::Return);
 
-    let mut vm = VirtualMachine::new(chunk);
+    let mut vm = VirtualMachine::new_with_chunk(chunk);
     vm.run().unwrap();
     // (3.4 + 1.2) / 5.6 = 4.6 / 5.6 ≈ 0.82142…, negated ≈ -0.82142…
     let result = vm.pop_stack().unwrap();
@@ -30,21 +30,25 @@ pub fn test_global_variable() {
     chunk.write_instruction(Instruction::Constant(Value::Integer(42))); // push_stack 42
     chunk.write_instruction(Instruction::DefineGlobal("x".to_shrstring())); // pop_stack → x
 
-    // print x;
+    // print x;  →  GetGlobal("print"); GetGlobal("x"); Call(1); Pop;
+    chunk.write_instruction(Instruction::GetGlobal("print".into()));
     chunk.write_instruction(Instruction::GetGlobal("x".to_shrstring())); // push_stack x
-    chunk.write_instruction(Instruction::Print);
+    chunk.write_instruction(Instruction::Call(1));
+    chunk.write_instruction(Instruction::Pop);
 
     // x = 99;
     chunk.write_instruction(Instruction::Constant(Value::Integer(99)));
     chunk.write_instruction(Instruction::SetGlobal("x".to_shrstring()));
 
     // print x;
+    chunk.write_instruction(Instruction::GetGlobal("print".into()));
     chunk.write_instruction(Instruction::GetGlobal("x".to_shrstring()));
-    chunk.write_instruction(Instruction::Print);
+    chunk.write_instruction(Instruction::Call(1));
+    chunk.write_instruction(Instruction::Pop);
 
     chunk.write_instruction(Instruction::Return);
 
-    let mut vm = VirtualMachine::new(chunk);
+    let mut vm = VirtualMachine::new_with_chunk(chunk);
     vm.run().unwrap();
 }
 
@@ -53,19 +57,19 @@ pub fn test_local_variable_get_set() {
     let mut chunk = Chunk::new();
 
     // Simulate: var a = 10; var b = 20;
-    // slot 0 = a, slot 1 = b
+    // slot 0 = sentinel, slot 1 = a, slot 2 = b
     chunk.write_instruction(Instruction::Constant(Value::Integer(10)));
     chunk.write_instruction(Instruction::Constant(Value::Integer(20)));
 
-    // a + b  →  GetLocal(0); GetLocal(1); Add
-    chunk.write_instruction(Instruction::GetLocal(0));
+    // a + b  →  GetLocal(1); GetLocal(2); Add
     chunk.write_instruction(Instruction::GetLocal(1));
+    chunk.write_instruction(Instruction::GetLocal(2));
     chunk.write_instruction(Instruction::Add);
 
     // Result should be 10 + 20 = 30
     chunk.write_instruction(Instruction::Return);
 
-    let mut vm = VirtualMachine::new(chunk);
+    let mut vm = VirtualMachine::new_with_chunk(chunk);
     vm.run().unwrap();
     let result = vm.pop_stack().unwrap();
     assert_eq!(result, Value::Integer(30));
@@ -75,23 +79,23 @@ pub fn test_local_variable_get_set() {
 pub fn test_local_variable_set() {
     let mut chunk = Chunk::new();
 
-    // Simulate: var a = 10; a = 42;  (slot 0 = a)
-    // First push the initial value for slot 0
+    // Simulate: var a = 10; a = 42;  (slot 0 = sentinel, slot 1 = a)
+    // First push the initial value for slot 1
     chunk.write_instruction(Instruction::Constant(Value::Integer(10)));
 
     // Now a = 42:
     // 1. Push 42 onto the stack
-    // 2. SetLocal(0) — writes 42 into stack[0], leaves 42 on stack
+    // 2. SetLocal(1) — writes 42 into stack[1], leaves 42 on stack
     // 3. Pop to discard the expression result
     chunk.write_instruction(Instruction::Constant(Value::Integer(42)));
-    chunk.write_instruction(Instruction::SetLocal(0));
+    chunk.write_instruction(Instruction::SetLocal(1));
     chunk.write_instruction(Instruction::Pop);
 
-    // Now read a: GetLocal(0) → should be 42
-    chunk.write_instruction(Instruction::GetLocal(0));
+    // Now read a: GetLocal(1) → should be 42
+    chunk.write_instruction(Instruction::GetLocal(1));
     chunk.write_instruction(Instruction::Return);
 
-    let mut vm = VirtualMachine::new(chunk);
+    let mut vm = VirtualMachine::new_with_chunk(chunk);
     vm.run().unwrap();
     let result = vm.pop_stack().unwrap();
     assert_eq!(result, Value::Integer(42));
@@ -114,7 +118,7 @@ pub fn test_if_then_branch_taken() {
     chunk.write_instruction(Instruction::Pop); // pop true (from JumpIfFalse)
     chunk.write_instruction(Instruction::Return);
 
-    let mut vm = VirtualMachine::new(chunk);
+    let mut vm = VirtualMachine::new_with_chunk(chunk);
     vm.run().unwrap();
     // The stack should be empty (expression statement pops result,
     // only Return would leave something if we pushed before it...
@@ -144,7 +148,7 @@ pub fn test_if_else_branch_taken() {
     chunk.write_instruction(Instruction::Pop); // discard expr
     chunk.write_instruction(Instruction::Return);
 
-    let mut vm = VirtualMachine::new(chunk);
+    let mut vm = VirtualMachine::new_with_chunk(chunk);
     vm.run().unwrap();
 }
 
@@ -152,44 +156,44 @@ pub fn test_if_else_branch_taken() {
 pub fn test_while_loop_executes() {
     // Simulate: var i = 3; while (i > 0) { i = i - 1; }
     // But simpler: just test the loop mechanics
-    // Stack: slot 0 = 1
-    // while (slot 0 > 0): GetLocal(0), Constant(0), Greater, JumpIfFalse, ...
+    // slot 0 = sentinel, slot 1 = i
+    // while (i > 0): GetLocal(1), Constant(0), Greater, JumpIfFalse, ...
     let mut chunk = Chunk::new();
-    // Set up: slot 0 = 1 (simulating var i = 1)
+    // Set up: i = 1 at slot 1 (slot 0 is sentinel)
     chunk.write_instruction(Instruction::Constant(Value::Integer(1)));
     // loop_start at pos 3 (after Constant 3 bytes)
-    // condition: GetLocal(0), Constant(0), Greater
-    chunk.write_instruction(Instruction::GetLocal(0));
+    // condition: GetLocal(1), Constant(0), Greater
+    chunk.write_instruction(Instruction::GetLocal(1));
     chunk.write_instruction(Instruction::Constant(Value::Integer(0)));
-    chunk.write_instruction(Instruction::Greater);                // stack: [1, 1, 0, true]
+    chunk.write_instruction(Instruction::Greater);                // stack: [sentinel, 1, 0, true]
     // JumpIfFalse exit — skip Pop + body + Loop = 1 + 3 + 1 + 3 = 8
     chunk.write_instruction(Instruction::JumpIfFalse(8));
     chunk.write_instruction(Instruction::Pop);                    // pop true
-    // body: push 0, SetLocal(0), Pop. slot 0 = 0 on second iteration
+    // body: push 0, SetLocal(1), Pop. slot 1 = 0 on second iteration
     chunk.write_instruction(Instruction::Constant(Value::Integer(0)));
-    chunk.write_instruction(Instruction::SetLocal(0));
+    chunk.write_instruction(Instruction::SetLocal(1));
     chunk.write_instruction(Instruction::Pop);                    // pop assignment result
     // Loop back to loop_start (position 3, offset = here-3+3)
     chunk.write_instruction(Instruction::Loop(12));
     chunk.write_instruction(Instruction::Pop);                    // pop exit condition
     chunk.write_instruction(Instruction::Return);
 
-    let mut vm = VirtualMachine::new(chunk);
+    let mut vm = VirtualMachine::new_with_chunk(chunk);
     vm.run().unwrap();
-    // After the loop, slot 0 should be 0
-    assert_eq!(vm.stack[0], Value::Integer(0));
+    // After the loop, slot 1 should be 0
+    assert_eq!(vm.stack[1], Value::Integer(0));
 }
 
 #[test]
 pub fn test_for_loop_simple() {
     // Simulate: var i = 0; for (; i < 3; i = i + 1) {}
     // This tests the basic for-loop desugaring pattern
+    // slot 0 = sentinel, slot 1 = i
     let mut chunk = Chunk::new();
-    // slot 0 = 0 (initializer already done)
     chunk.write_instruction(Instruction::Constant(Value::Integer(0)));
-    // loop_start (condition): GetLocal(0), Constant(3), Less
+    // loop_start (condition): GetLocal(1), Constant(3), Less
     let loop_start = chunk.codes.len(); // should be 3 (after Constant 3 bytes)
-    chunk.write_instruction(Instruction::GetLocal(0));
+    chunk.write_instruction(Instruction::GetLocal(1));
     chunk.write_instruction(Instruction::Constant(Value::Integer(3)));
     chunk.write_instruction(Instruction::Less);
     // JumpIfFalse exit
@@ -197,12 +201,12 @@ pub fn test_for_loop_simple() {
     let exit_jump = chunk.codes.len() - 2;
     chunk.write_instruction(Instruction::Pop); // pop condition
     // body: empty (just a no-op — we're testing the increment)
-    // increment: GetLocal(0), Constant(1), Add, SetLocal(0), Pop
+    // increment: GetLocal(1), Constant(1), Add, SetLocal(1), Pop
     let increment_start = chunk.codes.len();
-    chunk.write_instruction(Instruction::GetLocal(0));
+    chunk.write_instruction(Instruction::GetLocal(1));
     chunk.write_instruction(Instruction::Constant(Value::Integer(1)));
     chunk.write_instruction(Instruction::Add);
-    chunk.write_instruction(Instruction::SetLocal(0));
+    chunk.write_instruction(Instruction::SetLocal(1));
     chunk.write_instruction(Instruction::Pop); // pop assignment result
     // Loop to condition
     let loop_offset = chunk.codes.len() - loop_start + 3;
@@ -218,8 +222,82 @@ pub fn test_for_loop_simple() {
     chunk.write_instruction(Instruction::Pop); // pop false
     chunk.write_instruction(Instruction::Return);
 
-    let mut vm = VirtualMachine::new(chunk);
+    let mut vm = VirtualMachine::new_with_chunk(chunk);
     vm.run().unwrap();
     // After 3 iterations, i should be 3
-    assert_eq!(vm.stack[0], Value::Integer(3));
+    assert_eq!(vm.stack[1], Value::Integer(3));
+}
+
+// ------------------------------------------------------------------------
+//  Function calls (compile + execute)
+// ------------------------------------------------------------------------
+
+/// Compile `source` and return a VM ready to run.
+fn compile_and_run(source: &str) -> VirtualMachine {
+    use crate::compile::compile;
+    let mut vm = VirtualMachine::new();
+    let h = compile(source, &mut vm.obj_heap).expect("compilation should succeed");
+    vm.stack = vec![Value::Nil];  // sentinel at slot 0
+    vm.frames = vec![CallFrame { function: h, ip: 0, slots_start: 0 }];
+    vm
+}
+
+#[test]
+pub fn test_function_call_no_args_no_return() {
+    // `fun foo() { print 42; } foo();`
+    // Should print 42 without errors.
+    let mut vm = compile_and_run("fun foo() { print(42); } foo();");
+    vm.run().unwrap();
+}
+
+#[test]
+pub fn test_function_call_with_return() {
+    // `fun add(a, b) { return a + b; } print add(3, 4);`
+    // Should print 7.
+    let mut vm = compile_and_run("fun add(a, b) { return a + b; } print(add(3, 4));");
+    vm.run().unwrap();
+}
+
+#[test]
+pub fn test_function_call_implicit_return() {
+    // A function without an explicit return returns nil.
+    // `fun f() {} var x = f(); print x;`
+    let mut vm = compile_and_run("fun f() {} var x = f(); print(x);");
+    vm.run().unwrap();
+}
+
+#[test]
+pub fn test_nested_function_call() {
+    // `fun f() { return 1; } fun g() { return f(); } print g();`
+    // Should print 1.
+    let mut vm = compile_and_run("fun f() { return 1; } fun g() { return f(); } print(g());");
+    vm.run().unwrap();
+}
+
+#[test]
+pub fn test_function_with_multiple_params() {
+    // `fun sum(a, b, c) { return a + b + c; } print sum(1, 2, 3);`
+    // Should print 6.
+    let mut vm = compile_and_run("fun sum(a, b, c) { return a + b + c; } print(sum(1, 2, 3));");
+    vm.run().unwrap();
+}
+
+#[test]
+pub fn test_function_call_as_expression() {
+    // `fun double(x) { return x * 2; } print double(5) + 1;`
+    // Should print 11.
+    let mut vm = compile_and_run("fun double(x) { return x * 2; } print(double(5) + 1);");
+    vm.run().unwrap();
+}
+
+#[test]
+pub fn test_arg_count_mismatch() {
+    // Calling with wrong number of args should be a runtime error.
+    let mut vm = compile_and_run("fun f(a, b) {} f(1);");
+    let result = vm.run();
+    assert!(result.is_err(), "expected runtime error for arg count mismatch");
+    assert!(
+        format!("{}", result.unwrap_err()).contains("arguments"),
+        "error should mention argument count"
+    );
 }

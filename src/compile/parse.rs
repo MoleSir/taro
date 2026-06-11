@@ -1,5 +1,5 @@
 use super::token::{Token, TokenKind};
-use crate::{format_shr, Chunk, Instruction, ShrString, Value};
+use crate::{format_shr, Chunk, Instruction, ObjectFunction, ObjectHandle, ObjectHeap, ShrString, Value};
 
 // ========================================================================== //
 //                    Precedence
@@ -70,7 +70,7 @@ impl ParseRule {
 fn get_rule(kind: TokenKind) -> ParseRule {
     match kind {
         // Single-character tokens -------------------------------------------
-        TokenKind::LeftParen    => ParseRule::new(Some(Parser::grouping), None, Prec::None),
+        TokenKind::LeftParen    => ParseRule::new(Some(Parser::grouping), Some(Parser::call), Prec::Call),
         TokenKind::RightParen   => ParseRule::NONE,
         TokenKind::LeftBrace    => ParseRule::NONE,
         TokenKind::RightBrace   => ParseRule::NONE,
@@ -107,7 +107,6 @@ fn get_rule(kind: TokenKind) -> ParseRule {
         TokenKind::If           => ParseRule::NONE,
         TokenKind::Nil          => ParseRule::new(Some(Parser::literal), None, Prec::None),
         TokenKind::Or           => ParseRule::new(None, Some(Parser::or), Prec::Or),
-        TokenKind::Print        => ParseRule::NONE,
         TokenKind::Return       => ParseRule::NONE,
         TokenKind::Super        => ParseRule::NONE,
         TokenKind::This         => ParseRule::NONE,
@@ -133,13 +132,25 @@ pub struct Local {
     depth: isize,
 }
 
-pub struct Parser<'a> {
-    tokens:      Vec<Token<'a>>,
-    current:     usize,
-    chunk:       Chunk,
-    errors:      Vec<ParseError>,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum FunctionKind {
+    ObjectFunction,
+    Script,
+}
+
+struct ParseState {
+    function:    ObjectHandle,
+    kind:        FunctionKind,
     locals:      Vec<Local>,
     scope_depth: isize,
+}
+
+pub struct Parser<'a> {
+    obj_heap:    &'a mut ObjectHeap,
+    tokens:      Vec<Token<'a>>,
+    current:     usize,
+    errors:      Vec<ParseError>,
+    state:       ParseState,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -163,7 +174,16 @@ pub enum ParseReason {
     VariableRedefine(String),
 
     #[error("Too much code {0} to jump over.")]
-    TooMuchCodeToJumpOver(usize)
+    TooMuchCodeToJumpOver(usize),
+
+    #[error("Can't have more than 255 parameters.")]
+    TooMuchParameter,
+
+    #[error("Can't have more than 255 arguments.")]
+    TooMuchArgument,
+
+    #[error("Can't return from top-level code.")]
+    ReturnInTop,
 }
 
 #[derive(Debug)]
@@ -176,32 +196,39 @@ pub struct ParseError {
 pub type ParseResult<T> = std::result::Result<T, ParseError>;
 
 macro_rules! report_error_at_current {
-    ($p:ident, $reason:expr) => {
-        {
-            let token = $p.peek();
-            ParseError { line: token.line, lexeme: token.lexeme.to_string(), reason: $reason }
-        }
-    };
+    ($p:ident, $reason:expr) => {{
+        let token = $p.peek();
+        ParseError { line: token.line, lexeme: token.lexeme.to_string(), reason: $reason }
+    }};
 }
 
 macro_rules! report_error_at_previous {
-    ($p:ident, $reason:expr) => {
-        {
-            let token = $p.previous();
-            ParseError { line: token.line, lexeme: token.lexeme.to_string(), reason: $reason }
+    ($p:ident, $reason:expr) => {{
+        let token = $p.previous();
+        ParseError { line: token.line, lexeme: token.lexeme.to_string(), reason: $reason }
+    }};
+}
+
+impl ParseState {
+    fn new(obj_heap: &mut ObjectHeap, name: impl Into<ShrString>, kind: FunctionKind) -> Self {
+        Self {
+            function: obj_heap.alloc_function(name.into(),  0, Chunk::new()),
+            kind, 
+            locals: vec![Local { depth: 0, name: "".into() }],
+            scope_depth: 0,
         }
-    };
+    } 
 }
 
 impl<'a> Parser<'a> {
-    pub fn new(tokens: Vec<Token<'a>>) -> Self {
+    pub fn new(tokens: Vec<Token<'a>>, obj_heap: &'a mut ObjectHeap) -> Self {
+        let state = ParseState::new(obj_heap, "", FunctionKind::Script);
         Self {
+            obj_heap,
             tokens,
             current: 0,
-            chunk: Chunk::new(),
             errors: vec![],
-            locals: vec![],
-            scope_depth: 0,
+            state,
         }
     }
 
@@ -209,28 +236,46 @@ impl<'a> Parser<'a> {
     //  Public entry point
     // ------------------------------------------------------------------------
 
-    pub(crate) fn parse(mut self) -> Result<Chunk, Vec<ParseError>> {
+    pub(crate) fn parse(mut self) -> Result<ObjectHandle, Vec<ParseError>> {
         while !self.at_end() {
             if let Err(e) = self.declaration() {
                 self.errors.push(e);
                 self.synchronize();
             }
         }
-        self.emit(Instruction::Return);
         
         if !self.errors.is_empty() {
             Err(self.errors)
         } else {
-            Ok(self.chunk)
+            Ok(self.end_parse())
         }
+    }
+
+    fn end_parse(&mut self) -> ObjectHandle {
+        self.emit_return();
+        self.state.function
+    }
+
+    fn cur_function(&mut self) -> &mut ObjectFunction {
+        self.obj_heap.get_mut(self.state.function).as_function_mut().expect("must funtion")
     }
 
     fn declaration(&mut self) -> ParseResult<()> {
         if self.match_token(TokenKind::Var) {
             self.var_declaration()
+        } else if self.match_token(TokenKind::Fun) {
+            self.fun_declaration()
         } else {
             self.statement()
         }
+    }
+
+    fn fun_declaration(&mut self) -> ParseResult<()> {
+        let var_name = self.parse_variable("Expect variable name.")?;
+        self.mark_initialized();
+        self.function(FunctionKind::ObjectFunction)?;
+        self.define_variable(var_name)?;
+        Ok(())
     }
 
     fn var_declaration(&mut self) -> ParseResult<()> {
@@ -256,7 +301,7 @@ impl<'a> Parser<'a> {
             }
             None => {
                 // local
-                assert!(self.scope_depth > 0);
+                assert!(self.state.scope_depth > 0);
                 self.mark_initialized();
 
             }
@@ -265,14 +310,14 @@ impl<'a> Parser<'a> {
     }
 
     fn statement(&mut self) -> ParseResult<()> {
-        if self.match_token(TokenKind::Print) {
-            self.print_statement()
-        } else if self.match_token(TokenKind::If) {
+        if self.match_token(TokenKind::If) {
             self.if_statement()
         } else if self.match_token(TokenKind::While) {
             self.while_statement()
         } else if self.match_token(TokenKind::For) {
             self.for_statement()
+        } else if self.match_token(TokenKind::Return) {
+            self.return_statement()
         } else if self.match_token(TokenKind::LeftBrace) {
             self.begin_scope();
             self.block()?;
@@ -292,21 +337,30 @@ impl<'a> Parser<'a> {
     }
 
     fn begin_scope(&mut self) {
-        self.scope_depth += 1;
+        self.state.scope_depth += 1;
     }
 
     fn end_scope(&mut self) {
-        self.scope_depth -= 1;
-        while self.locals.len() > 0 && self.locals.last().unwrap().depth > self.scope_depth {
+        self.state.scope_depth -= 1;
+        while self.state.locals.len() > 0 && self.state.locals.last().unwrap().depth > self.state.scope_depth {
             self.emit(Instruction::Pop);
-            self.locals.pop();
+            self.state.locals.pop();
         }
     }
 
-    fn print_statement(&mut self) -> ParseResult<()> {
-        self.expression()?;
-        self.consume(TokenKind::Semicolon, "expect ';' after value.")?;
-        self.emit(Instruction::Print);
+    fn return_statement(&mut self) -> ParseResult<()> {
+        if self.state.kind == FunctionKind::Script {
+            Err(report_error_at_current!(self, ParseReason::ReturnInTop))?;
+        }
+        
+        if self.match_token(TokenKind::Semicolon) {
+            self.emit_return();
+        } else {
+            self.expression()?;
+            self.consume(TokenKind::Semicolon, "Expect ';' after return value.")?;
+            self.emit(Instruction::Return);
+
+        }
         Ok(())
     }
 
@@ -323,7 +377,7 @@ impl<'a> Parser<'a> {
             self.expression_statement()?;
         }
 
-        let mut loop_start = self.chunk.codes.len();
+        let mut loop_start = self.cur_function().chunk.codes.len();
 
         // loop condition
         let mut exit_jump_opt = None;
@@ -340,7 +394,7 @@ impl<'a> Parser<'a> {
         if !self.match_token(TokenKind::RightParen) {
             // exit increment clause, we must jump here, each time body done
             let body_jump = self.emit_jump(false);
-            let increment_start = self.chunk.codes.len();
+            let increment_start = self.cur_function().chunk.codes.len();
             self.expression()?;
             self.emit(Instruction::Pop);
             self.consume(TokenKind::RightParen, "Expect ')' after for clauses.")?;
@@ -373,7 +427,7 @@ impl<'a> Parser<'a> {
     }
     
     fn while_statement(&mut self) -> ParseResult<()> {
-        let loop_start = self.chunk.codes.len();
+        let loop_start = self.cur_function().chunk.codes.len();
 
         self.consume(TokenKind::LeftParen, "Expect '(' after 'while'.")?;
         self.expression()?;
@@ -416,8 +470,13 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
+    fn emit_return(&mut self) {
+        self.emit(Instruction::Nil);
+        self.emit(Instruction::Return);
+    }
+
     fn emit_loop(&mut self, loop_start: usize) -> ParseResult<()> {        
-        let offset = self.chunk.codes.len() - loop_start + 3;
+        let offset = self.cur_function().chunk.codes.len() - loop_start + 3;
         if offset > u16::MAX as usize {
             Err(report_error_at_current!(self, ParseReason::TooMuchCodeToJumpOver(offset)))?;
         }
@@ -432,21 +491,21 @@ impl<'a> Parser<'a> {
         } else {
             self.emit(Instruction::Jump(0));
         }
-        self.chunk.codes.len() - 2
+        self.cur_function().chunk.codes.len() - 2
 
     }
 
     fn patch_jump(&mut self, jump_addr: usize) -> ParseResult<()> {
         // distance of if and cur
-        let offset = self.chunk.codes.len() - jump_addr - 2;
+        let offset = self.cur_function().chunk.codes.len() - jump_addr - 2;
         if offset > u16::MAX as usize {
             Err(report_error_at_current!(self, ParseReason::TooMuchCodeToJumpOver(offset)))?;
         }
 
         let bytes = (offset as u16).to_le_bytes();
-        assert!(jump_addr + 1 < self.chunk.codes.len());
-        self.chunk.codes[jump_addr] = bytes[0];
-        self.chunk.codes[jump_addr+1] = bytes[1];
+        assert!(jump_addr + 1 < self.cur_function().chunk.codes.len());
+        self.cur_function().chunk.codes[jump_addr] = bytes[0];
+        self.cur_function().chunk.codes[jump_addr+1] = bytes[1];
         Ok(())
     }
 
@@ -495,12 +554,12 @@ impl<'a> Parser<'a> {
         self.consume(TokenKind::Identifier, msg)?;
         let var_name = ShrString::new_string(self.previous().lexeme);
         
-        if self.scope_depth > 0 {
+        if self.state.scope_depth > 0 {
             // local
-            for local in self.locals.iter().rev() {
+            for local in self.state.locals.iter().rev() {
                 // Sentinel depth (-1) means the variable is still in its initializer;
                 // it's still "in scope" for redefinition checking so we skip the break.
-                if local.depth != -1 && local.depth < self.scope_depth {
+                if local.depth != -1 && local.depth < self.state.scope_depth {
                     break;
                 }
                 if var_name == local.name {
@@ -550,14 +609,17 @@ impl<'a> Parser<'a> {
         // `-1` is the sentinel: the variable is declared but not yet
         // initialized.  `mark_initialized()` will set the real depth.
         let local = Local { name, depth: -1 };
-        self.locals.push(local);
+        self.state.locals.push(local);
         Ok(())
     }
 
     /// Mark the most recently declared local as ready for use.
     fn mark_initialized(&mut self) {
-        if let Some(last) = self.locals.last_mut() {
-            last.depth = self.scope_depth;
+        if self.state.scope_depth == 0 {
+            return;
+        }
+        if let Some(last) = self.state.locals.last_mut() {
+            last.depth = self.state.scope_depth;
         }
     }
 
@@ -692,6 +754,71 @@ impl<'a> Parser<'a> {
         parser.named_variable(name, can_assign)
     }
 
+    fn call(parser: &mut Parser<'_>, _can_assign: bool) -> ParseResult<()> {
+        let arg_count = parser.argument_list()?;
+        parser.emit(Instruction::Call(arg_count));
+        Ok(())
+    }
+
+    fn argument_list(&mut self) -> ParseResult<usize> {
+        let mut arg_count = 0;
+        if !self.check(TokenKind::RightParen) {
+            loop {
+                self.expression()?;
+                if arg_count >= 255 {
+                    Err(report_error_at_current!(self, ParseReason::TooMuchArgument))?;
+                }
+                arg_count += 1;
+                if !self.match_token(TokenKind::Comma) {
+                    break;
+                }
+            }
+        }
+        self.consume(TokenKind::RightParen,"Expect ')' after arguments.")?;
+        Ok(arg_count)
+    }
+
+    fn function(&mut self, kind: FunctionKind) -> ParseResult<()> {
+        let mut state = if kind != FunctionKind::Script {
+            let name = self.previous().lexeme;
+            ParseState::new(&mut self.obj_heap, name.to_string(), kind)
+        } else {
+            ParseState::new(&mut self.obj_heap, "", kind)
+        };
+
+        std::mem::swap(&mut self.state, &mut state);
+        
+        self.begin_scope();
+        
+        self.consume(TokenKind::LeftParen, "Expect '(' after function name.")?;
+        if !self.check(TokenKind::RightParen) {
+            loop {
+                let function = self.cur_function();
+                function.arity += 1;
+                if function.arity > 255 {
+                    Err(report_error_at_current!(self, ParseReason::TooMuchParameter))?;
+                }
+                let param_name = self.parse_variable("Expect parameter name.")?;
+                self.define_variable(param_name)?;
+
+                if !self.match_token(TokenKind::Comma) {
+                    break;
+                }
+            }
+        }
+        
+        self.consume(TokenKind::RightParen, "Expect ')' after parameters.")?;
+        self.consume(TokenKind::LeftBrace, "Expect '{' before function body.")?;
+        self.block()?;
+
+        let function = self.end_parse();
+        std::mem::swap(&mut self.state, &mut state);
+
+        self.emit(Instruction::Constant(Value::Object(function)));
+
+        Ok(())
+    }
+
     fn named_variable(&mut self, name: ShrString, can_assign: bool) -> ParseResult<()> {
         match self.resolve_local(name.clone()) {
             Some(slot) => {
@@ -717,7 +844,7 @@ impl<'a> Parser<'a> {
     /// Look up `name` in the current scope.  Returns the stack-slot index
     /// (position in the locals vector) if found and already initialized.
     fn resolve_local(&mut self, name: ShrString) -> Option<usize> {
-        for (i, local) in self.locals.iter().enumerate().rev() {
+        for (i, local) in self.state.locals.iter().enumerate().rev() {
             if name == local.name {
                 if local.depth == -1 {
                     // variable is declared but still inside its own initializer
@@ -743,7 +870,7 @@ impl<'a> Parser<'a> {
     // ------------------------------------------------------------------------
 
     fn emit(&mut self, inst: Instruction) {
-        self.chunk.write_instruction(inst);
+        self.cur_function().chunk.write_instruction(inst);
     }
 
     fn peek(&self) -> &Token<'a> {
@@ -798,7 +925,7 @@ impl<'a> Parser<'a> {
             match self.peek().kind {
                 TokenKind::Class | TokenKind::Fun | TokenKind::Var |
                 TokenKind::For | TokenKind::If | TokenKind::While |
-                TokenKind::Print | TokenKind::Return => {
+                TokenKind::Return => {
                     return;
                 }
                 _ => {} 

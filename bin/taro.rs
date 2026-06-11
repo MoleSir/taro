@@ -3,8 +3,8 @@ use std::fs;
 use std::io::{self, Write};
 
 use taro::compile::{compile, CompileError};
-use taro::execute::VirtualMachine;
-use taro::Chunk;
+use taro::execute::{CallFrame, VirtualMachine};
+use taro::Value;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -27,8 +27,9 @@ fn repl() {
     println!("Taro REPL — type Ctrl-D to quit.");
     let mut buffer = String::new();
 
-    // Keep a single VM so that global variables survive across lines.
-    let mut vm = VirtualMachine::new(Chunk::new());
+    // Keep a single VM so that global variables and compiled functions
+    // survive across lines.
+    let mut vm = VirtualMachine::new();
 
     loop {
         // Prompt
@@ -54,13 +55,12 @@ fn repl() {
                     continue;
                 }
 
-                match compile(&buffer) {
-                    Ok(chunk) => {
-                        // Swap in the new chunk and reset execution state
-                        // (but keep globals from previous lines).
-                        vm.chunk = chunk;
-                        vm.ip = 0;
-                        vm.stack.clear();
+                match compile(&buffer, &mut vm.obj_heap) {
+                    Ok(function) => {
+                        // Slot 0 is the sentinel; push a dummy so that
+                        // user locals (slot 1+) map to valid indices.
+                        vm.stack = vec![Value::Nil];
+                        vm.frames = vec![CallFrame { function, ip: 0, slots_start: 0 }];
                         if let Err(e) = vm.run() {
                             eprintln!("Runtime error: {e}");
                         }
@@ -88,12 +88,14 @@ fn run_file(path: &str) {
         std::process::exit(74);
     });
 
-    let chunk = compile(&source).unwrap_or_else(|e| {
+    let mut vm = VirtualMachine::new();
+    let function = compile(&source, &mut vm.obj_heap).unwrap_or_else(|e| {
         report_compile_error(&e);
         std::process::exit(65);
     });
 
-    let mut vm = VirtualMachine::new(chunk);
+    vm.stack = vec![Value::Nil];  // sentinel at slot 0
+    vm.frames = vec![CallFrame { function, ip: 0, slots_start: 0 }];
     if let Err(e) = vm.run() {
         eprintln!("Runtime error: {e}");
         std::process::exit(70);

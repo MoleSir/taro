@@ -1,28 +1,28 @@
 // Variable declaration, assignment, and reading.
 
-print "=== global declaration ===";
+print("=== global declaration ===");
 var a = 10;
-print a;
+print(a);
 var b = a + 5;
-print b;
+print(b);
 var name = "Taro";
-print name;
+print(name);
 
-print "=== global assignment ===";
+print("=== global assignment ===");
 a = 20;
-print a;
+print(a);
 b = a * 2;
-print b;
+print(b);
 
-print "=== uninitialized variable ===";
+print("=== uninitialized variable ===");
 var c;
-print c;  // nil
+print(c);  // nil
 
-print "=== chained assignment ===";
+print("=== chained assignment ===");
 var x = 1;
 var y = 2;
 var z;
 z = x + y;
-print z;
+print(z);
 
-print "done";
+print("done");

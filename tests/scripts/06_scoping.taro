@@ -1,49 +1,49 @@
 // Block scoping — local variables in nested blocks.
 
-print "=== basic block scope ===";
+print("=== basic block scope ===");
 var a = "outer";
 {
     var b = "inner";
-    print a;   // can read outer
-    print b;   // can read inner
+    print(a);   // can read outer
+    print(b);   // can read inner
 }
-print a;       // outer still visible
-// print b;    // would be an error — b is out of scope
+print(a);       // outer still visible
+// print(b);    // would be an error — b is out of scope
 
-print "=== shadowing ===";
+print("=== shadowing ===");
 var x = "global";
 {
     var x = "shadow";
-    print x;   // prints shadow
+    print(x);   // prints shadow
 }
-print x;       // prints global (shadow is gone)
+print(x);       // prints global (shadow is gone)
 
-print "=== multiple levels ===";
+print("=== multiple levels ===");
 var level = 0;
 {
     var level1 = 1;
     {
         var level2 = 2;
-        print level;   // 0
-        print level1;  // 1
-        print level2;  // 2
+        print(level);   // 0
+        print(level1);  // 1
+        print(level2);  // 2
     }
-    print level1;      // 1
+    print(level1);      // 1
 }
 
-print "=== block-local assignment ===";
+print("=== block-local assignment ===");
 var val = 10;
 {
     val = val + 1;
-    print val;   // 11
+    print(val);   // 11
 }
-print val;       // 11 (assignment reached outer var)
+print(val);       // 11 (assignment reached outer var)
 
-print "=== for-loop creates scope ===";
+print("=== for-loop creates scope ===");
 for (var i = 0; i < 2; i = i + 1) {
     var inner = i * 10;
-    print inner;
+    print(inner);
 }
-// print i;     // would be error — i is out of scope
+// print(i);     // would be error — i is out of scope
 
-print "done";
+print("done");

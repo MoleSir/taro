@@ -1,68 +1,68 @@
 // Control flow — if/else, while, for.
 
-print "=== if / else ===";
+print("=== if / else ===");
 if (true) {
-    print "then-branch";
+    print("then-branch");
 }
 if (false) {
-    print "never";
+    print("never");
 } else {
-    print "else-branch";
+    print("else-branch");
 }
 
-print "=== if with condition ===";
+print("=== if with condition ===");
 var x = 5;
 if (x > 3) {
-    print "x > 3";
+    print("x > 3");
 }
 if (x < 3) {
-    print "never";
+    print("never");
 } else {
-    print "x >= 3";
+    print("x >= 3");
 }
 
-print "=== nested if ===";
+print("=== nested if ===");
 var y = 10;
 if (x < y) {
     if (y > 5) {
-        print "nested true";
+        print("nested true");
     }
 }
 
-print "=== while loop ===";
+print("=== while loop ===");
 var i = 0;
 while (i < 3) {
-    print i;
+    print(i);
     i = i + 1;
 }
 
-print "=== while with condition ===";
+print("=== while with condition ===");
 var n = 5;
 while (n > 0) {
-    print n;
+    print(n);
     n = n - 1;
 }
 
-print "=== for loop ===";
+print("=== for loop ===");
 for (var j = 0; j < 3; j = j + 1) {
-    print j;
+    print(j);
 }
 
-print "=== for without initializer ===";
+print("=== for without initializer ===");
 var k = 10;
 for (; k < 13; k = k + 1) {
-    print k;
+    print(k);
 }
 
-print "=== for without increment ===";
+print("=== for without increment ===");
 for (var m = 100; m < 103;) {
-    print m;
+    print(m);
     m = m + 1;
 }
 
-print "=== for without condition (empty clause) ===";
+print("=== for without condition (empty clause) ===");
 // No condition clause = always true.  Without `break` the loop is infinite,
 // so we skip actually running this variant.
-print "(skipped — would loop forever without break)";
+print("(skipped — would loop forever without break)");
 
-print "done";
+print("done");

@@ -6,7 +6,6 @@ use super::{ShrString, Value};
 #[repr(u8)]
 pub enum ByteCode {
     Return = 0,
-    Print,
     Pop,
     Nil,
     True,
@@ -34,6 +33,8 @@ pub enum ByteCode {
     JumpIfFalse,
     Jump,
     Loop,
+
+    Call,
 }
 
 /// High-level instruction with resolved parameters.
@@ -44,7 +45,6 @@ pub enum ByteCode {
 #[derive(Debug, Clone)]
 pub enum Instruction {
     Return,
-    Print,
     Pop,
     Nil,
     True,
@@ -74,4 +74,6 @@ pub enum Instruction {
     JumpIfFalse(usize),
     Jump(usize),
     Loop(usize),
+
+    Call(usize),
 }

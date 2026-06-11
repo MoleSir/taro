@@ -1,16 +1,27 @@
 mod op;
+mod builtin;
 mod error;
 pub use error::*;
 #[cfg(test)]
 mod tests;
-use crate::{Chunk, Instruction, ShrString, Value};
+use crate::{BuiltinFn, Chunk, Instruction, Object, ObjectHandle, ObjectHeap, ShrString, Value};
 use std::collections::HashMap;
 
 pub struct VirtualMachine {
-    pub chunk: Chunk,
-    pub ip: usize,
+    pub obj_heap: ObjectHeap,
+    pub frames: Vec<CallFrame>,
     pub stack: Vec<Value>,
     pub globals: HashMap<ShrString, Value>,
+}
+
+/// A single function-call frame.  `slots_start` is the index into
+/// [`VirtualMachine::stack`] where this frame's locals begin — it serves the
+/// same role as the `Value* slots` pointer in the C interpreter, but without
+/// raw pointers.
+pub struct CallFrame {
+    pub function: ObjectHandle,
+    pub ip: usize,
+    pub slots_start: usize,
 }
 
 macro_rules! binary_op {
@@ -31,18 +42,74 @@ macro_rules! unary_op {
 }
 
 impl VirtualMachine {
-    pub fn new(chunk: Chunk) -> Self {
-        Self {
-            chunk,
-            ip: 0,
+    pub fn new() -> Self {
+        let mut vm = Self {
+            obj_heap: ObjectHeap::new(),
+            frames: vec![],
             stack: vec![],
             globals: HashMap::new(),
-        }
+        };
+        vm.register_builtins();
+        vm
+    }
+
+    fn register_builtins(&mut self) {
+        self.define_builtin_fn("print", builtin::print);
+    }
+
+    #[allow(unused)]
+    pub(crate) fn new_with_chunk(chunk: Chunk) -> Self {
+        let mut vm = Self::new();
+        let function = vm.obj_heap.alloc_function("script", 0, chunk);
+        // Slot 0 is the sentinel — push a dummy value so that user-defined
+        // locals (which start at slot 1) map to valid stack indices.
+        vm.stack = vec![Value::Nil];
+        vm.frames = vec![CallFrame { function, ip: 0, slots_start: 0 }];
+        vm
+    }
+
+    pub fn add_callframe(&mut self, function: ObjectHandle) {
+        let frame = CallFrame { function, ip: 0, slots_start: 0 };
+        self.frames.push(frame);
+    }
+
+    /// Push a new call frame for `function` onto the frame stack.
+    /// The caller is responsible for ensuring the sentinel (slot 0) and
+    /// arguments are already on the VM stack.
+    pub fn push_frame(&mut self, function: ObjectHandle, slots_start: usize) {
+        self.frames.push(CallFrame { function, ip: 0, slots_start });
+    }
+
+    /// Return a reference to the top-most (currently executing) call frame.
+    #[inline]
+    fn frame(&self) -> ExecuteResult<&CallFrame> {
+        self.frames.last().ok_or(ExecuteError::CallFrameEmpty)
+    }
+
+    /// Return a mutable reference to the top-most call frame.
+    #[inline]
+    fn frame_mut(&mut self) -> ExecuteResult<&mut CallFrame> {
+        self.frames.last_mut().ok_or(ExecuteError::StackEmpty)
     }
 
     pub fn run(&mut self) -> ExecuteResult<()> {
         loop {
-            let inst = self.chunk.read_instruction(&mut self.ip)?;
+            // Copy `ip` out of the frame so we can work with a local
+            // variable — this avoids a lingering mutable borrow on
+            // `self.frames` that would prevent access to `self.stack`.
+            let mut ip = self.frame()?.ip;
+
+            // Decode the next instruction.  `read_instruction` only
+            // needs an immutable reference to the chunk, so this
+            // doesn't conflict with anything.
+            let inst = {
+                let chunk = match self.obj_heap.get(self.frame()?.function) {
+                    Object::Function(function) => &function.chunk,
+                    _ => unreachable!(),
+                };
+                chunk.read_instruction(&mut ip)?
+            };
+
             match inst {
                 Instruction::Constant(value) => self.push_stack(value),
                 Instruction::DefineGlobal(name) => {
@@ -64,25 +131,43 @@ impl VirtualMachine {
                     self.globals.insert(name, value);
                 }
                 Instruction::GetLocal(slot) => {
+                    let base = self.frame()?.slots_start;
+                    let index = base + slot;
                     let value = self.stack
-                        .get(slot)
-                        .ok_or_else(|| ExecuteError::StackIndexOutOfRange(slot))?
+                        .get(index)
+                        .ok_or_else(|| ExecuteError::StackIndexOutOfRange(index))?
                         .clone();
                     self.push_stack(value);
                 }
                 Instruction::SetLocal(slot) => {
                     // Assignment is an expression — the value stays on the
                     // stack after being written into the local slot.
+                    let base = self.frame()?.slots_start;
+                    let index = base + slot;
                     let value = self.stack
                         .last()
                         .ok_or(ExecuteError::StackEmpty)?
                         .clone();
-                    if slot >= self.stack.len() {
-                        return Err(ExecuteError::StackIndexOutOfRange(slot));
+                    if index >= self.stack.len() {
+                        return Err(ExecuteError::StackIndexOutOfRange(index));
                     }
-                    self.stack[slot] = value;
+                    self.stack[index] = value;
                 }
-                Instruction::Return => return Ok(()),
+                Instruction::Return => {
+                    let frame = self.frames.pop().expect("not empty frame");
+                    if self.frames.is_empty() {
+                        // Top-level script finished — the return value (if any)
+                        // stays on the stack so callers can inspect it.
+                        return Ok(());
+                    }
+                    // Function return: pop the return value, clean up the
+                    // callee's stack window, and push the result back onto
+                    // the caller's stack.
+                    let result = self.pop_stack()?;
+                    self.stack.truncate(frame.slots_start);
+                    self.push_stack(result);
+                    continue; // skip writing ip back — it was the callee's ip
+                }
                 Instruction::Nil => self.push_stack(()),
                 Instruction::True => self.push_stack(true),
                 Instruction::False => self.push_stack(false),
@@ -98,26 +183,44 @@ impl VirtualMachine {
                 Instruction::GreaterEqual => binary_op!(self, ge),
                 Instruction::Less => binary_op!(self, lt),
                 Instruction::LessEqual => binary_op!(self, le),
-                Instruction::Print => {
-                    let v = self.pop_stack()?;
-                    println!("{v}");
-                }
                 Instruction::Pop => {
                     self.pop_stack()?;
                 }
                 Instruction::JumpIfFalse(offset) => {
                     if !Value::is_truthy(self.peek_stack(0)?) {
-                        self.ip += offset;
+                        ip += offset;
                     }
                 }
                 Instruction::Jump(offset) => {
-                    self.ip += offset;
+                    ip += offset;
                 }
                 Instruction::Loop(offset) => {
-                    self.ip -= offset;
+                    ip -= offset;
+                }
+                
+                Instruction::Call(arg_count) => {
+                    // Save the caller's ip (already advanced past Call)
+                    // before we push the callee frame.  Otherwise the
+                    // bottom-of-loop write-back would clobber the callee's
+                    // ip = 0 with the caller's post-Call ip.
+                    self.frame_mut()?.ip = ip;
+                    let callee = self.peek_stack(arg_count)?.clone();
+                    self.call_value(callee, arg_count)?;
+                    continue; // skip writing ip back — callee frame is now active
                 }
             }
+
+            // Persist the (potentially modified) ip back into the frame.
+            self.frame_mut()?.ip = ip;
         }
+    }
+
+    /// Replace the current script with a new chunk, preserving globals.
+    /// Used by the REPL to run each line in a shared global scope.
+    pub fn reset(&mut self) {
+        let function= self.obj_heap.alloc_function("script", 0, Chunk::new());
+        self.frames = vec![CallFrame { function, ip: 0, slots_start: 0,}];
+        self.stack.clear();
     }
 
     #[inline]
@@ -133,6 +236,41 @@ impl VirtualMachine {
     #[inline]
     pub fn peek_stack(&self, index: usize) -> ExecuteResult<&Value> {
         self.stack.iter().rev().nth(index).ok_or(ExecuteError::StackEmpty)
+    }
+
+    fn call_value(&mut self, callee: Value, arg_count: usize) -> ExecuteResult<()> {
+        if let Value::Object(handle) = callee {
+            let obj = self.obj_heap.get(handle);
+            match obj {
+                Object::Function(_) => self.call(handle, arg_count),
+                Object::BuiltinFn(builtin_fn) => {
+                    let args = &self.stack[self.stack.len() - arg_count..];
+                    let result = (builtin_fn.function)(args)?;
+                    self.stack.truncate(self.stack.len() - arg_count - 1);
+                    self.push_stack(result);
+                    Ok(())
+                }
+                _ => Err(ExecuteError::CanNotCall(callee.type_name()))
+            }
+        } else {
+            Err(ExecuteError::CanNotCall(callee.type_name()))
+        }
+    }
+    
+    fn call(&mut self, handle: ObjectHandle, arg_count: usize) -> ExecuteResult<()> {
+        let function = self.obj_heap.get(handle).as_function().expect("must func");
+        if arg_count != function.arity {
+            Err(ExecuteError::ArgmentCountUnmatch { expcted: function.arity, got: arg_count })?;
+        }
+        
+        let frame = CallFrame { function: handle, ip: 0, slots_start: self.stack.len() - arg_count - 1 };
+        self.frames.push(frame);
+        Ok(())
+    }
+
+    fn define_builtin_fn(&mut self, name: impl Into<ShrString>, function: BuiltinFn) {
+        let function = self.obj_heap.alloc_builtin_fn(function);
+        self.globals.insert(name.into(), Value::Object(function));
     }
 }
 

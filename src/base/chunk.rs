@@ -55,7 +55,6 @@ impl Chunk {
         match inst {
             // simple opcodes
             Instruction::Return => self.write_op(ByteCode::Return),
-            Instruction::Print => self.write_op(ByteCode::Print),
             Instruction::Pop => self.write_op(ByteCode::Pop),
             Instruction::Nil => self.write_op(ByteCode::Nil),
             Instruction::True => self.write_op(ByteCode::True),
@@ -116,6 +115,12 @@ impl Chunk {
                 self.write_op(ByteCode::Loop);
                 self.write_u16(offset as u16);
             }
+        
+            Instruction::Call(arg_count) => {
+                assert!(arg_count <= 256, "Too much args.");
+                self.write_op(ByteCode::Call);
+                self.write_byte(arg_count as u8);
+            }
         }
     }
 
@@ -127,7 +132,6 @@ impl Chunk {
 
         match opcode {
             ByteCode::Return => Ok(Instruction::Return),
-            ByteCode::Print => Ok(Instruction::Print),
             ByteCode::Pop => Ok(Instruction::Pop),
             ByteCode::Nil => Ok(Instruction::Nil),
             ByteCode::True => Ok(Instruction::True),
@@ -183,6 +187,11 @@ impl Chunk {
                 let index = self.read_u16(ip)?;
                 Ok(Instruction::Loop(index as usize))
             }
+            
+            ByteCode::Call => {
+                let arg_count = self.read_byte(ip)?;
+                Ok(Instruction::Call(arg_count as usize))
+            }
         }
     }
 
@@ -202,6 +211,10 @@ impl Chunk {
         let bytes = value.to_le_bytes();
         self.codes.push(bytes[0]);
         self.codes.push(bytes[1]);
+    }
+
+    fn write_byte(&mut self, value: u8) {
+        self.codes.push(value);
     }
 
     fn add_constant(&mut self, value: Value) -> usize {

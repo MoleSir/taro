@@ -1,18 +1,15 @@
-mod string;
-pub use string::*;
-mod function;
-pub use function::*;
 use std::fmt;
-
 use crate::execute::{ExecuteError, ExecuteResult};
+use super::{ObjectHandle, ShrString};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
+    Nil,
     Float(f64),
     Integer(i64),
     Bool(bool),
-    Nil,
     String(ShrString),
+    Object(ObjectHandle),
 }
 
 impl Value {
@@ -76,6 +73,12 @@ impl From<&str> for Value {
     }
 }
 
+impl From<ObjectHandle> for Value {
+    fn from(h: ObjectHandle) -> Self {
+        Value::Object(h)
+    }
+}
+
 // ========================================================================== //
 //  Utility methods
 // ========================================================================== //
@@ -89,6 +92,7 @@ impl Value {
             Value::Bool(_) => "Boolean",
             Value::Nil => "Nil",
             Value::String(_) => "String",
+            Value::Object(_) => "Object",
         }
     }
 }
@@ -101,6 +105,7 @@ impl fmt::Display for Value {
             Value::Bool(v) => write!(f, "{}", v),
             Value::Nil => write!(f, "nil"),
             Value::String(s) => write!(f, "{}", s.as_str()),
+            Value::Object(h) => writeln!(f, "{}", h.0),
         }
     }
 }

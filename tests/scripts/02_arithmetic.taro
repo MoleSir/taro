@@ -1,37 +1,37 @@
 // Arithmetic and grouping expressions.
 
-print "=== addition ===";
-print 1 + 2;         // integer + integer
-print 3.5 + 1.5;     // float + float
-print 1 + 2.5;       // integer + float → float
-print "a" + "b";     // string concatenation
-print "x" + 3;       // string + anything
+print("=== addition ===");
+print(1 + 2);         // integer + integer
+print(3.5 + 1.5);     // float + float
+print(1 + 2.5);       // integer + float → float
+print("a" + "b");     // string concatenation
+print("x" + 3);       // string + anything
 
-print "=== subtraction ===";
-print 10 - 3;
-print 3.5 - 1.0;
-print 5 - 2.5;
-print -5 - 3;        // unary minus then subtraction
+print("=== subtraction ===");
+print(10 - 3);
+print(3.5 - 1.0);
+print(5 - 2.5);
+print(-5 - 3);        // unary minus then subtraction
 
-print "=== multiplication ===";
-print 3 * 4;
-print 2.5 * 2.0;
-print -2 * 3;
+print("=== multiplication ===");
+print(3 * 4);
+print(2.5 * 2.0);
+print(-2 * 3);
 
-print "=== division ===";
-print 10 / 3;        // integer division → float
-print 10.0 / 2.0;
-print 15 / 3.0;
+print("=== division ===");
+print(10 / 3);        // integer division → float
+print(10.0 / 2.0);
+print(15 / 3.0);
 
-print "=== grouping ===";
-print 2 + 3 * 4;     // 14
-print (2 + 3) * 4;   // 20
-print 10 - 2 - 3;    // 5 (left-associative)
-print 10 - (2 - 3);  // 11
+print("=== grouping ===");
+print(2 + 3 * 4);     // 14
+print((2 + 3) * 4);   // 20
+print(10 - 2 - 3);    // 5 (left-associative)
+print(10 - (2 - 3));  // 11
 
-print "=== complex ===";
-print (1 + 2) * (3 + 4);     // 21
-print -1 + -2;                // -3
-print 1 + 2 * 3 - 4 / 2;     // 1 + 6 - 2 = 5
+print("=== complex ===");
+print((1 + 2) * (3 + 4));     // 21
+print(-1 + -2);                // -3
+print(1 + 2 * 3 - 4 / 2);     // 1 + 6 - 2 = 5
 
-print "done";
+print("done");
