@@ -233,6 +233,9 @@ impl ObjectHeap {
                     self.mark_value(&bound.receiver);
                 }
                 Object::Class(class) => {
+                    if let Some(superclass) = class.superclass {
+                        self.mark_object(superclass);
+                    }
                     for method in class.methods.values() {
                         self.mark_object(*method);
                     }

@@ -98,251 +98,304 @@ impl VirtualMachine {
     pub fn run(&mut self) -> ExecuteResult<()> {
         loop {
             self.try_collect_garbage();
+            if self.frames.is_empty() {
+                return Ok(());
+            }
+            self.step()?;
+        }
+    }
 
-            // Copy `ip` out of the frame so we can work with a local
-            // variable — this avoids a lingering mutable borrow on
-            // `self.frames` that would prevent access to `self.stack`.
-            let mut ip = self.frame()?.ip;
+    /// Advance the VM by one instruction.  This is the core of the
+    /// interpreter loop, extracted so that synchronous method calls
+    /// (e.g. `__str__`) can re-enter it from within a builtin.
+    ///
+    /// For normal instructions, writes the updated `ip` back into the
+    /// current frame before returning.  Callers that change frames
+    /// (`Return`, `Call`, `Invoke`) skip that write-back.
+    fn step(&mut self) -> ExecuteResult<()> {
+        // Copy `ip` out of the frame so we can work with a local
+        // variable — this avoids a lingering mutable borrow on
+        // `self.frames` that would prevent access to `self.stack`.
+        let mut ip = self.frame()?.ip;
 
-            // Decode the next instruction.  `read_instruction` only
-            // needs an immutable reference to the chunk, so this
-            // doesn't conflict with anything.
-            let inst = {
-                let closure = self.obj_heap.get_closure(self.frame()?.closure).expect("must closure");
-                let function = self.obj_heap.get_function(closure.function).expect("must function");
-                function.chunk.read_instruction(&mut ip)?
-            };
+        // Decode the next instruction.  `read_instruction` only
+        // needs an immutable reference to the chunk, so this
+        // doesn't conflict with anything.
+        let inst = {
+            let closure = self.obj_heap.get_closure(self.frame()?.closure).expect("must closure");
+            let function = self.obj_heap.get_function(closure.function).expect("must function");
+            function.chunk.read_instruction(&mut ip)?
+        };
 
-            match inst {
-                Instruction::Constant(value) => self.push_stack(value),
-                Instruction::DefineGlobal(name) => {
-                    let value = self.pop_stack()?;
-                    self.globals.insert(name, value);
+        match inst {
+            Instruction::Constant(value) => self.push_stack(value),
+            Instruction::DefineGlobal(name) => {
+                let value = self.pop_stack()?;
+                self.globals.insert(name, value);
+            }
+            Instruction::GetGlobal(name) => {
+                let value = self.globals
+                    .get(&name)
+                    .ok_or_else(|| ExecuteError::VariableNotFound(name.as_str().to_string()))?
+                    .clone();
+                self.push_stack(value);
+            }
+            Instruction::SetGlobal(name) => {
+                let value = self.stack
+                    .last()
+                    .ok_or(ExecuteError::StackEmpty)?
+                    .clone();
+                self.globals.insert(name, value);
+            }
+            Instruction::GetLocal(slot) => {
+                let base = self.frame()?.slots_start;
+                let index = base + slot;
+                let value = self.stack
+                    .get(index)
+                    .ok_or_else(|| ExecuteError::StackIndexOutOfRange(index))?
+                    .clone();
+                self.push_stack(value);
+            }
+            Instruction::SetLocal(slot) => {
+                // Assignment is an expression — the value stays on the
+                // stack after being written into the local slot.
+                let base = self.frame()?.slots_start;
+                let index = base + slot;
+                let value = self.stack
+                    .last()
+                    .ok_or(ExecuteError::StackEmpty)?
+                    .clone();
+                if index >= self.stack.len() {
+                    return Err(ExecuteError::StackIndexOutOfRange(index));
                 }
-                Instruction::GetGlobal(name) => {
-                    let value = self.globals
-                        .get(&name)
-                        .ok_or_else(|| ExecuteError::VariableNotFound(name.as_str().to_string()))?
-                        .clone();
-                    self.push_stack(value);
+                self.stack[index] = value;
+            }
+            Instruction::Return => {
+                let frame = self.frames.pop().expect("not empty frame");
+                if self.frames.is_empty() {
+                    // Top-level script finished — the return value (if any)
+                    // stays on the stack so callers can inspect it.
+                    return Ok(());
                 }
-                Instruction::SetGlobal(name) => {
-                    let value = self.stack
-                        .last()
-                        .ok_or(ExecuteError::StackEmpty)?
-                        .clone();
-                    self.globals.insert(name, value);
-                }
-                Instruction::GetLocal(slot) => {
-                    let base = self.frame()?.slots_start;
-                    let index = base + slot;
-                    let value = self.stack
-                        .get(index)
-                        .ok_or_else(|| ExecuteError::StackIndexOutOfRange(index))?
-                        .clone();
-                    self.push_stack(value);
-                }
-                Instruction::SetLocal(slot) => {
-                    // Assignment is an expression — the value stays on the
-                    // stack after being written into the local slot.
-                    let base = self.frame()?.slots_start;
-                    let index = base + slot;
-                    let value = self.stack
-                        .last()
-                        .ok_or(ExecuteError::StackEmpty)?
-                        .clone();
-                    if index >= self.stack.len() {
-                        return Err(ExecuteError::StackIndexOutOfRange(index));
-                    }
-                    self.stack[index] = value;
-                }
-                Instruction::Return => {
-                    let frame = self.frames.pop().expect("not empty frame");
-                    if self.frames.is_empty() {
-                        // Top-level script finished — the return value (if any)
-                        // stays on the stack so callers can inspect it.
-                        return Ok(());
-                    }
-                    // Function return: pop the return value, close any
-                    // upvalues referencing this frame, clean up the callee's
-                    // stack window, and push the result onto the caller's stack.
-                    let result = self.pop_stack()?;
-                    self.close_upvalues(frame.slots_start)?;
-                    self.stack.truncate(frame.slots_start);
-                    self.push_stack(result);
-                    continue; // skip writing ip back — it was the callee's ip
-                }
-                Instruction::Nil => self.push_stack(()),
-                Instruction::True => self.push_stack(true),
-                Instruction::False => self.push_stack(false),
-                Instruction::Negate => unary_op!(self, neg),
-                Instruction::Not => unary_op!(self, not),
-                Instruction::Add => binary_op!(self, add),
-                Instruction::Sub => binary_op!(self, sub),
-                Instruction::Mul => binary_op!(self, mul),
-                Instruction::Div => binary_op!(self, div),
-                Instruction::Equal => binary_op!(self, eq),
-                Instruction::NotEqual => binary_op!(self, ne),
-                Instruction::Greater => binary_op!(self, gt),
-                Instruction::GreaterEqual => binary_op!(self, ge),
-                Instruction::Less => binary_op!(self, lt),
-                Instruction::LessEqual => binary_op!(self, le),
-                Instruction::Pop => {
-                    self.pop_stack()?;
-                }
-                Instruction::JumpIfFalse(offset) => {
-                    if !Self::is_truthy(self.peek_stack(0)?) {
-                        ip += offset;
-                    }
-                }
-                Instruction::Jump(offset) => {
+                // Function return: pop the return value, close any
+                // upvalues referencing this frame, clean up the callee's
+                // stack window, and push the result onto the caller's stack.
+                let result = self.pop_stack()?;
+                self.close_upvalues(frame.slots_start)?;
+                self.stack.truncate(frame.slots_start);
+                self.push_stack(result);
+                return Ok(()); // was `continue` — skip writing callee's ip
+            }
+            Instruction::Nil => self.push_stack(()),
+            Instruction::True => self.push_stack(true),
+            Instruction::False => self.push_stack(false),
+            Instruction::Negate => unary_op!(self, neg),
+            Instruction::Not => unary_op!(self, not),
+            Instruction::Add => binary_op!(self, add),
+            Instruction::Sub => binary_op!(self, sub),
+            Instruction::Mul => binary_op!(self, mul),
+            Instruction::Div => binary_op!(self, div),
+            Instruction::Equal => binary_op!(self, eq),
+            Instruction::NotEqual => binary_op!(self, ne),
+            Instruction::Greater => binary_op!(self, gt),
+            Instruction::GreaterEqual => binary_op!(self, ge),
+            Instruction::Less => binary_op!(self, lt),
+            Instruction::LessEqual => binary_op!(self, le),
+            Instruction::Pop => {
+                self.pop_stack()?;
+            }
+            Instruction::JumpIfFalse(offset) => {
+                if !Self::is_truthy(self.peek_stack(0)?) {
                     ip += offset;
                 }
-                Instruction::Loop(offset) => {
-                    ip -= offset;
-                }
-                
-                Instruction::Call(arg_count) => {
-                    // Save the caller's ip (already advanced past Call)
-                    // before we push the callee frame.  Otherwise the
-                    // bottom-of-loop write-back would clobber the callee's
-                    // ip = 0 with the caller's post-Call ip.
-                    self.frame_mut()?.ip = ip;
-                    let callee = self.peek_stack(arg_count)?.clone();
-                    self.call_value(callee, arg_count)?;
-                    continue; // skip writing ip back — callee frame is now active
-                }
+            }
+            Instruction::Jump(offset) => {
+                ip += offset;
+            }
+            Instruction::Loop(offset) => {
+                ip -= offset;
+            }
 
-                Instruction::Closure { function, upvalues } => {
-                    let function_handle = function.as_object().expect("must object");
-                    let closure_handle = self.obj_heap.alloc_closure(function_handle);
-                    // Capture upvalues from the enclosing frame/closure.
-                    for uv_desc in upvalues {
-                        let upvalue = if uv_desc.is_local {
-                            // Capture from the current frame's stack.
-                            let slot = self.frame()?.slots_start + uv_desc.index;
-                            self.capture_upvalue(slot)?
-                        } else {
-                            // Capture from the enclosing closure's upvalue array.
-                            let enclosing_closure = self.obj_heap
-                                .get_closure(self.frame()?.closure)
-                                .expect("must closure");
-                            enclosing_closure.upvalues[uv_desc.index]
-                        };
-                        self.obj_heap
-                            .get_closure_mut(closure_handle)
-                            .expect("must closure")
-                            .upvalues
-                            .push(upvalue);
-                    }
-                    self.push_stack(closure_handle);
-                }
+            Instruction::Call(arg_count) => {
+                // Save the caller's ip (already advanced past Call)
+                // before we push the callee frame.
+                self.frame_mut()?.ip = ip;
+                let callee = self.peek_stack(arg_count)?.clone();
+                self.call_value(callee, arg_count)?;
+                return Ok(()); // was `continue` — callee frame is now active
+            }
 
-                Instruction::GetUpvalue(slot) => {
-                    let closure_handle = self.frame()?.closure;
-                    let closure = self.obj_heap.get_closure(closure_handle).expect("must closure");
-                    let upvalue_handle = closure.upvalues[slot];
-                    let upvalue = self.obj_heap.get_upvalue(upvalue_handle).expect("must upvalue");
-                    let value = match upvalue.location {
-                        Some(stack_slot) => self.stack[stack_slot].clone(),
-                        None => upvalue.closed.clone(),
+            Instruction::Closure { function, upvalues } => {
+                let function_handle = function.as_object().expect("must object");
+                let closure_handle = self.obj_heap.alloc_closure(function_handle);
+                // Capture upvalues from the enclosing frame/closure.
+                for uv_desc in upvalues {
+                    let upvalue = if uv_desc.is_local {
+                        // Capture from the current frame's stack.
+                        let slot = self.frame()?.slots_start + uv_desc.index;
+                        self.capture_upvalue(slot)?
+                    } else {
+                        // Capture from the enclosing closure's upvalue array.
+                        let enclosing_closure = self.obj_heap
+                            .get_closure(self.frame()?.closure)
+                            .expect("must closure");
+                        enclosing_closure.upvalues[uv_desc.index]
                     };
-                    self.push_stack(value);
+                    self.obj_heap
+                        .get_closure_mut(closure_handle)
+                        .expect("must closure")
+                        .upvalues
+                        .push(upvalue);
                 }
+                self.push_stack(closure_handle);
+            }
 
-                Instruction::SetUpvalue(slot) => {
-                    let closure_handle = self.frame()?.closure;
-                    let closure = self.obj_heap.get_closure(closure_handle).expect("must closure");
-                    let upvalue_handle = closure.upvalues[slot];
-                    let upvalue = self.obj_heap.get_upvalue(upvalue_handle).expect("must upvalue");
-                    let value = self.peek_stack(0)?.clone();
-                    match upvalue.location {
-                        Some(stack_slot) => self.stack[stack_slot] = value,
-                        None => {
-                            let uv = self.obj_heap.get_upvalue_mut(upvalue_handle).expect("must upvalue");
-                            uv.closed = value;
-                        }
+            Instruction::GetUpvalue(slot) => {
+                let closure_handle = self.frame()?.closure;
+                let closure = self.obj_heap.get_closure(closure_handle).expect("must closure");
+                let upvalue_handle = closure.upvalues[slot];
+                let upvalue = self.obj_heap.get_upvalue(upvalue_handle).expect("must upvalue");
+                let value = match upvalue.location {
+                    Some(stack_slot) => self.stack[stack_slot].clone(),
+                    None => upvalue.closed.clone(),
+                };
+                self.push_stack(value);
+            }
+
+            Instruction::SetUpvalue(slot) => {
+                let closure_handle = self.frame()?.closure;
+                let closure = self.obj_heap.get_closure(closure_handle).expect("must closure");
+                let upvalue_handle = closure.upvalues[slot];
+                let upvalue = self.obj_heap.get_upvalue(upvalue_handle).expect("must upvalue");
+                let value = self.peek_stack(0)?.clone();
+                match upvalue.location {
+                    Some(stack_slot) => self.stack[stack_slot] = value,
+                    None => {
+                        let uv = self.obj_heap.get_upvalue_mut(upvalue_handle).expect("must upvalue");
+                        uv.closed = value;
                     }
                 }
+            }
 
-                Instruction::CloseUpvalue => {
-                    let top_slot = self.stack.len() - 1;
-                    self.close_upvalues(top_slot)?;
-                    self.pop_stack()?;
-                }
+            Instruction::CloseUpvalue => {
+                let top_slot = self.stack.len() - 1;
+                self.close_upvalues(top_slot)?;
+                self.pop_stack()?;
+            }
 
-                Instruction::Class(class_name) => {
-                    let class = self.obj_heap.alloc_class(class_name);
-                    self.push_stack(class);
-                }
-                Instruction::GetProperty(field_name) => {
-                    let instance = self.peek_stack(0)?.as_object()?;
-                    let instance = self.obj_heap.get_instance(instance)?;
+            Instruction::Class(class_name) => {
+                let class = self.obj_heap.alloc_class(class_name);
+                self.push_stack(class);
+            }
+            Instruction::GetProperty(field_name) => {
+                let instance = self.peek_stack(0)?.as_object()?;
+                let instance = self.obj_heap.get_instance(instance)?;
 
-                    // try field
-                    match instance.fields.get(&field_name).cloned() {
-                        Some(value) => {
-                            self.pop_stack()?;
-                            self.push_stack(value);
-                        }
-                        None => {
-                            // try method
-                            let class = self.obj_heap.get_class(instance.class)?;
-                            match class.methods.get(&field_name).cloned() {
-                                Some(method) => {
-                                    let receiver = self.peek_stack(0)?.clone();
-                                    let bound_method = self.obj_heap.alloc_bound_method(receiver, method);
-                                    self.pop_stack()?;
-                                    self.push_stack(bound_method);
-                                }
-                                None => {
-                                    Err(ExecuteError::UndefinedProperty(field_name.to_string()))?
-                                }
+                // try field
+                match instance.fields.get(&field_name).cloned() {
+                    Some(value) => {
+                        self.pop_stack()?;
+                        self.push_stack(value);
+                    }
+                    None => {
+                        // try method
+                        let class = self.obj_heap.get_class(instance.class)?;
+                        match class.methods.get(&field_name).cloned() {
+                            Some(method) => {
+                                let receiver = self.peek_stack(0)?.clone();
+                                let bound_method = self.obj_heap.alloc_bound_method(receiver, method);
+                                self.pop_stack()?;
+                                self.push_stack(bound_method);
+                            }
+                            None => {
+                                Err(ExecuteError::UndefinedProperty(field_name.to_string()))?
                             }
                         }
                     }
                 }
-                Instruction::SetProperty(field_name) => {
-                    let value = self.peek_stack(0)?.clone();
-                    let instance = self.peek_stack(1)?.as_object()?;
-                    let instance = self.obj_heap.get_instance_mut(instance)?;
-                    instance.fields.insert(field_name, value);
+            }
+            Instruction::SetProperty(field_name) => {
+                let value = self.peek_stack(0)?.clone();
+                let instance = self.peek_stack(1)?.as_object()?;
+                let instance = self.obj_heap.get_instance_mut(instance)?;
+                instance.fields.insert(field_name, value);
 
-                    let value = self.pop_stack()?;
-                    self.pop_stack()?;
-                    self.push_stack(value);
+                let value = self.pop_stack()?;
+                self.pop_stack()?;
+                self.push_stack(value);
+            }
+            Instruction::Inherit => {
+                let superclass = self.peek_stack(0)?.as_object()?;
+                let subclass = self.peek_stack(1)?.as_object()?;
+                // Copy all methods from superclass into subclass.
+                // Subclass methods (defined later) will override these.
+                let super_methods = {
+                    let sc = self.obj_heap.get_class(superclass)?;
+                    sc.methods.clone()
+                };
+                let sub = self.obj_heap.get_class_mut(subclass)?;
+                sub.superclass = Some(superclass);
+                for (name, method) in super_methods {
+                    sub.methods.entry(name).or_insert(method);
                 }
-                Instruction::Method(method_name) => {
-                    self.define_method(method_name)?;
-                }
-
-                Instruction::Invoke(method_name, arg_count) => {
-                    // Look up the method on the receiver's class.
-                    let method_handle = {
-                        let receiver = self.peek_stack(arg_count)?.clone();
-                        let instance_handle = receiver.as_object()?;
-                        let instance = self.obj_heap.get_instance(instance_handle)?;
-                        let class = self.obj_heap.get_class(instance.class)?;
-                        class
-                            .methods
-                            .get(&method_name)
-                            .ok_or_else(|| {
-                                ExecuteError::UndefinedProperty(method_name.as_str().to_string())
-                            })?
-                            .clone()
-                    }; // all borrows released before calling call_method()
-
-                    // Save ip before switching to callee frame (same pattern as Call).
-                    // +1 for the receiver (explicit self), which is already on the stack.
-                    self.frame_mut()?.ip = ip;
-                    self.call_method(method_handle, arg_count + 1)?;
-                    continue; // skip writing ip back — callee frame is now active
-                }
+                self.pop_stack()?; // pop superclass
+            }
+            Instruction::Method(method_name) => {
+                self.define_method(method_name)?;
             }
 
-            // Persist the (potentially modified) ip back into the frame.
-            self.frame_mut()?.ip = ip;
+            Instruction::Invoke(method_name, arg_count) => {
+                // Look up the method on the receiver's class.
+                let method_handle = {
+                    let receiver = self.peek_stack(arg_count)?.clone();
+                    let instance_handle = receiver.as_object()?;
+                    let instance = self.obj_heap.get_instance(instance_handle)?;
+                    let class = self.obj_heap.get_class(instance.class)?;
+                    class
+                        .methods
+                        .get(&method_name)
+                        .ok_or_else(|| {
+                            ExecuteError::UndefinedProperty(method_name.as_str().to_string())
+                        })?
+                        .clone()
+                }; // all borrows released before calling call_method()
+
+                // Save ip before switching to callee frame (same pattern as Call).
+                // +1 for the receiver (explicit self), which is already on the stack.
+                self.frame_mut()?.ip = ip;
+                self.call_method(method_handle, arg_count + 1)?;
+                return Ok(()); // was `continue` — callee frame is now active
+            }
         }
+
+        // Persist the (potentially modified) ip back into the frame.
+        self.frame_mut()?.ip = ip;
+        Ok(())
+    }
+
+    /// Invoke a method on a receiver synchronously, running its bytecode 
+    /// to completion and returning the result value.
+    /// TODO: gc?
+    fn invoke_method_sync(&mut self, receiver: ObjectHandle, method: ObjectHandle, extra_args: &[Value]) -> ExecuteResult<Value> {
+        let method_handle = method;
+
+        // Push the receiver and extra args onto the stack.
+        // call_method expects: stack[slots_start] = receiver, then args.
+        self.push_stack(receiver);
+        for arg in extra_args {
+            self.push_stack(arg.clone());
+        }
+        let saved_frame_count = self.frames.len();
+        let total_args = 1 + extra_args.len(); // receiver + explicit args
+        self.call_method(method_handle, total_args)?;
+
+        // Sub-loop: run until the method's frame (and any frames it pushes) unwind back to the caller.
+        while self.frames.len() > saved_frame_count {
+            self.step()?;
+        }
+
+        // The method's return value is now on top of the stack.
+        self.pop_stack()
     }
 
     pub fn reset(&mut self) {
@@ -371,16 +424,16 @@ impl VirtualMachine {
             match obj {
                 Object::Closure(_) => self.call(handle, arg_count),
                 Object::Class(_) => {
-                    // Look up init() before allocating the instance (avoid borrow conflict).
+                    // Look up __init__() before allocating the instance (avoid borrow conflict).
                     let init_handle = {
                         let class = self.obj_heap.get_class(handle)?;
-                        class.methods.get("init").copied()
+                        class.methods.get("__init__").copied()
                     };
                     let instance = self.obj_heap.alloc_instance(handle);
                     let index = self.stack.len() - arg_count - 1;
                     self.stack[index] = Value::Object(instance);
                     if let Some(init_handle) = init_handle {
-                        // Call the init() method on the fresh instance.
+                        // Call the __init__() method on the fresh instance.
                         // +1 for the receiver (explicit self), already on the stack.
                         self.call_method(init_handle, arg_count + 1)
                     } else if arg_count != 0 {
@@ -427,7 +480,7 @@ impl VirtualMachine {
     }
 
     /// Push a call frame for a method call (via `OP_INVOKE`, bound-method,
-    /// or class instantiation with `init()`).
+    /// or class instantiation with `__init__()`).
     ///
     /// The receiver is already on the stack at `slots_start` (slot 0) and
     /// counts toward `arg_count` (explicit `self`).  There is no closure on

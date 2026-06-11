@@ -101,6 +101,7 @@ fn get_rule(kind: TokenKind) -> ParseRule {
         TokenKind::And          => ParseRule::new(None, Some(Parser::and), Prec::And),
         TokenKind::Class        => ParseRule::NONE,
         TokenKind::Else         => ParseRule::NONE,
+        TokenKind::Extends      => ParseRule::NONE,
         TokenKind::False        => ParseRule::new(Some(Parser::literal), None, Prec::None),
         TokenKind::For          => ParseRule::NONE,
         TokenKind::Fun          => ParseRule::NONE,
@@ -335,11 +336,11 @@ impl<'a> Parser<'a> {
             let unit = self.cur_unit();
             self.obj_heap
                 .get_function(unit.function)
-                .map(|f| f.name.as_str() == "init")
+                .map(|f| f.name.as_str() == "__init__")
                 .unwrap_or(false)
         };
         if is_init {
-            // init() should return the receiver (this), not nil.
+            // __init__() should return the receiver (self), not nil.
             self.emit(Instruction::GetLocal(0));
             self.emit(Instruction::Return);
         } else {
@@ -372,12 +373,21 @@ impl<'a> Parser<'a> {
         self.define_variable(Some(class_name.clone()))?;
 
         self.named_variable(class_name, false)?;
-        self.consume(TokenKind::LeftBrace, "Expect '{' before class body.")?;
-        
-        while !self.check(TokenKind::RightBrace) && !self.check(TokenKind::Eof) {
-            self.method()?;       
+
+        // Inheritance: class Derived extends Base { ... }
+        if self.match_token(TokenKind::Extends) {
+            self.consume(TokenKind::Identifier, "Expect superclass name.")?;
+            let super_name = ShrString::new_string(self.previous().lexeme);
+            self.named_variable(super_name, false)?; // push superclass onto stack
+            self.emit(Instruction::Inherit);          // pop superclass, copy methods
         }
-        
+
+        self.consume(TokenKind::LeftBrace, "Expect '{' before class body.")?;
+
+        while !self.check(TokenKind::RightBrace) && !self.check(TokenKind::Eof) {
+            self.method()?;
+        }
+
         self.consume(TokenKind::RightBrace, "Expect '}' after class body.")?;
         self.emit(Instruction::Pop);
         Ok(())

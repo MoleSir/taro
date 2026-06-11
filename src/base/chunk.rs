@@ -71,6 +71,7 @@ impl Chunk {
             Instruction::GreaterEqual => self.write_op(ByteCode::GreaterEqual),
             Instruction::Less => self.write_op(ByteCode::Less),
             Instruction::LessEqual => self.write_op(ByteCode::LessEqual),
+            Instruction::Inherit => self.write_op(ByteCode::Inherit),
 
             // constant 
             Instruction::Constant(value) => {
@@ -188,6 +189,7 @@ impl Chunk {
             ByteCode::GreaterEqual => Ok(Instruction::GreaterEqual),
             ByteCode::Less => Ok(Instruction::Less),
             ByteCode::LessEqual => Ok(Instruction::LessEqual),
+            ByteCode::Inherit => Ok(Instruction::Inherit),
 
             ByteCode::Constant => {
                 let value = self.read_constant(ip)?;

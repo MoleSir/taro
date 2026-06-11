@@ -39,6 +39,7 @@ pub enum TokenKind {
     And,
     Class,
     Else,
+    Extends,
     False,
     For,
     Fun,

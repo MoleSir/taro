@@ -9,7 +9,9 @@ macro_rules! get_args {
 
 impl VirtualMachine {
     pub fn print(&mut self, arg_count: usize) -> ExecuteResult<Value> {
-        let args = get_args!(self, arg_count);
+        // Copy arguments to avoid borrow conflict with self.str() which
+        // now takes &mut self (it may call __str__ on instances).
+        let args: Vec<Value> = get_args!(self, arg_count).to_vec();
         for (i, arg) in args.iter().enumerate() {
             if i == 0 {
                 print!("{}", self.str(arg)?);

@@ -34,6 +34,18 @@ impl VirtualMachine {
                 let result = format!("{}{}", l.as_str(), r.as_str());
                 Ok(Value::String(result.into()))
             }
+            (Value::Object(lhs), rhs) => {
+                if let Object::Instance(instance) = self.obj_heap.get(*lhs) {
+                    let class = self.obj_heap.get_class(instance.class)?;
+                    if let Some(add_method) = class.methods.get("__add__").cloned() {
+                        self.invoke_method_sync(*lhs, add_method, &[rhs.clone()])
+                    } else {
+                        Err(ExecuteError::BinaryOpTypeMismatch("add", "Object", rhs.type_name()))
+                    }
+                } else {
+                    Err(ExecuteError::BinaryOpTypeMismatch("add", "Object", rhs.type_name()))
+                }
+            }
             (lhs, rhs) => Err(ExecuteError::BinaryOpTypeMismatch("add", lhs.type_name(), rhs.type_name()))
         }
     }
@@ -141,7 +153,7 @@ impl VirtualMachine {
         }
     }
 
-    pub fn str(&self, value: &Value) -> ExecuteResult<ShrString> {
+    pub fn str(&mut self, value: &Value) -> ExecuteResult<ShrString> {
         match value {
             Value::Float(v) => Ok(format_shr!("{}", v)),
             Value::Integer(v) => Ok(format_shr!("{}", v)),
@@ -157,9 +169,19 @@ impl VirtualMachine {
                     Object::Closure(_) => Ok("<closure>".into()),
                     Object::Function(function) => Ok(format_shr!("<function {} at {}>", function.name, h.0)),
                     Object::Instance(instance) => {
-                        // TODO: call __str__ method
                         let class = self.obj_heap.get_class(instance.class)?;
-                        Ok(format_shr!("<instance of {}>", class.name))
+                        match class.methods.get("__str__").cloned() {
+                            Some(str_method) => {
+                                let result = self.invoke_method_sync(*h, str_method, &[])?;
+                                if let Value::String(s) = result {
+                                    return Ok(s);
+                                }
+                                Err(ExecuteError::BadStrResult(result.type_name()))?
+                            }
+                            None => {
+                                Ok(format_shr!("<instance of {}>", class.name))
+                            }
+                        }
                     }
                     Object::Upvalue(_) => Ok("<upvalue>".into()),
                 }

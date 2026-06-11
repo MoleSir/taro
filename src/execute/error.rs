@@ -47,4 +47,7 @@ pub enum ExecuteError {
 
     #[error("Undefined property {0}")]
     UndefinedProperty(String),
+
+    #[error("__str__ method must return a string, got '{0}'")]
+    BadStrResult(&'static str),
 }

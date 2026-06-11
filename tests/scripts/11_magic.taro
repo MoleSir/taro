@@ -1,0 +1,36 @@
+class Number {
+    fun __init__(self, i) {
+        self.i = i;
+    }
+
+    fun __str__(self) {
+        return "number";
+    }
+
+    fun __add__(self, n) {
+        return Number(self.i + n);
+    }
+}
+
+var n = Number(0);
+print(n);
+print(n+1);
+
+
+class String {
+    fun __init__(self, s) {
+        self.s = s;
+    }
+
+    fun __str__(self) {
+        return self.s;
+    }
+
+    fun __add__(self, s) {
+        return String(self.s + s);
+    }
+}
+
+var s = String("Hello");
+print(s);
+print(s + " World");

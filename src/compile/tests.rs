@@ -1373,11 +1373,11 @@ fn test_invoke_bytecode() {
 
 #[test]
 fn test_init_method_returns_self() {
-    // class Foo { fun init(self, x) { self.x = x; } }
-    // The init method should end with GetLocal(0); Return (return self),
+    // class Foo { fun __init__(self, x) { self.x = x; } }
+    // The __init__ method should end with GetLocal(0); Return (return self),
     // not Nil; Return.
     let (c, obj_heap) = compile_with_heap(
-        "class Foo { fun init(self, x) { self.x = x; } }"
+        "class Foo { fun __init__(self, x) { self.x = x; } }"
     );
     let script_insts = instructions(&c);
     for inst in &script_insts {
@@ -1386,12 +1386,12 @@ fn test_init_method_returns_self() {
                 .get(function.as_object().unwrap())
                 .as_function()
                 .unwrap();
-            if fn_obj.name.as_str() == "init" {
+            if fn_obj.name.as_str() == "__init__" {
                 let fn_insts = instructions(&fn_obj.chunk);
                 let last = &fn_insts[fn_insts.len() - 2];
                 assert!(
                     matches!(last, Instruction::GetLocal(0)),
-                    "init should end with GetLocal(0) (return self), got {:?}",
+                    "__init__ should end with GetLocal(0) (return self), got {:?}",
                     last
                 );
                 assert!(matches!(
@@ -1402,7 +1402,7 @@ fn test_init_method_returns_self() {
             }
         }
     }
-    panic!("init method not found in compiled output");
+    panic!("__init__ method not found in compiled output");
 }
 
 #[test]
@@ -1432,4 +1432,24 @@ fn test_self_parameter_is_slot_zero() {
         }
     }
     panic!("method 'm' not found");
+}
+
+#[test]
+fn test_inheritance_bytecode() {
+    // class Derived extends Base {}
+    //   Class("Derived")         3 bytes
+    //   DefineGlobal("Derived")  3 bytes
+    //   GetGlobal("Derived")     3 bytes
+    //   GetGlobal("Base")        3 bytes
+    //   Inherit                  1 byte
+    //   Pop                      1 byte
+    //   Nil                      1 byte
+    //   Return                   1 byte
+    let c = codes("class Base {} class Derived extends Base {}");
+    let bytes: Vec<u8> = c.iter().map(|&b| b).collect();
+    // Class(Derived) should be at some offset
+    assert!(
+        bytes.iter().any(|&b| b == ByteCode::Inherit as u8),
+        "should contain Inherit bytecode"
+    );
 }

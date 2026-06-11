@@ -44,13 +44,15 @@ pub struct ObjectUpvalue {
 pub struct ObjectClass {
     pub name: ShrString,
     pub methods: HashMap<ShrString, ObjectHandle>,
+    pub superclass: Option<ObjectHandle>,
 }
 
 impl ObjectClass {
     pub fn new(name: impl Into<ShrString>) -> Self {
-        Self { 
+        Self {
             name: name.into(),
             methods: HashMap::new(),
+            superclass: None,
         }
     }
 }

@@ -40,10 +40,10 @@ class Scone {
 var scone = Scone();
 scone.topping("berries", "cream");
 
-// === 6. Constructor (init) with params ===
+// === 6. Constructor (__init__) with params ===
 print("=== constructor ===");
 class Point {
-    fun init(self, x, y) {
+    fun __init__(self, x, y) {
         self.x = x;
         self.y = y;
     }
@@ -53,10 +53,10 @@ print(p.x);        // 3
 print(p.y);        // 4
 print(p.x + p.y);  // 7
 
-// === 7. Init returns instance ===
-print("=== init returns instance ===");
+// === 7. __init__ returns instance ===
+print("=== __init__ returns instance ===");
 class Person {
-    fun init(self, name) {
+    fun __init__(self, name) {
         self.name = name;
     }
 }
@@ -66,7 +66,7 @@ print(alice.name);  // Alice
 // === 8. self fields mutation across methods ===
 print("=== self mutation ===");
 class Counter {
-    fun init(self) {
+    fun __init__(self) {
         self.count = 0;
     }
     fun inc(self) {
@@ -106,7 +106,7 @@ print(calc.add(calc.mul(2, 3), 4));  // 10
 // === 11. Method calling another method on self ===
 print("=== method chaining on self ===");
 class Rectangle {
-    fun init(self, w, h) {
+    fun __init__(self, w, h) {
         self.w = w;
         self.h = h;
     }
@@ -142,7 +142,7 @@ n.method();
 // === 13. Closure capturing self with fields ===
 print("=== closure captures self fields ===");
 class Accumulator {
-    fun init(self) {
+    fun __init__(self) {
         self.total = 0;
     }
     fun makeAdder(self) {
@@ -163,7 +163,7 @@ print(add(3));   // 18
 // === 14. getValue/setValue pattern ===
 print("=== get/set pattern ===");
 class Box {
-    fun init(self, value) {
+    fun __init__(self, value) {
         self.value = value;
     }
     fun setValue(self, value) {
@@ -178,8 +178,8 @@ print(b.getValue());  // 42
 b.setValue(99);
 print(b.getValue());  // 99
 
-// === 15. Instance with no init (zero-arg construction) ===
-print("=== no init ===");
+// === 15. Instance with no __init__ (zero-arg construction) ===
+print("=== no __init__ ===");
 class Simple {}
 var s = Simple();
 s.tag = "simple";
@@ -268,7 +268,7 @@ print(summer.sumTo(10));  // 55
 // === 22. Local variable in method shadows field name ===
 print("=== local shadows field ===");
 class Shadow {
-    fun init(self) {
+    fun __init__(self) {
         self.x = 10;
     }
     fun test(self) {
@@ -279,5 +279,123 @@ class Shadow {
 }
 var sh = Shadow();
 sh.test();
+
+// === 23. __str__ magic method ===
+print("=== __str__ magic method ===");
+class Greeting {
+    fun __init__(self, name) {
+        self.name = name;
+    }
+    fun __str__(self) {
+        return "Hello, " + self.name + "!";
+    }
+}
+var g2 = Greeting("Taro");
+print(g2);  // Hello, Taro!
+
+// === 24. __str__ without fields (constant string) ===
+print("=== __str__ constant ===");
+class Always {
+    fun __str__(self) {
+        return "always the same";
+    }
+}
+print(Always());  // always the same
+
+// === 25. __str__ calling another method ===
+print("=== __str__ calls method ===");
+class Pair {
+    fun __init__(self, a, b) {
+        self.a = a;
+        self.b = b;
+    }
+    fun format(self, v) {
+        return "[" + v + "]";
+    }
+    fun __str__(self) {
+        return self.format(self.a) + " and " + self.format(self.b);
+    }
+}
+var pair2 = Pair("one", "two");
+print(pair2);  // [one] and [two]
+
+// === 26. __str__ with closure inside ===
+print("=== __str__ with closure ===");
+class Wrapper {
+    fun __init__(self, val) {
+        self.val = val;
+    }
+    fun __str__(self) {
+        fun wrap(v) {
+            return "<<" + v + ">>";
+        }
+        return wrap(self.val);
+    }
+}
+var w = Wrapper("hello");
+print(w);  // <<hello>>
+
+// === 27. Instance without __str__ still uses default format ===
+print("=== no __str__ default ===");
+class NoStr {
+    fun __init__(self, n) {
+        self.n = n;
+    }
+}
+var ns = NoStr(42);
+print(ns);  // <instance of NoStr>
+
+// === 28. Inheritance: subclass inherits superclass method ===
+print("=== inheritance ===");
+class Animal {
+    fun speak(self) {
+        print("animal speaks");
+    }
+}
+class Dog extends Animal {
+    fun bark(self) {
+        print("woof");
+    }
+}
+var d = Dog();
+d.speak(); // inherited
+d.bark();  // own
+
+// === 29. Override method ===
+print("=== override ===");
+class Cat extends Animal {
+    fun speak(self) {
+        print("meow");
+    }
+}
+var c = Cat();
+c.speak(); // overridden
+
+// === 30. Inherited __init__ ===
+print("=== inherited __init__ ===");
+class Base {
+    fun __init__(self, value) {
+        self.value = value;
+    }
+}
+class Child extends Base {}
+var ch = Child(42);
+print(ch.value); // 42
+
+// === 31. Multi-level inheritance ===
+print("=== multi-level ===");
+class A {
+    fun a(self) { print("A"); }
+}
+class B extends A {
+    fun b(self) { print("B"); }
+}
+class C extends B {
+    fun c(self) { print("C"); }
+}
+var x = C();
+x.a();
+x.b();
+x.c();
 
 print("done");

@@ -507,7 +507,7 @@ pub fn test_self_in_method() {
     let mut vm = VirtualMachine::new();
     vm.interpret(r#"
         class Counter {
-            fun init(self) {
+            fun __init__(self) {
                 self.count = 0;
             }
             fun inc(self) {
@@ -526,11 +526,11 @@ pub fn test_self_in_method() {
 
 #[test]
 pub fn test_init_constructor() {
-    // init() runs automatically when calling the class.
+    // __init__() runs automatically when calling the class.
     let mut vm = VirtualMachine::new();
     vm.interpret(r#"
         class Point {
-            fun init(self, x, y) {
+            fun __init__(self, x, y) {
                 self.x = x;
                 self.y = y;
             }
@@ -544,11 +544,11 @@ pub fn test_init_constructor() {
 
 #[test]
 pub fn test_init_returns_instance() {
-    // Calling a class with init() should return the instance, not nil.
+    // Calling a class with __init__() should return the instance, not nil.
     let mut vm = VirtualMachine::new();
     vm.interpret(r#"
         class Person {
-            fun init(self, name) {
+            fun __init__(self, name) {
                 self.name = name;
             }
         }
@@ -590,7 +590,7 @@ pub fn test_undefined_property_is_error() {
 
 #[test]
 pub fn test_class_no_args_error() {
-    // Calling a class with args but no init should error.
+    // Calling a class with args but no __init__ should error.
     let mut vm = VirtualMachine::new();
     let result = vm.interpret(r#"
         class Empty {}
@@ -605,7 +605,7 @@ pub fn test_method_inherits_fields() {
     let mut vm = VirtualMachine::new();
     vm.interpret(r#"
         class Box {
-            fun init(self, value) {
+            fun __init__(self, value) {
                 self.value = value;
             }
             fun setValue(self, value) {
@@ -619,5 +619,236 @@ pub fn test_method_inherits_fields() {
         print(b.getValue());   // 42
         b.setValue(99);
         print(b.getValue());   // 99
+    "#).unwrap();
+}
+
+// ------------------------------------------------------------------------
+//  __str__ magic method
+// ------------------------------------------------------------------------
+
+#[test]
+pub fn test_str_method_custom_format() {
+    // __str__ returns a custom string representation.
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        class Greeting {
+            fun __init__(self, name) {
+                self.name = name;
+            }
+            fun __str__(self) {
+                return "Hello, " + self.name + "!";
+            }
+        }
+        var g = Greeting("Taro");
+        print(g);
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_str_method_constant() {
+    // __str__ that always returns the same string.
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        class Always {
+            fun __str__(self) {
+                return "always the same";
+            }
+        }
+        print(Always());
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_str_method_calls_other_method() {
+    // __str__ can call other methods on self.
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        class Pair {
+            fun __init__(self, a, b) {
+                self.a = a;
+                self.b = b;
+            }
+            fun format(self, v) {
+                return "[" + v + "]";
+            }
+            fun __str__(self) {
+                return self.format(self.a) + " and " + self.format(self.b);
+            }
+        }
+        var p = Pair("x", "y");
+        print(p);
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_str_method_with_closure() {
+    // __str__ using a nested closure.
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        class Wrapper {
+            fun __init__(self, val) {
+                self.val = val;
+            }
+            fun __str__(self) {
+                fun wrap(v) {
+                    return "<<" + v + ">>";
+                }
+                return wrap(self.val);
+            }
+        }
+        var w = Wrapper("hello");
+        print(w);
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_str_method_non_string_errors() {
+    // __str__ returning a non-string should be a runtime error.
+    let mut vm = VirtualMachine::new();
+    let result = vm.interpret(r#"
+        class Bad {
+            fun __str__(self) {
+                return 42;
+            }
+        }
+        var b = Bad();
+        print(b);
+    "#);
+    assert!(result.is_err(), "__str__ returning non-string should error");
+}
+
+#[test]
+pub fn test_str_without_method_defaults() {
+    // Instance without __str__ uses default format.
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        class Toast {}
+        var toast = Toast();
+        print(toast);
+    "#).unwrap();
+}
+
+// ------------------------------------------------------------------------
+//  Inheritance
+// ------------------------------------------------------------------------
+
+#[test]
+pub fn test_inherits_method() {
+    // Subclass inherits a method from its superclass.
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        class Animal {
+            fun speak(self) {
+                print("animal speaks");
+            }
+        }
+        class Dog extends Animal {}
+        var d = Dog();
+        d.speak();
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_overrides_method() {
+    // Subclass overrides a superclass method.
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        class Animal {
+            fun speak(self) {
+                print("animal");
+            }
+        }
+        class Cat extends Animal {
+            fun speak(self) {
+                print("meow");
+            }
+        }
+        var c = Cat();
+        c.speak();
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_inherits_init() {
+    // Subclass without __init__ inherits superclass __init__.
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        class Base {
+            fun __init__(self, value) {
+                self.value = value;
+            }
+            fun getValue(self) {
+                return self.value;
+            }
+        }
+        class Child extends Base {}
+        var c = Child(42);
+        print(c.getValue());
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_multi_level_inheritance() {
+    // Chain of three classes.
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        class A {
+            fun a(self) {
+                print("A");
+            }
+        }
+        class B extends A {
+            fun b(self) {
+                print("B");
+            }
+        }
+        class C extends B {
+            fun c(self) {
+                print("C");
+            }
+        }
+        var x = C();
+        x.a();
+        x.b();
+        x.c();
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_override_init() {
+    // Subclass overrides __init__.
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        class Animal {
+            fun __init__(self, name) {
+                self.name = name;
+            }
+        }
+        class Cat extends Animal {
+            fun __init__(self, name, color) {
+                self.name = name;
+                self.color = color;
+            }
+        }
+        var c = Cat("Kitty", "black");
+        print(c.name);
+        print(c.color);
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_inherited_method_uses_fields() {
+    // Inherited method accesses subclass instance fields.
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        class Base {
+            fun display(self) {
+                print(self.x);
+            }
+        }
+        class Derived extends Base {}
+        var d = Derived();
+        d.x = 99;
+        d.display();
     "#).unwrap();
 }
