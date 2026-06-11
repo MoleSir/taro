@@ -113,7 +113,7 @@ impl fmt::Display for Value {
             Value::Bool(v) => write!(f, "{}", v),
             Value::Nil => write!(f, "nil"),
             Value::String(s) => write!(f, "{}", s.as_str()),
-            Value::Object(h) => writeln!(f, "{}", h.0),
+            Value::Object(h) => writeln!(f, "Object({})", h.0),
         }
     }
 }

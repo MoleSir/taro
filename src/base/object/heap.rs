@@ -1,5 +1,5 @@
 use crate::{Chunk, ShrString, Value};
-use super::{BuiltinFn, Object, ObjectBuiltinFn, ObjectClosure, ObjectError, ObjectFunction, ObjectUpvalue};
+use super::{BuiltinFn, Object, ObjectBuiltinFn, ObjectClass, ObjectClosure, ObjectError, ObjectFunction, ObjectInstance, ObjectUpvalue};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ObjectHandle(pub usize);
@@ -42,8 +42,18 @@ impl ObjectHeap {
         self.alloc(obj)
     }
 
-    pub fn alloc_builtin_fn(&mut self, function: BuiltinFn) -> ObjectHandle {
-        let obj = ObjectBuiltinFn::new(function);
+    pub fn alloc_builtin_fn(&mut self, name: &'static str, function: BuiltinFn) -> ObjectHandle {
+        let obj = ObjectBuiltinFn::new(name, function);
+        self.alloc(obj)
+    }
+
+    pub fn alloc_class(&mut self, name: impl Into<ShrString>) -> ObjectHandle {
+        let obj = ObjectClass::new(name);
+        self.alloc(obj)
+    }
+
+    pub fn alloc_instance(&mut self, class: ObjectHandle) -> ObjectHandle {
+        let obj = ObjectInstance::new(class);
         self.alloc(obj)
     }
 
@@ -119,6 +129,26 @@ impl ObjectHeap {
         self.get_mut(handle).as_upvalue_mut()
     }
 
+    #[inline]
+    pub fn get_instance(&self, handle: ObjectHandle) -> Result<&ObjectInstance, ObjectError> {
+        self.get(handle).as_instance()
+    }
+
+    #[inline]
+    pub fn get_instance_mut(&mut self, handle: ObjectHandle) -> Result<&mut ObjectInstance, ObjectError> {
+        self.get_mut(handle).as_instance_mut()
+    }
+
+    #[inline]
+    pub fn get_class(&self, handle: ObjectHandle) -> Result<&ObjectClass, ObjectError> {
+        self.get(handle).as_class()
+    }
+
+    #[inline]
+    pub fn get_class_mut(&mut self, handle: ObjectHandle) -> Result<&mut ObjectClass, ObjectError> {
+        self.get_mut(handle).as_class_mut()
+    }
+
     // ================================================================================== //
     //           GC
     // ================================================================================== // 
@@ -153,7 +183,6 @@ impl ObjectHeap {
         }
     }
 
-
     fn blacken_object(&mut self, handle: ObjectHandle) {
         #[cfg(feature = "debug-gc")]
         println!("Blackening {:?}", handle);
@@ -179,7 +208,10 @@ impl ObjectHeap {
                     }
                 }
                 Object::Instance(instance) => {
-                    self.mark_object(instance.klass);
+                    self.mark_object(instance.class);
+                    for value in instance.fields.values() {
+                        self.mark_value(value);
+                    }
                 }
                 Object::BoundMethod(bound) => {
                     self.mark_object(bound.method);

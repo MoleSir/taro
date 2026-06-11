@@ -144,6 +144,18 @@ impl Chunk {
             Instruction::CloseUpvalue => {
                 self.write_op(ByteCode::CloseUpvalue);
             }
+
+            Instruction::Class(class_name) => {
+                self.write_const_op(ByteCode::Class, Value::String(class_name));
+            }
+
+            Instruction::SetProperty(class_name) => {
+                self.write_const_op(ByteCode::SetProperty, Value::String(class_name));
+            }
+
+            Instruction::GetProperty(class_name) => {
+                self.write_const_op(ByteCode::GetProperty, Value::String(class_name));
+            }
         }
     }
 
@@ -238,6 +250,19 @@ impl Chunk {
             }
             ByteCode::CloseUpvalue => {
                 Ok(Instruction::CloseUpvalue)
+            }
+
+            ByteCode::Class => {
+                let name = self.read_string_constant(ip)?;
+                Ok(Instruction::Class(name))
+            }
+            ByteCode::GetProperty => {
+                let field_name = self.read_string_constant(ip)?;
+                Ok(Instruction::GetProperty(field_name))
+            }
+            ByteCode::SetProperty => {
+                let field_name = self.read_string_constant(ip)?;
+                Ok(Instruction::SetProperty(field_name))
             }
         }
     }

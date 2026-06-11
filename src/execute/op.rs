@@ -1,4 +1,4 @@
-use crate::execute::{ExecuteError, ExecuteResult};
+use crate::{execute::{ExecuteError, ExecuteResult}, format_shr, Object, ShrString, ToShrString};
 use super::{Value, VirtualMachine};
 
 impl VirtualMachine {
@@ -138,6 +138,32 @@ impl VirtualMachine {
             (Value::Float(l), Value::Integer(r)) => Ok(Value::Bool(*l <= *r as f64)),
             (Value::String(l), Value::String(r)) => Ok(Value::Bool(l.as_str() <= r.as_str())),
             (lhs, rhs) => Err(ExecuteError::BinaryOpTypeMismatch("le", lhs.type_name(), rhs.type_name())),
+        }
+    }
+
+    pub fn str(&self, value: &Value) -> ExecuteResult<ShrString> {
+        match value {
+            Value::Float(v) => Ok(format_shr!("{}", v)),
+            Value::Integer(v) => Ok(format_shr!("{}", v)),
+            Value::Bool(v) => Ok(format_shr!("{}", v)),
+            Value::Nil => Ok("nil".to_shrstring()),
+            Value::String(s) => Ok(s.clone()),
+            Value::Object(h) => {
+                let object = self.obj_heap.get(*h);
+                match object {
+                    Object::Class(c) => Ok(format_shr!("<class '{}'>", c.name)),
+                    Object::BoundMethod(_) => Ok("<bound method>".into()),
+                    Object::BuiltinFn(function) => Ok(format_shr!("<built-in function {}>", function.name)),
+                    Object::Closure(_) => Ok("<closure>".into()),
+                    Object::Function(function) => Ok(format_shr!("<function {} at {}>", function.name, h.0)),
+                    Object::Instance(instance) => {
+                        // TODO: call __str__ method
+                        let class = self.obj_heap.get_class(instance.class)?;
+                        Ok(format_shr!("<instance of {}>", class.name))
+                    }
+                    Object::Upvalue(_) => Ok("<upvalue>".into()),
+                }
+            }
         }
     }
 

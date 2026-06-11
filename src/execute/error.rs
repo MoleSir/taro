@@ -1,4 +1,4 @@
-use crate::{compile::CompileError, ChunkError};
+use crate::{compile::CompileError, ChunkError, ObjectError};
 
 /// Error that can occur during the full interpret pipeline (compile + execute).
 #[derive(Debug)]
@@ -9,6 +9,9 @@ pub enum InterpretError {
 
 #[thiserrorctx::context_error]
 pub enum ExecuteError {
+    #[error(transparent)]
+    Object(#[from] ObjectError),
+
     #[error(transparent)]
     Chunk(#[from] ChunkError),
 
@@ -33,12 +36,15 @@ pub enum ExecuteError {
     #[error("expect type {0}, not got {1}")]
     UnexpectType(&'static str, &'static str),
 
-    #[error("Variable not found")]
+    #[error("Variable '{0}' not found")]
     VariableNotFound(String),
 
     #[error("Can't call {0}")]
     CanNotCall(&'static str),
 
     #[error("Expected {expcted} arguments but got {got}")]
-    ArgmentCountUnmatch { expcted: usize, got: usize }
+    ArgmentCountUnmatch { expcted: usize, got: usize },
+
+    #[error("Undefined property {0}")]
+    UndefinedProperty(String),
 }

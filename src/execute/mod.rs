@@ -60,7 +60,7 @@ impl VirtualMachine {
     }
 
     fn register_builtins(&mut self) {
-        self.define_builtin_fn("print", builtin::print);
+        self.define_builtin_fn("print", VirtualMachine::print);
     }
 
     /// Return a reference to the top-most (currently executing) call frame.
@@ -270,6 +270,35 @@ impl VirtualMachine {
                     self.close_upvalues(top_slot)?;
                     self.pop_stack()?;
                 }
+
+                Instruction::Class(class_name) => {
+                    let class = self.obj_heap.alloc_class(class_name);
+                    self.push_stack(class);
+                }
+                Instruction::GetProperty(field_name) => {
+                    let instance = self.peek_stack(0)?.as_object()?;
+                    let instance = self.obj_heap.get_instance(instance)?;
+                    
+                    match instance.fields.get(&field_name).cloned() {
+                        Some(value) => {
+                            self.pop_stack()?;
+                            self.push_stack(value);
+                        }
+                        None => {
+                            Err(ExecuteError::UndefinedProperty(field_name.to_string()))?
+                        }
+                    }
+                }
+                Instruction::SetProperty(field_name) => {
+                    let value = self.peek_stack(0)?.clone();
+                    let instance = self.peek_stack(1)?.as_object()?;
+                    let instance = self.obj_heap.get_instance_mut(instance)?;
+                    instance.fields.insert(field_name, value);
+
+                    let value = self.pop_stack()?;
+                    self.pop_stack()?;
+                    self.push_stack(value);
+                }
             }
 
             // Persist the (potentially modified) ip back into the frame.
@@ -302,9 +331,14 @@ impl VirtualMachine {
             let obj = self.obj_heap.get(handle);
             match obj {
                 Object::Closure(_) => self.call(handle, arg_count),
+                Object::Class(_) => {
+                    let instance = self.obj_heap.alloc_instance(handle);
+                    let index = self.stack.len() - arg_count - 1;
+                    self.stack[index] = Value::Object(instance);
+                    Ok(())
+                }
                 Object::BuiltinFn(builtin_fn) => {
-                    let args = &self.stack[self.stack.len() - arg_count..];
-                    let result = (builtin_fn.function)(args)?;
+                    let result = (builtin_fn.function)(self, arg_count)?;
                     self.stack.truncate(self.stack.len() - arg_count - 1);
                     self.push_stack(result);
                     Ok(())
@@ -328,8 +362,8 @@ impl VirtualMachine {
         Ok(())
     }
 
-    fn define_builtin_fn(&mut self, name: impl Into<ShrString>, function: BuiltinFn) {
-        let function = self.obj_heap.alloc_builtin_fn(function);
+    fn define_builtin_fn(&mut self, name: &'static str, function: BuiltinFn) {
+        let function = self.obj_heap.alloc_builtin_fn(name, function);
         self.globals.insert(name.into(), Value::Object(function));
     }
 

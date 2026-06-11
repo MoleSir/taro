@@ -1,4 +1,6 @@
-use crate::{execute::ExecuteResult, Chunk, ShrString, Value};
+use std::collections::HashMap;
+
+use crate::{execute::{ExecuteResult, VirtualMachine}, Chunk, ShrString, Value};
 use super::ObjectHandle;
 
 pub struct ObjectFunction {
@@ -13,15 +15,16 @@ impl ObjectFunction {
     }
 }
 
-pub type BuiltinFn = fn (&[Value]) -> ExecuteResult<Value>;
+pub type BuiltinFn = fn (&mut VirtualMachine, arg_count: usize) -> ExecuteResult<Value>;
 
 pub struct ObjectBuiltinFn {
+    pub name: &'static str,
     pub function: BuiltinFn,
 }
 
 impl ObjectBuiltinFn {
-    pub fn new(function: BuiltinFn) -> Self {
-        Self { function }
+    pub fn new(name: &'static str, function: BuiltinFn) -> Self {
+        Self { name, function }
     }
 }
 
@@ -39,7 +42,30 @@ pub struct ObjectUpvalue {
 }
 
 pub struct ObjectClass {
+    pub name: ShrString,
 
+}
+
+impl ObjectClass {
+    pub fn new(name: impl Into<ShrString>) -> Self {
+        Self { 
+            name: name.into() 
+        }
+    }
+}
+
+pub struct ObjectInstance {
+    pub class: ObjectHandle,
+    pub fields: HashMap<ShrString, Value>,
+}
+
+impl ObjectInstance {
+    pub fn new(class: ObjectHandle) -> Self {
+        Self {
+            class,
+            fields: HashMap::new(),
+        }
+    }
 }
 
 pub struct ObjectClosure {
@@ -54,10 +80,6 @@ impl ObjectClosure {
             upvalues: vec![],
         }
     }
-}
-
-pub struct ObjectInstance {
-    pub klass: ObjectHandle,
 }
 
 pub struct ObjectBoundMethod {

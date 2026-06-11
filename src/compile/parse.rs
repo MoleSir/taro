@@ -75,7 +75,7 @@ fn get_rule(kind: TokenKind) -> ParseRule {
         TokenKind::LeftBrace    => ParseRule::NONE,
         TokenKind::RightBrace   => ParseRule::NONE,
         TokenKind::Comma        => ParseRule::NONE,
-        TokenKind::Dot          => ParseRule::NONE,
+        TokenKind::Dot          => ParseRule::new(None, Some(Parser::dot), Prec::Call),
         TokenKind::Minus        => ParseRule::new(Some(Parser::unary), Some(Parser::binary), Prec::Term),
         TokenKind::Plus         => ParseRule::new(None, Some(Parser::binary), Prec::Term),
         TokenKind::Semicolon    => ParseRule::NONE,
@@ -326,9 +326,25 @@ impl<'a> Parser<'a> {
             self.var_declaration()
         } else if self.match_token(TokenKind::Fun) {
             self.fun_declaration()
+        } else if self.match_token(TokenKind::Class) {
+            self.class_declaration()
         } else {
             self.statement()
         }
+    }
+
+    fn class_declaration(&mut self) -> ParseResult<()> {
+        self.consume(TokenKind::Identifier, "Expect class name.")?;
+        let class_name = ShrString::new_string(self.previous().lexeme);
+        self.declare_variable(class_name.clone())?;
+
+        self.emit(Instruction::Class(class_name.clone()));
+        self.define_variable(Some(class_name))?;
+
+        self.consume(TokenKind::LeftBrace, "Expect '{' before class body.")?;
+        self.consume(TokenKind::RightBrace, "Expect '}' after class body.")?;
+
+        Ok(())
     }
 
     fn fun_declaration(&mut self) -> ParseResult<()> {
@@ -355,16 +371,11 @@ impl<'a> Parser<'a> {
     }
 
     fn define_variable(&mut self, var_name: Option<ShrString>) -> ParseResult<()> {
-        match var_name {
-            Some(var_name) => {
-                // global
-                self.emit(Instruction::DefineGlobal(var_name));
-            }
-            None => {
-                // local
-                assert!(self.cur_unit().scope_depth > 0);
-                self.mark_initialized();
-            }
+        if self.cur_unit().scope_depth > 0 {
+            self.mark_initialized();
+        } else {
+            assert!(var_name.is_some());
+            self.emit(Instruction::DefineGlobal(var_name.unwrap()));
         }
         Ok(())
     }
@@ -621,25 +632,33 @@ impl<'a> Parser<'a> {
         self.consume(TokenKind::Identifier, msg)?;
         let var_name = ShrString::new_string(self.previous().lexeme);
 
+        self.declare_variable(var_name.clone())?;
+
         if self.cur_unit().scope_depth > 0 {
-            // local
-            let scope_depth = self.cur_unit().scope_depth;
-            for local in self.cur_unit().locals.iter().rev() {
-                // Sentinel depth (-1) means the variable is still in its initializer;
-                // it's still "in scope" for redefinition checking so we skip the break.
-                if local.depth != -1 && local.depth < scope_depth {
-                    break;
-                }
-                if var_name == local.name {
-                    bail_error_at_previous!(self, ParseReason::VariableRedefine(var_name.to_string()));
-                }
-            }
-            self.add_local(var_name)?;
             Ok(None)
         } else {
-            // global
             Ok(Some(var_name))
         }
+    }
+
+    fn declare_variable(&mut self, var_name: ShrString) -> ParseResult<()> {
+        if self.cur_unit().scope_depth == 0 {
+            return Ok(());
+        }
+
+        let scope_depth = self.cur_unit().scope_depth;
+        for local in self.cur_unit().locals.iter().rev() {
+            // Sentinel depth (-1) means the variable is still in its initializer;
+            // it's still "in scope" for redefinition checking so we skip the break.
+            if local.depth != -1 && local.depth < scope_depth {
+                break;
+            }
+            if var_name == local.name {
+                bail_error_at_previous!(self, ParseReason::VariableRedefine(var_name.to_string()));
+            }
+        }
+        self.add_local(var_name)?;
+        Ok(())
     }
 
     fn add_local(&mut self, name: ShrString) -> ParseResult<()> {
@@ -790,6 +809,20 @@ impl<'a> Parser<'a> {
     fn call(parser: &mut Parser<'_>, _can_assign: bool) -> ParseResult<()> {
         let arg_count = parser.argument_list()?;
         parser.emit(Instruction::Call(arg_count));
+        Ok(())
+    }
+
+    fn dot(parser: &mut Parser<'_>, can_assign: bool) -> ParseResult<()> {
+        parser.consume(TokenKind::Identifier, "Expect property name after '.'.")?;
+        let field_name = ShrString::new_string(parser.previous().lexeme.to_string());
+
+        if can_assign && parser.match_token(TokenKind::Equal) {
+            parser.expression()?;
+            parser.emit(Instruction::SetProperty(field_name));
+        } else {
+            parser.emit(Instruction::GetProperty(field_name));
+        }
+
         Ok(())
     }
 
