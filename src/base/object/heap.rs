@@ -7,17 +7,9 @@ pub struct ObjectHandle(pub usize);
 pub struct ObjectHeap {
     objects: Vec<Option<Object>>,
     marked: Vec<bool>,
-    
     free_slots: Vec<usize>,
-
     gray_stack: Vec<ObjectHandle>,
-    
-    children_buffer: Vec<ObjectHandle>,
-
-    bytes_allocated: usize,
-    
-    #[allow(unused)]
-    next_gc: usize,
+    pub bytes_allocated: usize,
 }
 
 impl ObjectHeap {
@@ -27,9 +19,7 @@ impl ObjectHeap {
             marked: Vec::new(),
             free_slots: Vec::new(),
             gray_stack: Vec::new(),
-            children_buffer: Vec::new(),
             bytes_allocated: 0,
-            next_gc: 1024 * 1024, // 初始阈值 1MB
         }
     }
 
@@ -133,9 +123,14 @@ impl ObjectHeap {
     //           GC
     // ================================================================================== // 
 
-    pub fn mark_value(&mut self, value: Value) {
+    pub fn collect_garbage(&mut self) {
+        self.trace_references();
+        self.sweep();
+    }
+
+    pub fn mark_value(&mut self, value: &Value) {
         if let Value::Object(handle) = value {
-            self.mark_object(handle);
+            self.mark_object(*handle);
         }
     }
 
@@ -158,20 +153,43 @@ impl ObjectHeap {
         }
     }
 
+
     fn blacken_object(&mut self, handle: ObjectHandle) {
         #[cfg(feature = "debug-gc")]
         println!("Blackening {:?}", handle);
-
-        self.children_buffer.clear();
-
-        if let Some(obj) = &self.objects[handle.0] {
-            obj.extract_children(&mut self.children_buffer);
+    
+        let object = self.objects[handle.0].take();
+        if let Some(ref obj) = object {
+            match obj {
+                Object::Function(function) => {
+                    for value in function.chunk.constants.iter() {
+                        self.mark_value(value);
+                    }
+                }
+                Object::Closure(closure) => {
+                    self.mark_object(closure.function);
+                    for &upvalue in &closure.upvalues {
+                        self.mark_object(upvalue);
+                    }
+                }
+                Object::Upvalue(upvalue) => {
+                    self.mark_value(&upvalue.closed);
+                    if let Some(next) = upvalue.next {
+                        self.mark_object(next);
+                    }
+                }
+                Object::Instance(instance) => {
+                    self.mark_object(instance.klass);
+                }
+                Object::BoundMethod(bound) => {
+                    self.mark_object(bound.method);
+                    self.mark_value(&bound.receiver);
+                }
+                _ => {}
+            }
         }
-
-        let children = self.children_buffer.clone(); // 只是 clone 一些 usize，开销极小
-        for child_handle in children {
-            self.mark_object(child_handle);
-        }
+    
+        self.objects[handle.0] = object;
     }
 
     pub fn sweep(&mut self) {
@@ -185,34 +203,9 @@ impl ObjectHeap {
                     
                     self.objects[i] = None;
                     self.free_slots.push(i);
+                    self.bytes_allocated -= std::mem::size_of::<Object>();
                 }
             }
-        }
-    }
-}
-
-impl Object {
-    pub fn extract_children(&self, out_children: &mut Vec<ObjectHandle>) {
-        match self {
-            Object::Closure(closure) => {
-                out_children.push(closure.function);
-                out_children.extend(&closure.upvalues);
-            }
-            Object::Upvalue(upvalue) => {
-                if let Some(next) = upvalue.next {
-                    out_children.push(next);
-                }
-            }
-            Object::Instance(instance) => {
-                out_children.push(instance.klass);
-            }
-            Object::BoundMethod(bound) => {
-                out_children.push(bound.method);
-                if let Value::Object(h) = bound.receiver {
-                    out_children.push(h);
-                }
-            }
-            _ => {}
         }
     }
 }

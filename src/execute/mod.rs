@@ -1,6 +1,7 @@
 mod op;
 mod builtin;
 mod error;
+mod gc;
 pub use error::*;
 #[cfg(test)]
 mod tests;
@@ -14,6 +15,7 @@ pub struct VirtualMachine {
     globals: HashMap<ShrString, Value>,
     /// Sorted (by descending location) linked list of open upvalues.
     open_upvalues: Vec<ObjectHandle>,
+    gc_threshold: usize,
 }
 
 /// A single function-call frame.  `slots_start` is the index into
@@ -51,6 +53,7 @@ impl VirtualMachine {
             stack: vec![],
             globals: HashMap::new(),
             open_upvalues: vec![],
+            gc_threshold: 1024 * 1026,
         };
         vm.register_builtins();
         vm
@@ -94,6 +97,8 @@ impl VirtualMachine {
 
     pub fn run(&mut self) -> ExecuteResult<()> {
         loop {
+            self.try_collect_garbage();
+
             // Copy `ip` out of the frame so we can work with a local
             // variable — this avoids a lingering mutable borrow on
             // `self.frames` that would prevent access to `self.stack`.
