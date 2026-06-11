@@ -1310,3 +1310,126 @@ fn test_closure_multiple_upvalues() {
         "should read upvalue 1 (b)"
     );
 }
+
+// ------------------------------------------------------------------------
+//  Classes & Instances — bytecode verification
+// ------------------------------------------------------------------------
+
+#[test]
+fn test_class_declaration_bytecode() {
+    // class Toast {}
+    //   Class("Toast")           3 bytes  (opcode + u16 const idx)
+    //   DefineGlobal("Toast")    3 bytes  (opcode + u16 const idx)
+    //   GetGlobal("Toast")       3 bytes  (opcode + u16 const idx)
+    //   Pop                      1 byte
+    //   Nil                      1 byte
+    //   Return                   1 byte
+    let c = codes("class Toast {}");
+    assert_eq!(c[0], ByteCode::Class as u8);
+    assert_eq!(c[3], ByteCode::DefineGlobal as u8);
+    assert_eq!(c[6], ByteCode::GetGlobal as u8);
+    assert_eq!(c[9], ByteCode::Pop as u8, "should pop class after body");
+}
+
+#[test]
+fn test_class_with_method_bytecode() {
+    // class Scone { fun topping() {} }
+    // Script:  Class("Scone")  Closure{topping_fn, []}  DefineGlobal("Scone")
+    //          GetGlobal("Scone")  Method("topping")  Pop  Nil  Return
+    let c = codes("class Scone { fun topping() {} }");
+    assert!(
+        c.iter().any(|&b| b == ByteCode::Class as u8),
+        "should contain Class"
+    );
+    assert!(
+        c.iter().any(|&b| b == ByteCode::Method as u8),
+        "should contain Method"
+    );
+}
+
+#[test]
+fn test_property_get_and_set_bytecode() {
+    // { var p = Pair(); p.first = 1; print(p.first); }
+    let c = codes("{ var p = Pair(); p.first = 1; print(p.first); }");
+    assert!(
+        c.iter().any(|&b| b == ByteCode::GetProperty as u8),
+        "should contain GetProperty"
+    );
+    assert!(
+        c.iter().any(|&b| b == ByteCode::SetProperty as u8),
+        "should contain SetProperty"
+    );
+}
+
+#[test]
+fn test_invoke_bytecode() {
+    // obj.method(args) should emit Invoke, not GetProperty + Call
+    let c = codes("{ var s = Scone(); s.topping(\"berries\", \"cream\"); }");
+    assert!(
+        c.iter().any(|&b| b == ByteCode::Invoke as u8),
+        "method call should emit Invoke"
+    );
+}
+
+#[test]
+fn test_init_method_returns_self() {
+    // class Foo { fun init(self, x) { self.x = x; } }
+    // The init method should end with GetLocal(0); Return (return self),
+    // not Nil; Return.
+    let (c, obj_heap) = compile_with_heap(
+        "class Foo { fun init(self, x) { self.x = x; } }"
+    );
+    let script_insts = instructions(&c);
+    for inst in &script_insts {
+        if let Instruction::Closure { function, .. } = inst {
+            let fn_obj = obj_heap
+                .get(function.as_object().unwrap())
+                .as_function()
+                .unwrap();
+            if fn_obj.name.as_str() == "init" {
+                let fn_insts = instructions(&fn_obj.chunk);
+                let last = &fn_insts[fn_insts.len() - 2];
+                assert!(
+                    matches!(last, Instruction::GetLocal(0)),
+                    "init should end with GetLocal(0) (return self), got {:?}",
+                    last
+                );
+                assert!(matches!(
+                    fn_insts.last().unwrap(),
+                    Instruction::Return
+                ));
+                return; // verified
+            }
+        }
+    }
+    panic!("init method not found in compiled output");
+}
+
+#[test]
+fn test_self_parameter_is_slot_zero() {
+    // A method `fun m(self) { return self; }` should emit GetLocal(0).
+    // With explicit self, the first parameter is slot 0.
+    let (c, obj_heap) = compile_with_heap(
+        "class Foo { fun m(self) { return self; } }"
+    );
+    let script_insts = instructions(&c);
+    for inst in &script_insts {
+        if let Instruction::Closure { function, .. } = inst {
+            let fn_obj = obj_heap
+                .get(function.as_object().unwrap())
+                .as_function()
+                .unwrap();
+            if fn_obj.name.as_str() == "m" {
+                let fn_insts = instructions(&fn_obj.chunk);
+                assert!(
+                    fn_insts
+                        .iter()
+                        .any(|i| matches!(i, Instruction::GetLocal(0))),
+                    "method reading 'self' should emit GetLocal(0)"
+                );
+                return;
+            }
+        }
+    }
+    panic!("method 'm' not found");
+}

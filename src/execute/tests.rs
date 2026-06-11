@@ -431,3 +431,193 @@ pub fn test_multiple_independent_upvalues() {
         print(c()); // a=3, b=30 → 3*100+30 = 330
     "#).unwrap();
 }
+
+// ------------------------------------------------------------------------
+//  Classes & Instances — runtime behaviour
+// ------------------------------------------------------------------------
+
+#[test]
+pub fn test_basic_class_instance_creation() {
+    // Create a class, create an instance, print it.
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        class Toast {}
+        var toast = Toast();
+        print(toast);
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_instance_field_get_set() {
+    // Set and get instance fields.
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        class Pair {}
+        var pair = Pair();
+        pair.first = 1;
+        pair.second = 2;
+        print(pair.first + pair.second); // 3
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_instance_field_expression_value() {
+    // Assignment is an expression — the assigned value is returned.
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        class Toast {}
+        var toast = Toast();
+        print(toast.jam = "grape"); // "grape"
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_method_call_no_params() {
+    // Call a method that only has self as parameter.
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        class Greeter {
+            fun hello(self) {
+                print("hello");
+            }
+        }
+        var g = Greeter();
+        g.hello();
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_method_call_with_params() {
+    // Method with explicit self and multiple parameters.
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        class Scone {
+            fun topping(self, first, second) {
+                print("scone with " + first + " and " + second);
+            }
+        }
+        var scone = Scone();
+        scone.topping("berries", "cream");
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_self_in_method() {
+    // `self` inside a method refers to the instance.
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        class Counter {
+            fun init(self) {
+                self.count = 0;
+            }
+            fun inc(self) {
+                self.count = self.count + 1;
+            }
+            fun get(self) {
+                return self.count;
+            }
+        }
+        var c = Counter();
+        c.inc();
+        c.inc();
+        print(c.get()); // 2
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_init_constructor() {
+    // init() runs automatically when calling the class.
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        class Point {
+            fun init(self, x, y) {
+                self.x = x;
+                self.y = y;
+            }
+        }
+        var p = Point(3, 4);
+        print(p.x);           // 3
+        print(p.y);           // 4
+        print(p.x + p.y);     // 7
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_init_returns_instance() {
+    // Calling a class with init() should return the instance, not nil.
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        class Person {
+            fun init(self, name) {
+                self.name = name;
+            }
+        }
+        var p = Person("Alice");
+        print(p.name); // "Alice"
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_nested_function_in_method_captures_self() {
+    // A closure inside a method should be able to capture `self`.
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        class Nested {
+            fun method(self) {
+                fun inner() {
+                    print(self);
+                }
+                print("in Nested::method");
+                inner();
+            }
+        }
+        var n = Nested();
+        n.method();
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_undefined_property_is_error() {
+    // Accessing a non-existent property should fail at runtime.
+    let mut vm = VirtualMachine::new();
+    let result = vm.interpret(r#"
+        class Empty {}
+        var e = Empty();
+        print(e.nope);
+    "#);
+    assert!(result.is_err(), "accessing undefined property should error");
+}
+
+#[test]
+pub fn test_class_no_args_error() {
+    // Calling a class with args but no init should error.
+    let mut vm = VirtualMachine::new();
+    let result = vm.interpret(r#"
+        class Empty {}
+        var e = Empty(1);
+    "#);
+    assert!(result.is_err(), "class without init should not accept args");
+}
+
+#[test]
+pub fn test_method_inherits_fields() {
+    // Methods share the same instance fields.
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        class Box {
+            fun init(self, value) {
+                self.value = value;
+            }
+            fun setValue(self, value) {
+                self.value = value;
+            }
+            fun getValue(self) {
+                return self.value;
+            }
+        }
+        var b = Box(42);
+        print(b.getValue());   // 42
+        b.setValue(99);
+        print(b.getValue());   // 99
+    "#).unwrap();
+}

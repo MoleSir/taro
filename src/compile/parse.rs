@@ -109,7 +109,6 @@ fn get_rule(kind: TokenKind) -> ParseRule {
         TokenKind::Or           => ParseRule::new(None, Some(Parser::or), Prec::Or),
         TokenKind::Return       => ParseRule::NONE,
         TokenKind::Super        => ParseRule::NONE,
-        TokenKind::This         => ParseRule::new(Some(Parser::this), None, Prec::None),
         TokenKind::True         => ParseRule::new(Some(Parser::literal), None, Prec::None),
         TokenKind::Var          => ParseRule::NONE,
         TokenKind::While        => ParseRule::NONE,
@@ -136,8 +135,14 @@ pub struct Local {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FunctionKind {
+    /// Regular function — the closure lives at stack slot 0 (placed by
+    /// `OP_CALL`), so we reserve slot 0 with a dummy local.
     Function,
+    /// Method — the receiver (`self`) lives at stack slot 0 (placed by
+    /// `OP_INVOKE` or bound-method call).  No dummy needed because the
+    /// user-declared `self` parameter naturally occupies slot 0.
     Method,
+    /// Top-level script — same layout as `Function`.
     Script,
 }
 
@@ -252,11 +257,20 @@ macro_rules! record_error_at_previous {
 
 impl CompilationUnit {
     fn new(obj_heap: &mut ObjectHeap, name: impl Into<ShrString>, kind: FunctionKind, enclosing: usize) -> Self {
-        let local_name = if kind != FunctionKind::Function { "this" } else { "" };
+        // For regular functions and the top-level script, stack slot 0 holds
+        // the closure (placed by `OP_CALL`).  We reserve it with a dummy
+        // entry so the first user-declared local / parameter starts at slot 1.
+        // For methods, slot 0 holds the receiver (`self`), which is the first
+        // explicit parameter — no dummy needed.
+        let locals = if kind == FunctionKind::Method {
+            vec![]
+        } else {
+            vec![Local { depth: 0, name: "".into(), is_captured: false }]
+        };
         Self {
             function: obj_heap.alloc_function(name.into(), 0, Chunk::new()),
             kind,
-            locals: vec![Local { depth: 0, name: local_name.into(), is_captured: false }],
+            locals,
             scope_depth: 0,
             upvalues: vec![],
             enclosing,
@@ -317,7 +331,21 @@ impl<'a> Parser<'a> {
     /// Finish the current compilation unit: emit an implicit `return nil`,
     /// pop the unit from the stack, and restore the enclosing unit.
     fn end_parse(&mut self) -> (ObjectHandle, Vec<UpvalueDesc>) {
-        self.emit_return();
+        let is_init = {
+            let unit = self.cur_unit();
+            self.obj_heap
+                .get_function(unit.function)
+                .map(|f| f.name.as_str() == "init")
+                .unwrap_or(false)
+        };
+        if is_init {
+            // init() should return the receiver (this), not nil.
+            self.emit(Instruction::GetLocal(0));
+            self.emit(Instruction::Return);
+        } else {
+            self.emit(Instruction::Nil);
+            self.emit(Instruction::Return);
+        }
         let unit = self.units.pop().expect("at least the root unit");
         self.current_unit = unit.enclosing;
         (unit.function, unit.upvalues)
@@ -413,8 +441,7 @@ impl<'a> Parser<'a> {
 
         let method_name = ShrString::new_string(self.previous().lexeme);
 
-        let kind = FunctionKind::Method;
-        self.function(kind)?;
+        self.function(FunctionKind::Method)?;
 
         self.emit(Instruction::Method(method_name));
 
@@ -884,7 +911,11 @@ impl<'a> Parser<'a> {
         parser.consume(TokenKind::Identifier, "Expect property name after '.'.")?;
         let field_name = ShrString::new_string(parser.previous().lexeme.to_string());
 
-        if can_assign && parser.match_token(TokenKind::Equal) {
+        if parser.match_token(TokenKind::LeftParen) {
+            // Method invocation — optimized OP_INVOKE.
+            let arg_count = parser.argument_list()?;
+            parser.emit(Instruction::Invoke(field_name, arg_count));
+        } else if can_assign && parser.match_token(TokenKind::Equal) {
             parser.expression()?;
             parser.emit(Instruction::SetProperty(field_name));
         } else {
@@ -892,10 +923,6 @@ impl<'a> Parser<'a> {
         }
 
         Ok(())
-    }
-
-    fn this(parser: &mut Parser<'_>, _can_assign: bool) -> ParseResult<()> {
-        Parser::variable(parser, false)
     }
 
     fn argument_list(&mut self) -> ParseResult<usize> {

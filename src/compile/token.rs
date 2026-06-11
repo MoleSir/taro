@@ -47,7 +47,6 @@ pub enum TokenKind {
     Or,
     Return,
     Super,
-    This,
     True,
     Var,
     While,

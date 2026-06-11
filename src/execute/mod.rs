@@ -315,6 +315,29 @@ impl VirtualMachine {
                 Instruction::Method(method_name) => {
                     self.define_method(method_name)?;
                 }
+
+                Instruction::Invoke(method_name, arg_count) => {
+                    // Look up the method on the receiver's class.
+                    let method_handle = {
+                        let receiver = self.peek_stack(arg_count)?.clone();
+                        let instance_handle = receiver.as_object()?;
+                        let instance = self.obj_heap.get_instance(instance_handle)?;
+                        let class = self.obj_heap.get_class(instance.class)?;
+                        class
+                            .methods
+                            .get(&method_name)
+                            .ok_or_else(|| {
+                                ExecuteError::UndefinedProperty(method_name.as_str().to_string())
+                            })?
+                            .clone()
+                    }; // all borrows released before calling call_method()
+
+                    // Save ip before switching to callee frame (same pattern as Call).
+                    // +1 for the receiver (explicit self), which is already on the stack.
+                    self.frame_mut()?.ip = ip;
+                    self.call_method(method_handle, arg_count + 1)?;
+                    continue; // skip writing ip back — callee frame is now active
+                }
             }
 
             // Persist the (potentially modified) ip back into the frame.
@@ -348,15 +371,30 @@ impl VirtualMachine {
             match obj {
                 Object::Closure(_) => self.call(handle, arg_count),
                 Object::Class(_) => {
+                    // Look up init() before allocating the instance (avoid borrow conflict).
+                    let init_handle = {
+                        let class = self.obj_heap.get_class(handle)?;
+                        class.methods.get("init").copied()
+                    };
                     let instance = self.obj_heap.alloc_instance(handle);
                     let index = self.stack.len() - arg_count - 1;
                     self.stack[index] = Value::Object(instance);
-                    Ok(())
+                    if let Some(init_handle) = init_handle {
+                        // Call the init() method on the fresh instance.
+                        // +1 for the receiver (explicit self), already on the stack.
+                        self.call_method(init_handle, arg_count + 1)
+                    } else if arg_count != 0 {
+                        Err(ExecuteError::ArgmentCountUnmatch { expcted: 0, got: arg_count, })?;
+                        unreachable!()
+                    } else {
+                        Ok(())
+                    }
                 }
                 Object::BoundMethod(bound_method) => {
                     let index = self.stack.len() - arg_count - 1;
                     self.stack[index] = bound_method.receiver.clone();
-                    self.call(bound_method.method, arg_count)
+                    // +1 for the receiver (explicit self), already on the stack.
+                    self.call_method(bound_method.method, arg_count + 1)
                 }
                 Object::BuiltinFn(builtin_fn) => {
                     let result = (builtin_fn.function)(self, arg_count)?;
@@ -371,14 +409,37 @@ impl VirtualMachine {
         }
     }
     
+    /// Push a call frame for a regular function call.
+    ///
+    /// The closure lives on the stack at `slots_start` (slot 0), followed by the
+    /// arguments at slots 1..=arg_count.  This matches the layout produced by
+    /// `OP_CALL`.
     fn call(&mut self, closure_handle: ObjectHandle, arg_count: usize) -> ExecuteResult<()> {
         let closure = self.obj_heap.get_closure(closure_handle).expect("must closure");
         let function = self.obj_heap.get_function(closure.function).expect("must function");
         if arg_count != function.arity {
             Err(ExecuteError::ArgmentCountUnmatch { expcted: function.arity, got: arg_count })?;
         }
-        
+
         let frame = CallFrame { closure: closure_handle, ip: 0, slots_start: self.stack.len() - arg_count - 1 };
+        self.frames.push(frame);
+        Ok(())
+    }
+
+    /// Push a call frame for a method call (via `OP_INVOKE`, bound-method,
+    /// or class instantiation with `init()`).
+    ///
+    /// The receiver is already on the stack at `slots_start` (slot 0) and
+    /// counts toward `arg_count` (explicit `self`).  There is no closure on
+    /// the stack, unlike `call()`.
+    fn call_method(&mut self, closure_handle: ObjectHandle, arg_count: usize) -> ExecuteResult<()> {
+        let closure = self.obj_heap.get_closure(closure_handle).expect("must closure");
+        let function = self.obj_heap.get_function(closure.function).expect("must function");
+        if arg_count != function.arity {
+            Err(ExecuteError::ArgmentCountUnmatch { expcted: function.arity, got: arg_count })?;
+        }
+
+        let frame = CallFrame { closure: closure_handle, ip: 0, slots_start: self.stack.len() - arg_count };
         self.frames.push(frame);
         Ok(())
     }

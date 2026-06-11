@@ -1,0 +1,283 @@
+// Class tests — comprehensive coverage
+
+// === 1. Empty class, create instance ===
+print("=== empty class ===");
+class Empty {}
+var e = Empty();
+print(e);  // instance
+
+// === 2. Instance field get/set ===
+print("=== field get/set ===");
+class Pair {}
+var pair = Pair();
+pair.first = 1;
+pair.second = 2;
+print(pair.first + pair.second);  // 3
+
+// === 3. Assignment expression value ===
+print("=== assignment expression ===");
+class Toast {}
+var toast = Toast();
+print(toast.jam = "grape");  // grape
+
+// === 4. Method with no extra params (only self) ===
+print("=== method no params ===");
+class Greeter {
+    fun hello(self) {
+        print("hello from Greeter");
+    }
+}
+var g = Greeter();
+g.hello();
+
+// === 5. Method with params ===
+print("=== method with params ===");
+class Scone {
+    fun topping(self, first, second) {
+        print("scone with " + first + " and " + second);
+    }
+}
+var scone = Scone();
+scone.topping("berries", "cream");
+
+// === 6. Constructor (init) with params ===
+print("=== constructor ===");
+class Point {
+    fun init(self, x, y) {
+        self.x = x;
+        self.y = y;
+    }
+}
+var p = Point(3, 4);
+print(p.x);        // 3
+print(p.y);        // 4
+print(p.x + p.y);  // 7
+
+// === 7. Init returns instance ===
+print("=== init returns instance ===");
+class Person {
+    fun init(self, name) {
+        self.name = name;
+    }
+}
+var alice = Person("Alice");
+print(alice.name);  // Alice
+
+// === 8. self fields mutation across methods ===
+print("=== self mutation ===");
+class Counter {
+    fun init(self) {
+        self.count = 0;
+    }
+    fun inc(self) {
+        self.count = self.count + 1;
+    }
+    fun get(self) {
+        return self.count;
+    }
+}
+var c = Counter();
+c.inc();
+c.inc();
+print(c.get());  // 2
+
+// === 9. Multiple independent instances ===
+print("=== independent instances ===");
+var c2 = Counter();
+c2.inc();
+print(c.get());   // 2  (unchanged)
+print(c2.get());  // 1
+
+// === 10. Method with return value ===
+print("=== method return value ===");
+class Calculator {
+    fun add(self, a, b) {
+        return a + b;
+    }
+    fun mul(self, a, b) {
+        return a * b;
+    }
+}
+var calc = Calculator();
+print(calc.add(10, 20));   // 30
+print(calc.mul(7, 8));     // 56
+print(calc.add(calc.mul(2, 3), 4));  // 10
+
+// === 11. Method calling another method on self ===
+print("=== method chaining on self ===");
+class Rectangle {
+    fun init(self, w, h) {
+        self.w = w;
+        self.h = h;
+    }
+    fun area(self) {
+        return self.w * self.h;
+    }
+    fun perimeter(self) {
+        return 2 * (self.w + self.h);
+    }
+    fun describe(self) {
+        print(self.area() + self.perimeter());
+    }
+}
+var rect = Rectangle(3, 5);
+print(rect.area());       // 15
+print(rect.perimeter());  // 16
+rect.describe();          // 31
+
+// === 12. Nested closure capturing self ===
+print("=== closure capturing self ===");
+class Nested {
+    fun method(self) {
+        fun inner() {
+            print(self);
+        }
+        print("before inner");
+        inner();
+    }
+}
+var n = Nested();
+n.method();
+
+// === 13. Closure capturing self with fields ===
+print("=== closure captures self fields ===");
+class Accumulator {
+    fun init(self) {
+        self.total = 0;
+    }
+    fun makeAdder(self) {
+        var s = self;  // capture self in closure
+        fun adder(x) {
+            s.total = s.total + x;
+            return s.total;
+        }
+        return adder;
+    }
+}
+var acc = Accumulator();
+var add = acc.makeAdder();
+print(add(5));   // 5
+print(add(10));  // 15
+print(add(3));   // 18
+
+// === 14. getValue/setValue pattern ===
+print("=== get/set pattern ===");
+class Box {
+    fun init(self, value) {
+        self.value = value;
+    }
+    fun setValue(self, value) {
+        self.value = value;
+    }
+    fun getValue(self) {
+        return self.value;
+    }
+}
+var b = Box(42);
+print(b.getValue());  // 42
+b.setValue(99);
+print(b.getValue());  // 99
+
+// === 15. Instance with no init (zero-arg construction) ===
+print("=== no init ===");
+class Simple {}
+var s = Simple();
+s.tag = "simple";
+print(s.tag);  // simple
+
+// === 16. Class with only methods, fields set later ===
+print("=== fields set later ===");
+class Lazy {
+    fun setName(self, name) {
+        self.name = name;
+    }
+    fun greet(self) {
+        print("hi " + self.name);
+    }
+}
+var lazy = Lazy();
+lazy.setName("Taro");
+lazy.greet();  // hi Taro
+
+// === 17. Overwrite a field ===
+print("=== field overwrite ===");
+class Holder {}
+var h = Holder();
+h.val = 1;
+print(h.val);  // 1
+h.val = 100;
+print(h.val);  // 100
+
+// === 18. Field types: number, string, boolean ===
+print("=== field types ===");
+class Record {}
+var r = Record();
+r.num = 42;
+r.str = "hello";
+r.bool = true;
+print(r.num);
+print(r.str);
+print(r.bool);
+
+// === 19. Method with boolean return ===
+print("=== boolean return ===");
+class Checker {
+    fun isBig(self, x) {
+        return x > 100;
+    }
+}
+var ck = Checker();
+print(ck.isBig(50));   // false
+print(ck.isBig(200));  // true
+
+// === 20. Conditional logic in method ===
+print("=== conditional in method ===");
+class Grader {
+    fun grade(self, score) {
+        if (score > 90) {
+            return "A";
+        }
+        if (score > 75) {
+            return "B";
+        }
+        return "C";
+    }
+}
+var grader = Grader();
+print(grader.grade(95));  // A
+print(grader.grade(80));  // B
+print(grader.grade(60));  // C
+
+// === 21. Loop in method ===
+print("=== loop in method ===");
+class Summer {
+    fun sumTo(self, n) {
+        var total = 0;
+        var i = 1;
+        while (i <= n) {
+            total = total + i;
+            i = i + 1;
+        }
+        return total;
+    }
+}
+var summer = Summer();
+print(summer.sumTo(5));   // 15
+print(summer.sumTo(10));  // 55
+
+// === 22. Local variable in method shadows field name ===
+print("=== local shadows field ===");
+class Shadow {
+    fun init(self) {
+        self.x = 10;
+    }
+    fun test(self) {
+        var x = 99;  // local shadows self.x
+        print(x);       // 99 (local)
+        print(self.x);  // 10 (field)
+    }
+}
+var sh = Shadow();
+sh.test();
+
+print("done");
