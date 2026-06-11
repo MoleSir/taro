@@ -12,6 +12,8 @@ pub struct VirtualMachine {
     frames: Vec<CallFrame>,
     stack: Vec<Value>,
     globals: HashMap<ShrString, Value>,
+    /// Sorted (by descending location) linked list of open upvalues.
+    open_upvalues: Vec<ObjectHandle>,
 }
 
 /// A single function-call frame.  `slots_start` is the index into
@@ -48,6 +50,7 @@ impl VirtualMachine {
             frames: vec![],
             stack: vec![],
             globals: HashMap::new(),
+            open_upvalues: vec![],
         };
         vm.register_builtins();
         vm
@@ -155,10 +158,11 @@ impl VirtualMachine {
                         // stays on the stack so callers can inspect it.
                         return Ok(());
                     }
-                    // Function return: pop the return value, clean up the
-                    // callee's stack window, and push the result back onto
-                    // the caller's stack.
+                    // Function return: pop the return value, close any
+                    // upvalues referencing this frame, clean up the callee's
+                    // stack window, and push the result onto the caller's stack.
                     let result = self.pop_stack()?;
+                    self.close_upvalues(frame.slots_start)?;
                     self.stack.truncate(frame.slots_start);
                     self.push_stack(result);
                     continue; // skip writing ip back — it was the callee's ip
@@ -204,10 +208,62 @@ impl VirtualMachine {
                     continue; // skip writing ip back — callee frame is now active
                 }
 
-                Instruction::Closure(value) => {
-                    let function = value.as_object().expect("must object");
-                    let closure = self.obj_heap.alloc_closure(function);
-                    self.push_stack(closure);
+                Instruction::Closure { function, upvalues } => {
+                    let function_handle = function.as_object().expect("must object");
+                    let closure_handle = self.obj_heap.alloc_closure(function_handle);
+                    // Capture upvalues from the enclosing frame/closure.
+                    for uv_desc in upvalues {
+                        let upvalue = if uv_desc.is_local {
+                            // Capture from the current frame's stack.
+                            let slot = self.frame()?.slots_start + uv_desc.index;
+                            self.capture_upvalue(slot)?
+                        } else {
+                            // Capture from the enclosing closure's upvalue array.
+                            let enclosing_closure = self.obj_heap
+                                .get_closure(self.frame()?.closure)
+                                .expect("must closure");
+                            enclosing_closure.upvalues[uv_desc.index]
+                        };
+                        self.obj_heap
+                            .get_closure_mut(closure_handle)
+                            .expect("must closure")
+                            .upvalues
+                            .push(upvalue);
+                    }
+                    self.push_stack(closure_handle);
+                }
+
+                Instruction::GetUpvalue(slot) => {
+                    let closure_handle = self.frame()?.closure;
+                    let closure = self.obj_heap.get_closure(closure_handle).expect("must closure");
+                    let upvalue_handle = closure.upvalues[slot];
+                    let upvalue = self.obj_heap.get_upvalue(upvalue_handle).expect("must upvalue");
+                    let value = match upvalue.location {
+                        Some(stack_slot) => self.stack[stack_slot].clone(),
+                        None => upvalue.closed.clone(),
+                    };
+                    self.push_stack(value);
+                }
+
+                Instruction::SetUpvalue(slot) => {
+                    let closure_handle = self.frame()?.closure;
+                    let closure = self.obj_heap.get_closure(closure_handle).expect("must closure");
+                    let upvalue_handle = closure.upvalues[slot];
+                    let upvalue = self.obj_heap.get_upvalue(upvalue_handle).expect("must upvalue");
+                    let value = self.peek_stack(0)?.clone();
+                    match upvalue.location {
+                        Some(stack_slot) => self.stack[stack_slot] = value,
+                        None => {
+                            let uv = self.obj_heap.get_upvalue_mut(upvalue_handle).expect("must upvalue");
+                            uv.closed = value;
+                        }
+                    }
+                }
+
+                Instruction::CloseUpvalue => {
+                    let top_slot = self.stack.len() - 1;
+                    self.close_upvalues(top_slot)?;
+                    self.pop_stack()?;
                 }
             }
 
@@ -270,6 +326,56 @@ impl VirtualMachine {
     fn define_builtin_fn(&mut self, name: impl Into<ShrString>, function: BuiltinFn) {
         let function = self.obj_heap.alloc_builtin_fn(function);
         self.globals.insert(name.into(), Value::Object(function));
+    }
+
+    /// Capture a stack slot as an upvalue.  If an open upvalue already
+    /// references this slot, reuse it; otherwise allocate a new one.
+    fn capture_upvalue(&mut self, slot: usize) -> ExecuteResult<ObjectHandle> {
+        // Walk the linked list of open upvalues rooted at this slot (if any
+        // exist) to see whether we already have one.
+        let mut prev: Option<ObjectHandle> = None;
+        let mut curr = self.open_upvalues.last().copied();
+        while let Some(handle) = curr {
+            let uv = self.obj_heap.get_upvalue(handle).expect("must upvalue");
+            if uv.location.map_or(true, |loc| loc < slot) {
+                break;
+            }
+            if uv.location == Some(slot) {
+                return Ok(handle); // reuse existing
+            }
+            prev = curr;
+            curr = uv.next;
+        }
+
+        // Allocate a new open upvalue and insert it into the list, keeping
+        // the list sorted by descending location.
+        let new_handle = self.obj_heap.alloc_upvalue(Some(slot));
+        if let Some(prev_handle) = prev {
+            self.obj_heap.get_upvalue_mut(prev_handle).expect("must upvalue").next = Some(new_handle);
+        } else {
+            // This becomes the new head.  We don't have a direct head
+            // pointer — we rely on `open_upvalues` tracking.  For now,
+            // just push onto the tracker.
+            self.open_upvalues.push(new_handle);
+        }
+        Ok(new_handle)
+    }
+
+    /// Close every open upvalue whose location is at or above `last`.
+    fn close_upvalues(&mut self, last: usize) -> ExecuteResult<()> {
+        while let Some(&handle) = self.open_upvalues.last() {
+            let uv = self.obj_heap.get_upvalue(handle).expect("must upvalue");
+            if uv.location.map_or(true, |loc| loc < last) {
+                break;
+            }
+            let location = uv.location.expect("open upvalue must have location");
+            let value = self.stack[location].clone();
+            let uv_mut = self.obj_heap.get_upvalue_mut(handle).expect("must upvalue");
+            uv_mut.closed = value;
+            uv_mut.location = None;
+            self.open_upvalues.pop();
+        }
+        Ok(())
     }
 }
 

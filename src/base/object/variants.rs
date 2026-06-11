@@ -26,7 +26,16 @@ impl ObjectBuiltinFn {
 }
 
 pub struct ObjectUpvalue {
-
+    /// Stack slot index when the upvalue is still "open" (the local variable
+    /// is alive on the stack).  Set to `None` once the variable goes out of
+    /// scope and the upvalue is "closed" — the value has been moved into
+    /// `closed`.
+    pub location: Option<usize>,
+    pub closed: Value,
+    /// Intrusive linked list: the next open upvalue that refers to the same
+    /// stack slot (or to a slot below this one).  Used by the VM to find all
+    /// upvalues that need to be closed when a local goes out of scope.
+    pub next: Option<ObjectHandle>,
 }
 
 pub struct ObjectClass {

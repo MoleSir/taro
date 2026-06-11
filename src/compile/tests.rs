@@ -1,6 +1,6 @@
 use super::*;
 use super::parse::ParseReason;
-use crate::{ByteCode, Chunk, ToShrString};
+use crate::{ByteCode, Chunk, Instruction, ToShrString};
 use crate::Value;
 
 // ------------------------------------------------------------------------
@@ -834,8 +834,10 @@ fn test_empty_function_declaration() {
     // The constant should be an Object handle pointing to a function
     let fn_val = &c.constants[const_idx];
     assert!(matches!(fn_val, Value::Object(_)), "expected function object in constant pool");
+    // upvalue count = 0 (1 byte)
+    assert_eq!(c.codes[3], 0u8);
     // DefineGlobal
-    assert_eq!(c.codes[3], ByteCode::DefineGlobal as u8);
+    assert_eq!(c.codes[4], ByteCode::DefineGlobal as u8);
     // Verify the function object's chunk has Nil; Return
     if let Value::Object(h) = fn_val {
         let fn_chunk = &obj_heap.get(*h).as_function().unwrap().chunk;
@@ -902,19 +904,21 @@ fn test_function_call_expression() {
     // `fun f() {} f();`
     // Script should contain: Constant(fn), DefineGlobal, GetGlobal("f"), Call(0), Pop, Nil, Return
     let (c, _obj_heap) = compile_with_heap("fun f() {} f();");
-    // First: Constant + DefineGlobal (declaration)
+    // First: Closure(0 upvalues) + DefineGlobal (declaration)
     assert_eq!(c.codes[0], ByteCode::Closure as u8);
-    assert_eq!(c.codes[3], ByteCode::DefineGlobal as u8);
+    // codes[1..3] = const index, codes[3] = upvalue count (0)
+    assert_eq!(c.codes[3], 0u8);
+    assert_eq!(c.codes[4], ByteCode::DefineGlobal as u8);
     // Then: GetGlobal("f")
-    assert_eq!(c.codes[6], ByteCode::GetGlobal as u8);
+    assert_eq!(c.codes[7], ByteCode::GetGlobal as u8);
     // Call(0): 1 byte opcode + 1 byte arg_count
-    assert_eq!(c.codes[9], ByteCode::Call as u8);
-    assert_eq!(c.codes[10], 0u8); // 0 arguments
+    assert_eq!(c.codes[10], ByteCode::Call as u8);
+    assert_eq!(c.codes[11], 0u8); // 0 arguments
     // Pop (expression statement discards result)
-    assert_eq!(c.codes[11], ByteCode::Pop as u8);
+    assert_eq!(c.codes[12], ByteCode::Pop as u8);
     // Nil; Return
-    assert_eq!(c.codes[12], ByteCode::Nil as u8);
-    assert_eq!(c.codes[13], ByteCode::Return as u8);
+    assert_eq!(c.codes[13], ByteCode::Nil as u8);
+    assert_eq!(c.codes[14], ByteCode::Return as u8);
 }
 
 #[test]
@@ -922,8 +926,8 @@ fn test_function_call_with_args() {
     // `fun add(a, b) { return a + b; } add(1, 2);`
     let (c, _obj_heap) = compile_with_heap("fun add(a, b) { return a + b; } add(1, 2);");
     // After declaration: GetGlobal("add")
-    // Skip Constant (3 bytes) + DefineGlobal (3 bytes) = 6 bytes
-    let mut pos = 6;
+    // Skip Closure(4 bytes) + DefineGlobal(3 bytes) = 7 bytes
+    let mut pos = 7;
     assert_eq!(c.codes[pos], ByteCode::GetGlobal as u8);
     pos += 3; // GetGlobal: opcode + u16
     // Constant(1): 3 bytes
@@ -970,4 +974,339 @@ fn test_return_in_top_level_is_error() {
         }
         _ => panic!("expected compilation to fail for top-level return"),
     }
+}
+
+// ------------------------------------------------------------------------
+//  Closures & Upvalues — bytecode verification
+// ------------------------------------------------------------------------
+
+/// Decode every instruction from a chunk into a `Vec` for easy inspection.
+fn instructions(chunk: &Chunk) -> Vec<Instruction> {
+    let mut ip = 0;
+    let mut insts = Vec::new();
+    while ip < chunk.codes.len() {
+        insts.push(chunk.read_instruction(&mut ip).unwrap());
+    }
+    insts
+}
+
+#[test]
+fn test_closure_single_upvalue_capture() {
+    // fun outer() { var x = 1; fun inner() { return x; } return inner; }
+    //
+    // Script chunk:  Closure{outer_fn, []}  DefineGlobal("outer")  Nil  Return
+    // outer chunk:   Constant(1)  Closure{inner_fn, [(is_local=true,index=1)]}
+    //                GetLocal(2)  Return  Nil  Return
+    // inner chunk:   GetUpvalue(0)  Return
+    let (script_chunk, obj_heap) = compile_with_heap(
+        "fun outer() { var x = 1; fun inner() { return x; } return inner; }"
+    );
+    let script_insts = instructions(&script_chunk);
+
+    // First instruction: Closure{outer_fn, upvalues: []}
+    let outer_fn_val = match &script_insts[0] {
+        Instruction::Closure { function, upvalues } => {
+            assert!(upvalues.is_empty(), "outer has no upvalues");
+            function.clone()
+        }
+        _ => panic!("expected Closure as first instruction"),
+    };
+
+    // Decode outer function's chunk
+    let outer_fn = obj_heap
+        .get(outer_fn_val.as_object().unwrap())
+        .as_function()
+        .unwrap();
+    let outer_insts = instructions(&outer_fn.chunk);
+
+    // Find the Closure instruction in outer (for inner function)
+    let (inner_fn_val, upvalues) = outer_insts
+        .iter()
+        .find_map(|inst| {
+            if let Instruction::Closure { function, upvalues } = inst {
+                Some((function.clone(), upvalues.clone()))
+            } else {
+                None
+            }
+        })
+        .expect("outer should contain a Closure for inner");
+
+    assert_eq!(upvalues.len(), 1, "inner should capture exactly 1 upvalue");
+    assert!(
+        upvalues[0].is_local,
+        "x should be captured directly from enclosing stack"
+    );
+    assert_eq!(
+        upvalues[0].index, 1,
+        "x should be at slot 1 (slot 0 is outer fn itself)"
+    );
+
+    // Verify inner function's bytecode reads the upvalue
+    let inner_fn = obj_heap
+        .get(inner_fn_val.as_object().unwrap())
+        .as_function()
+        .unwrap();
+    let inner_insts = instructions(&inner_fn.chunk);
+    assert!(
+        inner_insts
+            .iter()
+            .any(|i| matches!(i, Instruction::GetUpvalue(0))),
+        "inner should read upvalue slot 0"
+    );
+    assert!(matches!(inner_insts.last().unwrap(), Instruction::Return));
+}
+
+#[test]
+fn test_closure_set_upvalue_bytecode() {
+    // fun outer() { var i = 0; fun inc() { i = i + 1; } }
+    //
+    // inner chunk should contain: GetUpvalue(0) Constant(1) Add SetUpvalue(0)
+    let (script_chunk, obj_heap) = compile_with_heap(
+        "fun outer() { var i = 0; fun inc() { i = i + 1; } }"
+    );
+    let script_insts = instructions(&script_chunk);
+    let outer_fn_val = match &script_insts[0] {
+        Instruction::Closure { function, .. } => function.clone(),
+        _ => panic!("expected Closure"),
+    };
+    let outer_fn = obj_heap
+        .get(outer_fn_val.as_object().unwrap())
+        .as_function()
+        .unwrap();
+    let outer_insts = instructions(&outer_fn.chunk);
+    let inner_fn_val = outer_insts
+        .iter()
+        .find_map(|inst| {
+            if let Instruction::Closure { function, .. } = inst {
+                Some(function.clone())
+            } else {
+                None
+            }
+        })
+        .expect("outer should contain a Closure for inc");
+
+    let inner_fn = obj_heap
+        .get(inner_fn_val.as_object().unwrap())
+        .as_function()
+        .unwrap();
+    let inner_insts = instructions(&inner_fn.chunk);
+
+    // Should contain GetUpvalue, SetUpvalue
+    let has_get = inner_insts
+        .iter()
+        .any(|i| matches!(i, Instruction::GetUpvalue(_)));
+    let has_set = inner_insts
+        .iter()
+        .any(|i| matches!(i, Instruction::SetUpvalue(_)));
+    assert!(has_get, "inner should read upvalue");
+    assert!(has_set, "inner should write upvalue");
+}
+
+#[test]
+fn test_close_upvalue_in_block_scope() {
+    // fun outer() { var x = 1; { var y = 2; fun f() { return y; } } return x; }
+    //
+    // outer's chunk should contain CloseUpvalue when y goes out of scope,
+    // because y is captured by f.
+    let (script_chunk, obj_heap) = compile_with_heap(
+        "fun outer() { var x = 1; { var y = 2; fun f() { return y; } } return x; }"
+    );
+    let script_insts = instructions(&script_chunk);
+    let outer_fn_val = match &script_insts[0] {
+        Instruction::Closure { function, .. } => function.clone(),
+        _ => panic!("expected Closure"),
+    };
+    let outer_fn = obj_heap
+        .get(outer_fn_val.as_object().unwrap())
+        .as_function()
+        .unwrap();
+    let outer_insts = instructions(&outer_fn.chunk);
+
+    // y is captured → CloseUpvalue should appear before Pop for x
+    assert!(
+        outer_insts
+            .iter()
+            .any(|i| matches!(i, Instruction::CloseUpvalue)),
+        "outer should emit CloseUpvalue for captured y"
+    );
+
+    // y is NOT at function scope — it's in a nested block. So when the block
+    // ends, CloseUpvalue fires. x is at function scope and is captured at
+    // OP_RETURN time (not via CloseUpvalue instruction).
+}
+
+#[test]
+fn test_closure_captures_parameter() {
+    // fun makeAdder(x) { fun adder(y) { return x + y; } return adder; }
+    //
+    // Parameters are locals too — the upvalue should reference slot 1 (x).
+    let (script_chunk, obj_heap) = compile_with_heap(
+        "fun makeAdder(x) { fun adder(y) { return x + y; } return adder; }"
+    );
+    let script_insts = instructions(&script_chunk);
+    let outer_fn_val = match &script_insts[0] {
+        Instruction::Closure { function, .. } => function.clone(),
+        _ => panic!("expected Closure"),
+    };
+    let outer_fn = obj_heap
+        .get(outer_fn_val.as_object().unwrap())
+        .as_function()
+        .unwrap();
+    let outer_insts = instructions(&outer_fn.chunk);
+
+    let (_, upvalues) = outer_insts
+        .iter()
+        .find_map(|inst| {
+            if let Instruction::Closure { function, upvalues } = inst {
+                Some((function.clone(), upvalues.clone()))
+            } else {
+                None
+            }
+        })
+        .expect("makeAdder should contain a Closure for adder");
+
+    assert_eq!(upvalues.len(), 1, "adder should capture 1 upvalue (x)");
+    assert!(upvalues[0].is_local, "x is captured from the enclosing stack");
+    assert_eq!(upvalues[0].index, 1, "parameter x should be at slot 1");
+}
+
+#[test]
+fn test_nested_closure_upvalue_chain() {
+    // fun outer() { var a = 10; fun middle() { fun inner() { return a; } return inner; } return middle; }
+    //
+    // inner captures a via middle's upvalue → outer's local.
+    // middle's upvalue: is_local=true, index=<a's slot in outer> (slot 1)
+    // inner's upvalue:  is_local=false, index=0 (middle's upvalue[0])
+    let (script_chunk, obj_heap) = compile_with_heap(
+        "fun outer() { var a = 10; fun middle() { fun inner() { return a; } return inner; } return middle; }"
+    );
+    let script_insts = instructions(&script_chunk);
+    let outer_fn_val = match &script_insts[0] {
+        Instruction::Closure { function, .. } => function.clone(),
+        _ => panic!("expected Closure"),
+    };
+
+    // Walk outer → middle
+    let outer_fn = obj_heap
+        .get(outer_fn_val.as_object().unwrap())
+        .as_function()
+        .unwrap();
+    let outer_insts = instructions(&outer_fn.chunk);
+
+    // middle's Closure in outer: should capture a as local
+    let middle_fn_val = outer_insts
+        .iter()
+        .find_map(|inst| {
+            if let Instruction::Closure { function, upvalues } = inst {
+                assert_eq!(upvalues.len(), 1, "middle should capture 1 upvalue (a)");
+                assert!(upvalues[0].is_local, "middle should capture a from outer's stack");
+                assert_eq!(upvalues[0].index, 1, "a should be at slot 1 in outer");
+                Some(function.clone())
+            } else {
+                None
+            }
+        })
+        .expect("outer should contain a Closure for middle");
+
+    // Walk middle → inner
+    let middle_fn = obj_heap
+        .get(middle_fn_val.as_object().unwrap())
+        .as_function()
+        .unwrap();
+    let middle_insts = instructions(&middle_fn.chunk);
+
+    // inner's Closure in middle: should capture a as upvalue (not local)
+    let (inner_fn_val, inner_upvalues) = middle_insts
+        .iter()
+        .find_map(|inst| {
+            if let Instruction::Closure { function, upvalues } = inst {
+                Some((function.clone(), upvalues.clone()))
+            } else {
+                None
+            }
+        })
+        .expect("middle should contain a Closure for inner");
+
+    assert_eq!(
+        inner_upvalues.len(), 1,
+        "inner should capture 1 upvalue"
+    );
+    assert!(
+        !inner_upvalues[0].is_local,
+        "inner should capture a via middle's upvalue (is_local=false), not from stack"
+    );
+    assert_eq!(
+        inner_upvalues[0].index, 0,
+        "inner should reference middle's upvalue[0]"
+    );
+
+    // inner's body: GetUpvalue(0), Return
+    let inner_fn = obj_heap
+        .get(inner_fn_val.as_object().unwrap())
+        .as_function()
+        .unwrap();
+    let inner_insts = instructions(&inner_fn.chunk);
+    assert!(
+        inner_insts
+            .iter()
+            .any(|i| matches!(i, Instruction::GetUpvalue(0))),
+        "inner should read upvalue"
+    );
+}
+
+#[test]
+fn test_closure_multiple_upvalues() {
+    // fun outer() { var a = 1; var b = 2; fun sum() { return a + b; } return sum; }
+    //
+    // sum should capture TWO upvalues: a (slot 1) and b (slot 2)
+    let (script_chunk, obj_heap) = compile_with_heap(
+        "fun outer() { var a = 1; var b = 2; fun sum() { return a + b; } return sum; }"
+    );
+    let script_insts = instructions(&script_chunk);
+    let outer_fn_val = match &script_insts[0] {
+        Instruction::Closure { function, .. } => function.clone(),
+        _ => panic!("expected Closure"),
+    };
+    let outer_fn = obj_heap
+        .get(outer_fn_val.as_object().unwrap())
+        .as_function()
+        .unwrap();
+    let outer_insts = instructions(&outer_fn.chunk);
+
+    let (sum_fn_val, upvalues) = outer_insts
+        .iter()
+        .find_map(|inst| {
+            if let Instruction::Closure { function, upvalues } = inst {
+                Some((function.clone(), upvalues.clone()))
+            } else {
+                None
+            }
+        })
+        .expect("outer should contain Closure for sum");
+
+    assert_eq!(upvalues.len(), 2, "sum should capture 2 upvalues (a and b)");
+    assert!(upvalues[0].is_local, "a should be captured from stack");
+    assert!(upvalues[1].is_local, "b should be captured from stack");
+    // a is declared first → slot 1, b → slot 2
+    assert_eq!(upvalues[0].index, 1, "a should be at slot 1");
+    assert_eq!(upvalues[1].index, 2, "b should be at slot 2");
+
+    // sum's chunk: GetUpvalue(0), GetUpvalue(1), Add, Return
+    let sum_fn = obj_heap
+        .get(sum_fn_val.as_object().unwrap())
+        .as_function()
+        .unwrap();
+    let sum_insts = instructions(&sum_fn.chunk);
+    assert!(
+        sum_insts
+            .iter()
+            .any(|i| matches!(i, Instruction::GetUpvalue(0))),
+        "should read upvalue 0 (a)"
+    );
+    assert!(
+        sum_insts
+            .iter()
+            .any(|i| matches!(i, Instruction::GetUpvalue(1))),
+        "should read upvalue 1 (b)"
+    );
 }

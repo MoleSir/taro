@@ -37,6 +37,20 @@ pub enum ByteCode {
     Call,
 
     Closure,
+
+    GetUpvalue,
+    SetUpvalue,
+    CloseUpvalue,
+}
+
+/// Descriptor for a single upvalue captured by a closure.
+#[derive(Debug, Clone)]
+pub struct UpvalueDesc {
+    /// `true` → references a stack slot of the enclosing function directly.
+    /// `false` → references an upvalue of the enclosing closure.
+    pub is_local: bool,
+    /// Slot index in the enclosing function, or upvalue index if `!is_local`.
+    pub index: usize,
 }
 
 /// High-level instruction with resolved parameters.
@@ -79,5 +93,12 @@ pub enum Instruction {
 
     Call(usize),
 
-    Closure(Value),
+    Closure {
+        function: Value,
+        upvalues: Vec<UpvalueDesc>,
+    },
+
+    GetUpvalue(usize),
+    SetUpvalue(usize),
+    CloseUpvalue,
 }

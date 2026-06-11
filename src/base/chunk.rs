@@ -122,8 +122,27 @@ impl Chunk {
                 self.write_byte(arg_count as u8);
             }
 
-            Instruction::Closure(value) => {
-                self.write_const_op(ByteCode::Closure, value);
+            Instruction::Closure { function, upvalues } => {
+                self.write_const_op(ByteCode::Closure, function);
+                self.write_byte(upvalues.len() as u8);
+                for uv in upvalues {
+                    self.write_byte(uv.is_local as u8);
+                    self.write_byte(uv.index as u8);
+                }
+            }
+
+            Instruction::GetUpvalue(slot) => {
+                assert!(slot < u8::MAX as usize, "Too much upvalues.");
+                self.write_op(ByteCode::GetUpvalue);
+                self.write_byte(slot as u8);
+            }
+            Instruction::SetUpvalue(slot) => {
+                assert!(slot < u8::MAX as usize, "Too much upvalues.");
+                self.write_op(ByteCode::SetUpvalue);
+                self.write_byte(slot as u8);
+            }
+            Instruction::CloseUpvalue => {
+                self.write_op(ByteCode::CloseUpvalue);
             }
         }
     }
@@ -198,8 +217,27 @@ impl Chunk {
             }
 
             ByteCode::Closure => {
-                let value = self.read_constant(ip)?;
-                Ok(Instruction::Closure(value))
+                let function = self.read_constant(ip)?;
+                let upvalue_count = self.read_byte(ip)? as usize;
+                let mut upvalues = Vec::with_capacity(upvalue_count);
+                for _ in 0..upvalue_count {
+                    let is_local = self.read_byte(ip)? != 0;
+                    let index = self.read_byte(ip)? as usize;
+                    upvalues.push(crate::UpvalueDesc { is_local, index });
+                }
+                Ok(Instruction::Closure { function, upvalues })
+            }
+
+            ByteCode::GetUpvalue => {
+                let slot = self.read_byte(ip)? as usize;
+                Ok(Instruction::GetUpvalue(slot))
+            }
+            ByteCode::SetUpvalue => {
+                let slot = self.read_byte(ip)? as usize;
+                Ok(Instruction::SetUpvalue(slot))
+            }
+            ByteCode::CloseUpvalue => {
+                Ok(Instruction::CloseUpvalue)
             }
         }
     }

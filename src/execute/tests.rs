@@ -285,3 +285,149 @@ pub fn test_arg_count_mismatch() {
     let mut vm = VirtualMachine::new();
     vm.interpret("fun f(a, b) {} f(1);").unwrap_err();
 }
+
+// ------------------------------------------------------------------------
+//  Closures & Upvalues — runtime behaviour
+// ------------------------------------------------------------------------
+
+#[test]
+pub fn test_closure_counting() {
+    // Each call to the closure increments and returns the captured counter.
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        fun makeCounter() {
+            var i = 0;
+            fun counter() {
+                i = i + 1;
+                return i;
+            }
+            return counter;
+        }
+        var c = makeCounter();
+        print(c()); // 1
+        print(c()); // 2
+        print(c()); // 3
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_independent_closures() {
+    // Two closures created by the same factory are independent.
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        fun makeCounter() {
+            var i = 0;
+            fun counter() {
+                i = i + 1;
+                return i;
+            }
+            return counter;
+        }
+        var c1 = makeCounter();
+        var c2 = makeCounter();
+        print(c1()); // 1
+        print(c1()); // 2
+        print(c2()); // 1
+        print(c2()); // 2
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_closure_captures_parameter() {
+    // makeAdder captures its parameter x, adder uses it with its own param y.
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        fun makeAdder(x) {
+            fun adder(y) {
+                return x + y;
+            }
+            return adder;
+        }
+        var add5 = makeAdder(5);
+        print(add5(3));  // 8
+        print(add5(10)); // 15
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_nested_upvalue_chain() {
+    // inner captures a from outer, via middle's upvalue.
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        fun outer() {
+            var a = 10;
+            fun middle() {
+                fun inner() {
+                    return a;
+                }
+                return inner;
+            }
+            return middle;
+        }
+        var getA = outer()();
+        print(getA()); // 10
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_upvalue_mutation() {
+    // A closure can mutate the captured variable, and the outer function
+    // sees the change when the closure returned.
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        fun outer() {
+            var x = 10;
+            fun setX(v) {
+                x = v;
+            }
+            setX(42);
+            return x;
+        }
+        print(outer()); // 42
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_upvalue_survives_outer_return() {
+    // After makeCounter returns, the closure can still read/write the
+    // upvalue (which is now closed — value copied from stack).
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        fun makeCounter() {
+            var i = 0;
+            fun counter() {
+                i = i + 1;
+                return i;
+            }
+            return counter;
+        }
+        var c = makeCounter();
+        // makeCounter has returned — i is now closed.
+        // counter should still work.
+        print(c()); // 1
+        print(c()); // 2
+        print(c()); // 3
+        print(c()); // 4
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_multiple_independent_upvalues() {
+    // Closure captures two variables — both should be independent.
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        fun factory() {
+            var a = 1;
+            var b = 10;
+            fun compute() {
+                a = a + 1;
+                b = b + 10;
+                return a * 100 + b;
+            }
+            return compute;
+        }
+        var c = factory();
+        print(c()); // a=2, b=20 → 2*100+20 = 220
+        print(c()); // a=3, b=30 → 3*100+30 = 330
+    "#).unwrap();
+}

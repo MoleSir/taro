@@ -1,5 +1,5 @@
 use super::token::{Token, TokenKind};
-use crate::{format_shr, Chunk, Instruction, ObjectFunction, ObjectHandle, ObjectHeap, ShrString, Value};
+use crate::{format_shr, Chunk, Instruction, ObjectFunction, ObjectHandle, ObjectHeap, ShrString, UpvalueDesc, Value};
 
 // ========================================================================== //
 //                    Precedence
@@ -130,6 +130,8 @@ pub struct Local {
     /// Stack slot depth. `-1` means the variable is declared but not yet
     /// initialized (sentinel — prevents referencing in its own initializer).
     depth: isize,
+    /// True when an inner function captures this local as an upvalue.
+    is_captured: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -138,19 +140,31 @@ enum FunctionKind {
     Script,
 }
 
-struct ParseState {
+struct CompilationUnit {
     function:    ObjectHandle,
     kind:        FunctionKind,
     locals:      Vec<Local>,
     scope_depth: isize,
+    upvalues:    Vec<UpvalueDesc>,
+    /// Index of the enclosing unit in `Parser::units`, or `self` for the
+    /// root (so we can use `enclosing == current_unit` as a sentinel).
+    enclosing:   usize,
 }
 
 pub struct Parser<'a> {
-    obj_heap:    &'a mut ObjectHeap,
-    tokens:      Vec<Token<'a>>,
-    current:     usize,
-    errors:      Vec<ParseError>,
-    state:       ParseState,
+    obj_heap:     &'a mut ObjectHeap,
+    tokens:       Vec<Token<'a>>,
+    current:      usize,
+    errors:       Vec<ParseError>,
+    units:        Vec<CompilationUnit>,
+    /// Index into `units` for the innermost function being compiled.
+    current_unit: usize,
+}
+
+/// Result of resolving a variable name to a local slot or upvalue.
+enum LocalAccess {
+    Local(usize),
+    Upvalue(usize),
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -195,41 +209,89 @@ pub struct ParseError {
 
 pub type ParseResult<T> = std::result::Result<T, ParseError>;
 
-macro_rules! report_error_at_current {
+macro_rules! error_at_current {
     ($p:ident, $reason:expr) => {{
         let token = $p.peek();
         ParseError { line: token.line, lexeme: token.lexeme.to_string(), reason: $reason }
     }};
 }
 
-macro_rules! report_error_at_previous {
+macro_rules! bail_error_at_current {
+    ($p:ident, $reason:expr) => {{
+        Err(error_at_current!($p, $reason))?
+    }};
+}
+
+macro_rules! record_error_at_current {
+    ($p:ident, $reason:expr) => {{
+        $p.errors.push(error_at_current!($p, $reason));
+    }};
+}
+
+#[allow(unused)]
+macro_rules! error_at_previous {
     ($p:ident, $reason:expr) => {{
         let token = $p.previous();
         ParseError { line: token.line, lexeme: token.lexeme.to_string(), reason: $reason }
     }};
 }
 
-impl ParseState {
-    fn new(obj_heap: &mut ObjectHeap, name: impl Into<ShrString>, kind: FunctionKind) -> Self {
+macro_rules! bail_error_at_previous {
+    ($p:ident, $reason:expr) => {{
+        Err(error_at_previous!($p, $reason))?
+    }};
+}
+
+#[allow(unused)]
+macro_rules! record_error_at_previous {
+    ($p:ident, $reason:expr) => {{
+        $p.errors.push(error_at_previous!($p, $reason));
+    }};
+}
+
+impl CompilationUnit {
+    fn new(obj_heap: &mut ObjectHeap, name: impl Into<ShrString>, kind: FunctionKind, enclosing: usize) -> Self {
         Self {
-            function: obj_heap.alloc_function(name.into(),  0, Chunk::new()),
-            kind, 
-            locals: vec![Local { depth: 0, name: "".into() }],
+            function: obj_heap.alloc_function(name.into(), 0, Chunk::new()),
+            kind,
+            locals: vec![Local { depth: 0, name: "".into(), is_captured: false }],
             scope_depth: 0,
+            upvalues: vec![],
+            enclosing,
         }
-    } 
+    }
 }
 
 impl<'a> Parser<'a> {
     pub fn new(tokens: Vec<Token<'a>>, obj_heap: &'a mut ObjectHeap) -> Self {
-        let state = ParseState::new(obj_heap, "", FunctionKind::Script);
+        let unit = CompilationUnit::new(obj_heap, "", FunctionKind::Script, 0);
         Self {
             obj_heap,
             tokens,
             current: 0,
             errors: vec![],
-            state,
+            units: vec![unit],
+            current_unit: 0,
         }
+    }
+
+    // ------------------------------------------------------------------------
+    //  Helpers for the current compilation unit
+    // ------------------------------------------------------------------------
+
+    #[inline]
+    fn cur_unit(&self) -> &CompilationUnit {
+        &self.units[self.current_unit]
+    }
+
+    #[inline]
+    fn cur_unit_mut(&mut self) -> &mut CompilationUnit {
+        &mut self.units[self.current_unit]
+    }
+
+    fn cur_function(&mut self) -> &mut ObjectFunction {
+        let handle = self.cur_unit().function;
+        self.obj_heap.get_mut(handle).as_function_mut().expect("must function")
     }
 
     // ------------------------------------------------------------------------
@@ -239,25 +301,24 @@ impl<'a> Parser<'a> {
     pub(crate) fn parse(mut self) -> Result<ObjectHandle, Vec<ParseError>> {
         while !self.at_end() {
             if let Err(e) = self.declaration() {
-                self.errors.push(e);
-                self.synchronize();
+                self.synchronize(e);
             }
         }
-        
+
         if !self.errors.is_empty() {
             Err(self.errors)
         } else {
-            Ok(self.end_parse())
+            Ok(self.end_parse().0)
         }
     }
 
-    fn end_parse(&mut self) -> ObjectHandle {
+    /// Finish the current compilation unit: emit an implicit `return nil`,
+    /// pop the unit from the stack, and restore the enclosing unit.
+    fn end_parse(&mut self) -> (ObjectHandle, Vec<UpvalueDesc>) {
         self.emit_return();
-        self.state.function
-    }
-
-    fn cur_function(&mut self) -> &mut ObjectFunction {
-        self.obj_heap.get_mut(self.state.function).as_function_mut().expect("must funtion")
+        let unit = self.units.pop().expect("at least the root unit");
+        self.current_unit = unit.enclosing;
+        (unit.function, unit.upvalues)
     }
 
     fn declaration(&mut self) -> ParseResult<()> {
@@ -301,9 +362,8 @@ impl<'a> Parser<'a> {
             }
             None => {
                 // local
-                assert!(self.state.scope_depth > 0);
+                assert!(self.cur_unit().scope_depth > 0);
                 self.mark_initialized();
-
             }
         }
         Ok(())
@@ -337,20 +397,27 @@ impl<'a> Parser<'a> {
     }
 
     fn begin_scope(&mut self) {
-        self.state.scope_depth += 1;
+        self.cur_unit_mut().scope_depth += 1;
     }
 
     fn end_scope(&mut self) {
-        self.state.scope_depth -= 1;
-        while self.state.locals.len() > 0 && self.state.locals.last().unwrap().depth > self.state.scope_depth {
-            self.emit(Instruction::Pop);
-            self.state.locals.pop();
+        self.cur_unit_mut().scope_depth -= 1;
+        let scope_depth = self.cur_unit().scope_depth;
+        while self.cur_unit().locals.len() > 0
+            && self.cur_unit().locals.last().unwrap().depth > scope_depth
+        {
+            if self.cur_unit().locals.last().unwrap().is_captured {
+                self.emit(Instruction::CloseUpvalue);
+            } else {
+                self.emit(Instruction::Pop);
+            }
+            self.cur_unit_mut().locals.pop();
         }
     }
 
     fn return_statement(&mut self) -> ParseResult<()> {
-        if self.state.kind == FunctionKind::Script {
-            Err(report_error_at_current!(self, ParseReason::ReturnInTop))?;
+        if self.cur_unit().kind == FunctionKind::Script {
+            record_error_at_current!(self, ParseReason::ReturnInTop);
         }
         
         if self.match_token(TokenKind::Semicolon) {
@@ -478,7 +545,7 @@ impl<'a> Parser<'a> {
     fn emit_loop(&mut self, loop_start: usize) -> ParseResult<()> {        
         let offset = self.cur_function().chunk.codes.len() - loop_start + 3;
         if offset > u16::MAX as usize {
-            Err(report_error_at_current!(self, ParseReason::TooMuchCodeToJumpOver(offset)))?;
+            record_error_at_current!(self, ParseReason::TooMuchCodeToJumpOver(offset));
         }
         
         self.emit(Instruction::Loop(offset));
@@ -499,7 +566,7 @@ impl<'a> Parser<'a> {
         // distance of if and cur
         let offset = self.cur_function().chunk.codes.len() - jump_addr - 2;
         if offset > u16::MAX as usize {
-            Err(report_error_at_current!(self, ParseReason::TooMuchCodeToJumpOver(offset)))?;
+            record_error_at_current!(self, ParseReason::TooMuchCodeToJumpOver(offset));
         }
 
         let bytes = (offset as u16).to_le_bytes();
@@ -525,7 +592,7 @@ impl<'a> Parser<'a> {
         let prefix_rule = get_rule(self.previous().kind).prefix;
 
         let Some(prefix_fn) = prefix_rule else {
-            return Err(report_error_at_previous!(self, ParseReason::ExpectedExpression));
+            bail_error_at_previous!(self, ParseReason::ExpectedExpression)
         };
 
         let can_assign = precedence <= Prec::Assignment;
@@ -544,7 +611,7 @@ impl<'a> Parser<'a> {
         }
 
         if can_assign && self.check(TokenKind::Equal) {
-            return Err(report_error_at_current!(self, ParseReason::InvalidAssignmentTarget));
+            bail_error_at_current!(self, ParseReason::InvalidAssignmentTarget);
         }
 
         Ok(())
@@ -553,17 +620,18 @@ impl<'a> Parser<'a> {
     fn parse_variable(&mut self, msg: &'static str) -> ParseResult<Option<ShrString>> {
         self.consume(TokenKind::Identifier, msg)?;
         let var_name = ShrString::new_string(self.previous().lexeme);
-        
-        if self.state.scope_depth > 0 {
+
+        if self.cur_unit().scope_depth > 0 {
             // local
-            for local in self.state.locals.iter().rev() {
+            let scope_depth = self.cur_unit().scope_depth;
+            for local in self.cur_unit().locals.iter().rev() {
                 // Sentinel depth (-1) means the variable is still in its initializer;
                 // it's still "in scope" for redefinition checking so we skip the break.
-                if local.depth != -1 && local.depth < self.state.scope_depth {
+                if local.depth != -1 && local.depth < scope_depth {
                     break;
                 }
                 if var_name == local.name {
-                    return Err(report_error_at_current!(self, ParseReason::VariableRedefine(var_name.to_string())));
+                    bail_error_at_previous!(self, ParseReason::VariableRedefine(var_name.to_string()));
                 }
             }
             self.add_local(var_name)?;
@@ -572,61 +640,26 @@ impl<'a> Parser<'a> {
             // global
             Ok(Some(var_name))
         }
-        
-        // self.declare_variable()?;
-        // if self.scope_depth > 0 {
-        //     // MARK
-        //     return Ok("".into());
-        // }
-        
-        // let name = ShrString::new_string(self.previous().lexeme);
-        // Ok(name)
     }
-
-    // fn declare_variable(&mut self) -> ParseResult<()> {
-    //     if self.scope_depth == 0 {
-    //         return Ok(());
-    //     }
-        
-    //     let name = ShrString::new_string(self.previous().lexeme);
-
-    //     for local in self.locals.iter().rev() {
-    //         // Sentinel depth (-1) means the variable is still in its initializer;
-    //         // it's still "in scope" for redefinition checking so we skip the break.
-    //         if local.depth != -1 && local.depth < self.scope_depth {
-    //             break;
-    //         }
-    //         if name == local.name {
-    //             return Err(report_error_at_current!(self, ParseReason::VariableRedefine(name.to_string())));
-    //         }
-    //     }
-        
-    //     self.add_local(name)?;
-    //     Ok(())
-    // }
 
     fn add_local(&mut self, name: ShrString) -> ParseResult<()> {
         // `-1` is the sentinel: the variable is declared but not yet
         // initialized.  `mark_initialized()` will set the real depth.
-        let local = Local { name, depth: -1 };
-        self.state.locals.push(local);
+        let local = Local { name, depth: -1, is_captured: false };
+        self.cur_unit_mut().locals.push(local);
         Ok(())
     }
 
     /// Mark the most recently declared local as ready for use.
     fn mark_initialized(&mut self) {
-        if self.state.scope_depth == 0 {
+        let scope_depth = self.cur_unit().scope_depth;
+        if scope_depth == 0 {
             return;
         }
-        if let Some(last) = self.state.locals.last_mut() {
-            last.depth = self.state.scope_depth;
+        if let Some(last) = self.cur_unit_mut().locals.last_mut() {
+            last.depth = scope_depth;
         }
     }
-
-    // static uint8_t identifierConstant(Token* name) {
-    //     return makeConstant(OBJ_VAL(copyString(name->start,
-    //                                            name->length)));
-    //   }
 
     // ========================================================================== //
     //                    Parse functions 
@@ -663,14 +696,14 @@ impl<'a> Parser<'a> {
             let value: f64 = lexeme
                 .parse()
                 .map_err(|e| 
-                    report_error_at_current!(parser, ParseReason::InvalidFloat(e))
+                    error_at_previous!(parser, ParseReason::InvalidFloat(e))
                 )?;
             parser.emit(Instruction::Constant(Value::Float(value)));
         } else {
             let value: i64 = lexeme
                 .parse()
                 .map_err(|e| 
-                    report_error_at_current!(parser, ParseReason::InvalidInteger(e))
+                    error_at_previous!(parser, ParseReason::InvalidInteger(e))
                 )?;
             parser.emit(Instruction::Constant(Value::Integer(value)));
         }
@@ -766,7 +799,7 @@ impl<'a> Parser<'a> {
             loop {
                 self.expression()?;
                 if arg_count >= 255 {
-                    Err(report_error_at_current!(self, ParseReason::TooMuchArgument))?;
+                    record_error_at_current!(self, ParseReason::TooMuchArgument);
                 }
                 arg_count += 1;
                 if !self.match_token(TokenKind::Comma) {
@@ -779,24 +812,28 @@ impl<'a> Parser<'a> {
     }
 
     fn function(&mut self, kind: FunctionKind) -> ParseResult<()> {
-        let mut state = if kind != FunctionKind::Script {
-            let name = self.previous().lexeme;
-            ParseState::new(&mut self.obj_heap, name.to_string(), kind)
+        let name = if kind != FunctionKind::Script {
+            self.previous().lexeme.to_string()
         } else {
-            ParseState::new(&mut self.obj_heap, "", kind)
+            String::new()
         };
 
-        std::mem::swap(&mut self.state, &mut state);
-        
+        // Push a new compilation unit for the nested function.
+        let enclosing = self.current_unit;
+        self.current_unit = self.units.len();
+        self.units.push(CompilationUnit::new(
+            &mut self.obj_heap, name, kind, enclosing,
+        ));
+
         self.begin_scope();
-        
+
         self.consume(TokenKind::LeftParen, "Expect '(' after function name.")?;
         if !self.check(TokenKind::RightParen) {
             loop {
                 let function = self.cur_function();
                 function.arity += 1;
                 if function.arity > 255 {
-                    Err(report_error_at_current!(self, ParseReason::TooMuchParameter))?;
+                    record_error_at_current!(self, ParseReason::TooMuchParameter);
                 }
                 let param_name = self.parse_variable("Expect parameter name.")?;
                 self.define_variable(param_name)?;
@@ -806,27 +843,35 @@ impl<'a> Parser<'a> {
                 }
             }
         }
-        
+
         self.consume(TokenKind::RightParen, "Expect ')' after parameters.")?;
         self.consume(TokenKind::LeftBrace, "Expect '{' before function body.")?;
         self.block()?;
 
-        let function = self.end_parse();
-        std::mem::swap(&mut self.state, &mut state);
-
-        self.emit(Instruction::Closure(Value::Object(function)));
+        // Finish the nested function and pop its unit.
+        // `end_parse` restores `self.current_unit` to the enclosing.
+        let (inner_function, upvalues) = self.end_parse();
+        self.emit(Instruction::Closure { function: Value::Object(inner_function), upvalues });
 
         Ok(())
     }
 
     fn named_variable(&mut self, name: ShrString, can_assign: bool) -> ParseResult<()> {
-        match self.resolve_local(name.clone()) {
-            Some(slot) => {
+        match self.resolve_local_or_upvalue(&name) {
+            Some(LocalAccess::Local(slot)) => {
                 if can_assign && self.match_token(TokenKind::Equal) {
                     self.expression()?;
                     self.emit(Instruction::SetLocal(slot));
                 } else {
                     self.emit(Instruction::GetLocal(slot));
+                }
+            }
+            Some(LocalAccess::Upvalue(slot)) => {
+                if can_assign && self.match_token(TokenKind::Equal) {
+                    self.expression()?;
+                    self.emit(Instruction::SetUpvalue(slot));
+                } else {
+                    self.emit(Instruction::GetUpvalue(slot));
                 }
             }
             None => {
@@ -841,28 +886,92 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    /// Look up `name` in the current scope.  Returns the stack-slot index
-    /// (position in the locals vector) if found and already initialized.
-    fn resolve_local(&mut self, name: ShrString) -> Option<usize> {
-        for (i, local) in self.state.locals.iter().enumerate().rev() {
-            if name == local.name {
+    /// Resolve `name` first as a local in the current function, then as an
+    /// upvalue captured from an enclosing function, and finally fall back to a global.
+    fn resolve_local_or_upvalue(&mut self, name: &ShrString) -> Option<LocalAccess> {
+        // 1. Current function's locals
+        if let Some(slot) = self.resolve_local_in_current(name) {
+            return Some(LocalAccess::Local(slot));
+        }
+        // 2. Walk up enclosing chain
+        self.resolve_upvalue(name).map(LocalAccess::Upvalue)
+    }
+
+    /// Look up `name` in the *current* function's locals only.
+    fn resolve_local_in_current(&mut self, name: &ShrString) -> Option<usize> {
+        for (i, local) in self.cur_unit().locals.iter().enumerate().rev() {
+            if *name == local.name {
                 if local.depth == -1 {
                     // variable is declared but still inside its own initializer
                     // e.g. `var a = a;` — report the error and bail.
-                    self.errors.push(ParseError {
-                        line: 0, // we don't have the token here; approximate
-                        lexeme: name.to_string(),
-                        reason: ParseReason::VariableRedefine(format!(
-                            "Cannot read local variable '{}' in its own initializer",
-                            name.as_str(),
-                        )),
-                    });
+                    record_error_at_previous!(
+                        self, 
+                        ParseReason::VariableRedefine(format!("Cannot read local variable '{}' in its own initializer", name.as_str(),))
+                    );
                     return None;
                 }
-                return Some(i as usize);
+                return Some(i);
             }
         }
         None
+    }
+
+    /// Look up `name` in a specific unit's locals.
+    fn resolve_local_in_unit(&self, unit_idx: usize, name: &ShrString) -> Option<usize> {
+        for (i, local) in self.units[unit_idx].locals.iter().enumerate().rev() {
+            if *name == local.name {
+                if local.depth == -1 {
+                    return None;
+                }
+                return Some(i);
+            }
+        }
+        None
+    }
+
+    /// Walk the enclosing chain to resolve `name` as an upvalue.
+    ///
+    /// Returns the upvalue index in the *current* function on success, or
+    /// `None` if the variable must be a global.
+    fn resolve_upvalue(&mut self, name: &ShrString) -> Option<usize> {
+        let enclosing = self.cur_unit().enclosing;
+        if enclosing == self.current_unit {
+            return None; // root unit — no enclosing
+        }
+
+        // Found as a local in the *immediate* enclosing function?
+        if let Some(local_slot) = self.resolve_local_in_unit(enclosing, name) {
+            self.units[enclosing].locals[local_slot].is_captured = true;
+            return Some(self.add_upvalue(local_slot, true));
+        }
+
+        // Recurse: search in the enclosing's enclosing.
+        let saved = self.current_unit;
+        self.current_unit = enclosing;
+        let result = self.resolve_upvalue(name);
+        self.current_unit = saved;
+
+        if let Some(upvalue_idx) = result {
+            // The enclosing found it as an upvalue — chain through.
+            return Some(self.add_upvalue(upvalue_idx, false));
+        }
+
+        None
+    }
+
+    /// Add an upvalue to the *current* unit and return its index.
+    /// Deduplicates: returns the existing index if the same upvalue is
+    /// already captured.
+    fn add_upvalue(&mut self, index: usize, is_local: bool) -> usize {
+        let unit = self.cur_unit_mut();
+        for (i, uv) in unit.upvalues.iter().enumerate() {
+            if uv.index == index && uv.is_local == is_local {
+                return i;
+            }
+        }
+        let i = unit.upvalues.len();
+        unit.upvalues.push(UpvalueDesc { index, is_local });
+        i
     }
 
     // ------------------------------------------------------------------------
@@ -909,14 +1018,15 @@ impl<'a> Parser<'a> {
             self.advance();
             Ok(())
         } else {
-            Err(report_error_at_current!(self, ParseReason::ExpectedToken(msg)))
+            bail_error_at_current!(self, ParseReason::ExpectedToken(msg))
         }
     }
 
     // ------------------------------------------------------------------------
     //  Synchronization
     // ------------------------------------------------------------------------
-    fn synchronize(&mut self) {
+    fn synchronize(&mut self, error: ParseError) {
+        self.errors.push(error);
         while !self.at_end() {
             if self.previous().kind == TokenKind::Semicolon {
                 return;
