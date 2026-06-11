@@ -2,7 +2,6 @@ mod variants;
 mod heap;
 pub use variants::*;
 pub use heap::*;
-use super::Value;
 
 pub enum Object {
     Function(ObjectFunction),
@@ -14,33 +13,12 @@ pub enum Object {
     BoundMethod(ObjectBoundMethod),
 }
 
-impl Object {
-    pub fn extract_children(&self, out_children: &mut Vec<ObjectHandle>) {
-        match self {
-            Object::Closure(closure) => {
-                out_children.push(closure.function);
-                out_children.extend(&closure.upvalues);
-            }
-            Object::Instance(instance) => {
-                out_children.push(instance.klass);
-            }
-            Object::BoundMethod(bound) => {
-                out_children.push(bound.method);
-                if let Value::Object(h) = bound.receiver {
-                    out_children.push(h);
-                }
-            }
-            _ => {}
-        }
-    }
-}
-
 macro_rules! impl_object_conversions {
     (
         $(
             $variant:ident => {
                 ty: $ty:ty,
-                as: $as:ident,
+                method: $method:ident,
                 name: $name:literal
             }
         ),* $(,)?
@@ -62,21 +40,9 @@ macro_rules! impl_object_conversions {
                 }
             }
 
-            $(
-                pub fn $as(&self) -> Result<&$ty, ObjectError> {
-                    match self {
-                        Object::$variant(value) => Ok(value),
-                        _ => Err(ObjectError::TypeMismatch {
-                            expected: $name,
-                            found: self.type_name(),
-                        }),
-                    }
-                }
-            )*
-
             paste::paste! {
                 $(
-                    pub fn [<$as _mut>](&mut self) -> Result<&mut $ty, ObjectError> {
+                    pub fn [<as_ $method>](&self) -> Result<&$ty, ObjectError> {
                         match self {
                             Object::$variant(value) => Ok(value),
                             _ => Err(ObjectError::TypeMismatch {
@@ -86,19 +52,40 @@ macro_rules! impl_object_conversions {
                         }
                     }
                 )*
+
+                $(
+                    pub fn [<as_ $method _mut>](&mut self) -> Result<&mut $ty, ObjectError> {
+                        match self {
+                            Object::$variant(value) => Ok(value),
+                            _ => Err(ObjectError::TypeMismatch {
+                                expected: $name,
+                                found: self.type_name(),
+                            }),
+                        }
+                    }
+                )*
+
+                $(
+                    pub fn [<is_ $method>](&self) -> bool {
+                        match self {
+                            Object::$variant(_) => true,
+                            _ => false,
+                        }
+                    }
+                )*
             }
         }
     };
 }
 
 impl_object_conversions! {
-    Function => { ty: ObjectFunction, as: as_function, name: "Function" },
-    BuiltinFn => { ty: ObjectBuiltinFn, as: as_builtin_fn, name: "BuiltinFn" },
-    Closure => { ty: ObjectClosure, as: as_closure, name: "Closure" },
-    Upvalue => { ty: ObjectUpvalue, as: as_upvalue, name: "Upvalue" },
-    Class => { ty: ObjectClass, as: as_class, name: "Class" },
-    Instance => { ty: ObjectInstance, as: as_instance, name: "Instance" },
-    BoundMethod => { ty: ObjectBoundMethod, as: as_bound_method, name: "BoundMethod" },
+    Function => { ty: ObjectFunction, method: function, name: "Function" },
+    BuiltinFn => { ty: ObjectBuiltinFn, method: builtin_fn, name: "BuiltinFn" },
+    Closure => { ty: ObjectClosure, method: closure, name: "Closure" },
+    Upvalue => { ty: ObjectUpvalue, method: upvalue, name: "Upvalue" },
+    Class => { ty: ObjectClass, method: class, name: "Class" },
+    Instance => { ty: ObjectInstance, method: instance, name: "Instance" },
+    BoundMethod => { ty: ObjectBoundMethod, method: bound_method, name: "BoundMethod" },
 }
 
 #[derive(Debug, thiserror::Error)]

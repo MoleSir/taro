@@ -4,14 +4,14 @@ mod error;
 pub use error::*;
 #[cfg(test)]
 mod tests;
-use crate::{BuiltinFn, Chunk, Instruction, Object, ObjectHandle, ObjectHeap, ShrString, Value};
+use crate::{BuiltinFn, Instruction, Object, ObjectHandle, ObjectHeap, ShrString, Value};
 use std::collections::HashMap;
 
 pub struct VirtualMachine {
     pub obj_heap: ObjectHeap,
-    pub frames: Vec<CallFrame>,
-    pub stack: Vec<Value>,
-    pub globals: HashMap<ShrString, Value>,
+    frames: Vec<CallFrame>,
+    stack: Vec<Value>,
+    globals: HashMap<ShrString, Value>,
 }
 
 /// A single function-call frame.  `slots_start` is the index into
@@ -19,7 +19,7 @@ pub struct VirtualMachine {
 /// same role as the `Value* slots` pointer in the C interpreter, but without
 /// raw pointers.
 pub struct CallFrame {
-    pub function: ObjectHandle,
+    pub closure: ObjectHandle,
     pub ip: usize,
     pub slots_start: usize,
 }
@@ -78,10 +78,14 @@ impl VirtualMachine {
     pub fn interpret(&mut self, source: &str) -> Result<(), InterpretError> {
         let function = crate::compile::compile(source, &mut self.obj_heap)
             .map_err(InterpretError::Compile)?;
-        // Slot 0 holds the script function itself — the same layout as a
-        // normal call where the callee occupies slot 0.
-        self.stack = vec![Value::Object(function)];
-        self.frames = vec![CallFrame { function, ip: 0, slots_start: 0 }];
+        self.interpret_function(function)
+    }
+
+    pub(crate) fn interpret_function(&mut self, function: ObjectHandle) -> Result<(), InterpretError> {
+        let closure = self.obj_heap.alloc_closure(function);
+        self.reset();
+        self.push_stack(Value::Object(closure));
+        self.call(closure, 0).expect("can't failed in script call");
         self.run().map_err(InterpretError::Runtime)
     }
 
@@ -96,11 +100,9 @@ impl VirtualMachine {
             // needs an immutable reference to the chunk, so this
             // doesn't conflict with anything.
             let inst = {
-                let chunk = match self.obj_heap.get(self.frame()?.function) {
-                    Object::Function(function) => &function.chunk,
-                    _ => unreachable!(),
-                };
-                chunk.read_instruction(&mut ip)?
+                let closure = self.obj_heap.get_closure(self.frame()?.closure).expect("must closure");
+                let function = self.obj_heap.get_function(closure.function).expect("must function");
+                function.chunk.read_instruction(&mut ip)?
             };
 
             match inst {
@@ -201,6 +203,12 @@ impl VirtualMachine {
                     self.call_value(callee, arg_count)?;
                     continue; // skip writing ip back — callee frame is now active
                 }
+
+                Instruction::Closure(value) => {
+                    let function = value.as_object().expect("must object");
+                    let closure = self.obj_heap.alloc_closure(function);
+                    self.push_stack(closure);
+                }
             }
 
             // Persist the (potentially modified) ip back into the frame.
@@ -208,12 +216,9 @@ impl VirtualMachine {
         }
     }
 
-    /// Replace the current script with a new chunk, preserving globals.
-    /// Used by the REPL to run each line in a shared global scope.
     pub fn reset(&mut self) {
-        let function = self.obj_heap.alloc_function("script", 0, Chunk::new());
-        self.frames = vec![CallFrame { function, ip: 0, slots_start: 0 }];
-        self.stack = vec![Value::Object(function)];
+        self.stack.clear();
+        self.frames.clear();
     }
 
     #[inline]
@@ -235,7 +240,7 @@ impl VirtualMachine {
         if let Value::Object(handle) = callee {
             let obj = self.obj_heap.get(handle);
             match obj {
-                Object::Function(_) => self.call(handle, arg_count),
+                Object::Closure(_) => self.call(handle, arg_count),
                 Object::BuiltinFn(builtin_fn) => {
                     let args = &self.stack[self.stack.len() - arg_count..];
                     let result = (builtin_fn.function)(args)?;
@@ -250,13 +255,14 @@ impl VirtualMachine {
         }
     }
     
-    fn call(&mut self, handle: ObjectHandle, arg_count: usize) -> ExecuteResult<()> {
-        let function = self.obj_heap.get(handle).as_function().expect("must func");
+    fn call(&mut self, closure_handle: ObjectHandle, arg_count: usize) -> ExecuteResult<()> {
+        let closure = self.obj_heap.get_closure(closure_handle).expect("must closure");
+        let function = self.obj_heap.get_function(closure.function).expect("must function");
         if arg_count != function.arity {
             Err(ExecuteError::ArgmentCountUnmatch { expcted: function.arity, got: arg_count })?;
         }
         
-        let frame = CallFrame { function: handle, ip: 0, slots_start: self.stack.len() - arg_count - 1 };
+        let frame = CallFrame { closure: closure_handle, ip: 0, slots_start: self.stack.len() - arg_count - 1 };
         self.frames.push(frame);
         Ok(())
     }

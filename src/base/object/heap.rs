@@ -1,5 +1,5 @@
 use crate::{Chunk, ShrString, Value};
-use super::{BuiltinFn, Object, ObjectBuiltinFn, ObjectFunction};
+use super::{BuiltinFn, Object, ObjectBuiltinFn, ObjectClosure, ObjectError, ObjectFunction};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ObjectHandle(pub usize);
@@ -37,17 +37,26 @@ impl ObjectHeap {
         }
     }
 
+    // ================================================================================== // 
+    //           Alloc
+    // ================================================================================== // 
+
+    pub fn alloc_closure(&mut self, function: ObjectHandle) -> ObjectHandle {
+        let obj = ObjectClosure::new(function);
+        self.alloc(obj)
+    }
+
     pub fn alloc_function(&mut self, name: impl Into<ShrString>, arity: usize, chunk: Chunk) -> ObjectHandle {
-        let obj = ObjectFunction { arity, chunk, name: name.into() };
+        let obj = ObjectFunction::new(name, arity, chunk);
         self.alloc(obj)
     }
 
     pub fn alloc_builtin_fn(&mut self, function: BuiltinFn) -> ObjectHandle {
-        let obj = ObjectBuiltinFn { function };
+        let obj = ObjectBuiltinFn::new(function);
         self.alloc(obj)
     }
 
-    pub fn alloc(&mut self, obj: impl Into<Object>) -> ObjectHandle {
+    fn alloc(&mut self, obj: impl Into<Object>) -> ObjectHandle {
         let obj = obj.into();
         self.bytes_allocated += std::mem::size_of::<Object>();
         let handle = if let Some(index) = self.free_slots.pop() {
@@ -67,6 +76,10 @@ impl ObjectHeap {
         handle
     }
 
+    // ================================================================================== // 
+    //           Get
+    // ================================================================================== // 
+
     pub fn get(&self, handle: ObjectHandle) -> &Object {
         self.objects[handle.0].as_ref().expect("Dangling handle accessed!")
     }
@@ -74,6 +87,40 @@ impl ObjectHeap {
     pub fn get_mut(&mut self, handle: ObjectHandle) -> &mut Object {
         self.objects[handle.0].as_mut().expect("Dangling handle accessed!")
     }
+
+    #[inline]
+    pub fn get_function(&self, handle: ObjectHandle) -> Result<&ObjectFunction, ObjectError> {
+        self.get(handle).as_function()
+    }
+
+    #[inline]
+    pub fn get_function_mut(&mut self, handle: ObjectHandle) -> Result<&mut ObjectFunction, ObjectError> {
+        self.get_mut(handle).as_function_mut()
+    }
+
+    #[inline]
+    pub fn get_builtin_fn(&self, handle: ObjectHandle) -> Result<&ObjectBuiltinFn, ObjectError> {
+        self.get(handle).as_builtin_fn()
+    }
+
+    #[inline]
+    pub fn get_builtin_fn_mut(&mut self, handle: ObjectHandle) -> Result<&mut ObjectBuiltinFn, ObjectError> {
+        self.get_mut(handle).as_builtin_fn_mut()
+    }
+
+    #[inline]
+    pub fn get_closure(&self, handle: ObjectHandle) -> Result<&ObjectClosure, ObjectError> {
+        self.get(handle).as_closure()
+    }
+
+    #[inline]
+    pub fn get_closure_mut(&mut self, handle: ObjectHandle) -> Result<&mut ObjectClosure, ObjectError> {
+        self.get_mut(handle).as_closure_mut()
+    }
+
+    // ================================================================================== // 
+    //           GC
+    // ================================================================================== // 
 
     pub fn mark_value(&mut self, value: Value) {
         if let Value::Object(handle) = value {
@@ -147,6 +194,27 @@ impl ObjectHeap {
                     // 此处可以精确扣减 bytes_allocated
                 }
             }
+        }
+    }
+}
+
+impl Object {
+    pub fn extract_children(&self, out_children: &mut Vec<ObjectHandle>) {
+        match self {
+            Object::Closure(closure) => {
+                out_children.push(closure.function);
+                out_children.extend(&closure.upvalues);
+            }
+            Object::Instance(instance) => {
+                out_children.push(instance.klass);
+            }
+            Object::BoundMethod(bound) => {
+                out_children.push(bound.method);
+                if let Value::Object(h) = bound.receiver {
+                    out_children.push(h);
+                }
+            }
+            _ => {}
         }
     }
 }

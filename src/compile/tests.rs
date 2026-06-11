@@ -828,8 +828,8 @@ fn test_empty_function_declaration() {
     //   DefineGlobal("foo")  — bind "foo" to the function
     //   Nil; Return          — implicit script return
     let (c, obj_heap) = compile_with_heap("fun foo() {}");
-    // First instruction: Constant with function object
-    assert_eq!(c.codes[0], ByteCode::Constant as u8);
+    // First instruction: Closure with function object
+    assert_eq!(c.codes[0], ByteCode::Closure as u8);
     let const_idx = u16::from_le_bytes([c.codes[1], c.codes[2]]) as usize;
     // The constant should be an Object handle pointing to a function
     let fn_val = &c.constants[const_idx];
@@ -903,7 +903,7 @@ fn test_function_call_expression() {
     // Script should contain: Constant(fn), DefineGlobal, GetGlobal("f"), Call(0), Pop, Nil, Return
     let (c, _obj_heap) = compile_with_heap("fun f() {} f();");
     // First: Constant + DefineGlobal (declaration)
-    assert_eq!(c.codes[0], ByteCode::Constant as u8);
+    assert_eq!(c.codes[0], ByteCode::Closure as u8);
     assert_eq!(c.codes[3], ByteCode::DefineGlobal as u8);
     // Then: GetGlobal("f")
     assert_eq!(c.codes[6], ByteCode::GetGlobal as u8);

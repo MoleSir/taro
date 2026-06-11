@@ -20,6 +20,14 @@ impl Value {
             Err(ExecuteError::UnexpectType("string", self.type_name()))
         }
     }
+
+    pub fn as_object(&self) -> ExecuteResult<ObjectHandle> {
+        if let Value::Object(h) = self {
+            Ok(*h)
+        } else {
+            Err(ExecuteError::UnexpectType("object", self.type_name()))
+        }
+    }
 }
 
 #[macro_export]

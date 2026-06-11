@@ -121,6 +121,10 @@ impl Chunk {
                 self.write_op(ByteCode::Call);
                 self.write_byte(arg_count as u8);
             }
+
+            Instruction::Closure(value) => {
+                self.write_const_op(ByteCode::Closure, value);
+            }
         }
     }
 
@@ -191,6 +195,11 @@ impl Chunk {
             ByteCode::Call => {
                 let arg_count = self.read_byte(ip)?;
                 Ok(Instruction::Call(arg_count as usize))
+            }
+
+            ByteCode::Closure => {
+                let value = self.read_constant(ip)?;
+                Ok(Instruction::Closure(value))
             }
         }
     }

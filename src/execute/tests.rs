@@ -1,12 +1,10 @@
 use crate::{Chunk, Instruction, Value, ToShrString};
-use super::{CallFrame, VirtualMachine};
+use super::VirtualMachine;
 
 fn run_chunk(chunk: Chunk) -> VirtualMachine {    
     let mut vm = VirtualMachine::new();
     let function = vm.obj_heap.alloc_function("script", 0, chunk);
-    vm.stack = vec![Value::Object(function)];
-    vm.frames = vec![CallFrame { function, ip: 0, slots_start: 0 }];
-    vm.run().unwrap();
+    vm.interpret_function(function).unwrap();
     vm
 }
 

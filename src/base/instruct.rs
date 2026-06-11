@@ -35,6 +35,8 @@ pub enum ByteCode {
     Loop,
 
     Call,
+
+    Closure,
 }
 
 /// High-level instruction with resolved parameters.
@@ -76,4 +78,6 @@ pub enum Instruction {
     Loop(usize),
 
     Call(usize),
+
+    Closure(Value),
 }

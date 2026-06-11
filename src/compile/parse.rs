@@ -814,7 +814,7 @@ impl<'a> Parser<'a> {
         let function = self.end_parse();
         std::mem::swap(&mut self.state, &mut state);
 
-        self.emit(Instruction::Constant(Value::Object(function)));
+        self.emit(Instruction::Closure(Value::Object(function)));
 
         Ok(())
     }
