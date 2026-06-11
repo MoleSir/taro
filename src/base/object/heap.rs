@@ -1,5 +1,5 @@
 use crate::{Chunk, ShrString, Value};
-use super::{BuiltinFn, Object, ObjectBuiltinFn, ObjectClass, ObjectClosure, ObjectError, ObjectFunction, ObjectInstance, ObjectUpvalue};
+use super::{BuiltinFn, Object, ObjectBoundMethod, ObjectBuiltinFn, ObjectClass, ObjectClosure, ObjectError, ObjectFunction, ObjectInstance, ObjectUpvalue};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ObjectHandle(pub usize);
@@ -54,6 +54,11 @@ impl ObjectHeap {
 
     pub fn alloc_instance(&mut self, class: ObjectHandle) -> ObjectHandle {
         let obj = ObjectInstance::new(class);
+        self.alloc(obj)
+    }
+
+    pub fn alloc_bound_method(&mut self, receiver: Value, method: ObjectHandle) -> ObjectHandle {
+        let obj = ObjectBoundMethod::new(receiver, method);
         self.alloc(obj)
     }
 
@@ -149,6 +154,16 @@ impl ObjectHeap {
         self.get_mut(handle).as_class_mut()
     }
 
+    #[inline]
+    pub fn get_bound_method(&self, handle: ObjectHandle) -> Result<&ObjectBoundMethod, ObjectError> {
+        self.get(handle).as_bound_method()
+    }
+
+    #[inline]
+    pub fn get_bound_method_mut(&mut self, handle: ObjectHandle) -> Result<&mut ObjectBoundMethod, ObjectError> {
+        self.get_mut(handle).as_bound_method_mut()
+    }
+
     // ================================================================================== //
     //           GC
     // ================================================================================== // 
@@ -217,7 +232,14 @@ impl ObjectHeap {
                     self.mark_object(bound.method);
                     self.mark_value(&bound.receiver);
                 }
-                _ => {}
+                Object::Class(class) => {
+                    for method in class.methods.values() {
+                        self.mark_object(*method);
+                    }
+                }
+                Object::BuiltinFn(_) => {
+                    
+                }
             }
         }
     

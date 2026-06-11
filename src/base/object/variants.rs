@@ -43,13 +43,14 @@ pub struct ObjectUpvalue {
 
 pub struct ObjectClass {
     pub name: ShrString,
-
+    pub methods: HashMap<ShrString, ObjectHandle>,
 }
 
 impl ObjectClass {
     pub fn new(name: impl Into<ShrString>) -> Self {
         Self { 
-            name: name.into() 
+            name: name.into(),
+            methods: HashMap::new(),
         }
     }
 }
@@ -85,4 +86,10 @@ impl ObjectClosure {
 pub struct ObjectBoundMethod {
     pub receiver: Value,
     pub method: ObjectHandle,
+}
+
+impl ObjectBoundMethod {
+    pub fn new(receiver: Value, method: ObjectHandle) -> Self {
+        Self { receiver, method }
+    }
 }

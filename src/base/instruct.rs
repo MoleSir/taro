@@ -45,6 +45,7 @@ pub enum ByteCode {
     Class,
     SetProperty,
     GetProperty,   
+    Method,
 }
 
 /// Descriptor for a single upvalue captured by a closure.
@@ -109,4 +110,5 @@ pub enum Instruction {
     Class(ShrString),
     SetProperty(ShrString),
     GetProperty(ShrString),  
+    Method(ShrString),
 }

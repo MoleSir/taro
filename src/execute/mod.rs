@@ -278,14 +278,27 @@ impl VirtualMachine {
                 Instruction::GetProperty(field_name) => {
                     let instance = self.peek_stack(0)?.as_object()?;
                     let instance = self.obj_heap.get_instance(instance)?;
-                    
+
+                    // try field
                     match instance.fields.get(&field_name).cloned() {
                         Some(value) => {
                             self.pop_stack()?;
                             self.push_stack(value);
                         }
                         None => {
-                            Err(ExecuteError::UndefinedProperty(field_name.to_string()))?
+                            // try method
+                            let class = self.obj_heap.get_class(instance.class)?;
+                            match class.methods.get(&field_name).cloned() {
+                                Some(method) => {
+                                    let receiver = self.peek_stack(0)?.clone();
+                                    let bound_method = self.obj_heap.alloc_bound_method(receiver, method);
+                                    self.pop_stack()?;
+                                    self.push_stack(bound_method);
+                                }
+                                None => {
+                                    Err(ExecuteError::UndefinedProperty(field_name.to_string()))?
+                                }
+                            }
                         }
                     }
                 }
@@ -298,6 +311,9 @@ impl VirtualMachine {
                     let value = self.pop_stack()?;
                     self.pop_stack()?;
                     self.push_stack(value);
+                }
+                Instruction::Method(method_name) => {
+                    self.define_method(method_name)?;
                 }
             }
 
@@ -337,6 +353,11 @@ impl VirtualMachine {
                     self.stack[index] = Value::Object(instance);
                     Ok(())
                 }
+                Object::BoundMethod(bound_method) => {
+                    let index = self.stack.len() - arg_count - 1;
+                    self.stack[index] = bound_method.receiver.clone();
+                    self.call(bound_method.method, arg_count)
+                }
                 Object::BuiltinFn(builtin_fn) => {
                     let result = (builtin_fn.function)(self, arg_count)?;
                     self.stack.truncate(self.stack.len() - arg_count - 1);
@@ -365,6 +386,15 @@ impl VirtualMachine {
     fn define_builtin_fn(&mut self, name: &'static str, function: BuiltinFn) {
         let function = self.obj_heap.alloc_builtin_fn(name, function);
         self.globals.insert(name.into(), Value::Object(function));
+    }
+
+    fn define_method(&mut self, name: ShrString) -> ExecuteResult<()> {
+        let method = self.peek_stack(0)?.as_object()?;
+        let class = self.peek_stack(1)?.as_object()?;
+        let class = self.obj_heap.get_class_mut(class)?;
+        class.methods.insert(name, method);
+        self.pop_stack()?;
+        Ok(())
     }
 
     /// Capture a stack slot as an upvalue.  If an open upvalue already

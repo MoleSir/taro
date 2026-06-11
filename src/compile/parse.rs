@@ -109,7 +109,7 @@ fn get_rule(kind: TokenKind) -> ParseRule {
         TokenKind::Or           => ParseRule::new(None, Some(Parser::or), Prec::Or),
         TokenKind::Return       => ParseRule::NONE,
         TokenKind::Super        => ParseRule::NONE,
-        TokenKind::This         => ParseRule::NONE,
+        TokenKind::This         => ParseRule::new(Some(Parser::this), None, Prec::None),
         TokenKind::True         => ParseRule::new(Some(Parser::literal), None, Prec::None),
         TokenKind::Var          => ParseRule::NONE,
         TokenKind::While        => ParseRule::NONE,
@@ -136,7 +136,8 @@ pub struct Local {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FunctionKind {
-    ObjectFunction,
+    Function,
+    Method,
     Script,
 }
 
@@ -251,10 +252,11 @@ macro_rules! record_error_at_previous {
 
 impl CompilationUnit {
     fn new(obj_heap: &mut ObjectHeap, name: impl Into<ShrString>, kind: FunctionKind, enclosing: usize) -> Self {
+        let local_name = if kind != FunctionKind::Function { "this" } else { "" };
         Self {
             function: obj_heap.alloc_function(name.into(), 0, Chunk::new()),
             kind,
-            locals: vec![Local { depth: 0, name: "".into(), is_captured: false }],
+            locals: vec![Local { depth: 0, name: local_name.into(), is_captured: false }],
             scope_depth: 0,
             upvalues: vec![],
             enclosing,
@@ -339,18 +341,24 @@ impl<'a> Parser<'a> {
         self.declare_variable(class_name.clone())?;
 
         self.emit(Instruction::Class(class_name.clone()));
-        self.define_variable(Some(class_name))?;
+        self.define_variable(Some(class_name.clone()))?;
 
+        self.named_variable(class_name, false)?;
         self.consume(TokenKind::LeftBrace, "Expect '{' before class body.")?;
+        
+        while !self.check(TokenKind::RightBrace) && !self.check(TokenKind::Eof) {
+            self.method()?;       
+        }
+        
         self.consume(TokenKind::RightBrace, "Expect '}' after class body.")?;
-
+        self.emit(Instruction::Pop);
         Ok(())
     }
 
     fn fun_declaration(&mut self) -> ParseResult<()> {
         let var_name = self.parse_variable("Expect variable name.")?;
         self.mark_initialized();
-        self.function(FunctionKind::ObjectFunction)?;
+        self.function(FunctionKind::Function)?;
         self.define_variable(var_name)?;
         Ok(())
     }
@@ -397,6 +405,66 @@ impl<'a> Parser<'a> {
         } else {
             self.expression_statement()
         }
+    }
+
+    fn method(&mut self) -> ParseResult<()> {
+        self.consume(TokenKind::Fun, "Expect fun in method")?;
+        self.consume(TokenKind::Identifier, "Expect method name.")?;
+
+        let method_name = ShrString::new_string(self.previous().lexeme);
+
+        let kind = FunctionKind::Method;
+        self.function(kind)?;
+
+        self.emit(Instruction::Method(method_name));
+
+        Ok(())
+    }
+
+
+    fn function(&mut self, kind: FunctionKind) -> ParseResult<()> {
+        let name = if kind != FunctionKind::Script {
+            self.previous().lexeme.to_string()
+        } else {
+            String::new()
+        };
+
+        // Push a new compilation unit for the nested function.
+        let enclosing = self.current_unit;
+        self.current_unit = self.units.len();
+        self.units.push(CompilationUnit::new(
+            &mut self.obj_heap, name, kind, enclosing,
+        ));
+
+        self.begin_scope();
+
+        self.consume(TokenKind::LeftParen, "Expect '(' after function name.")?;
+        if !self.check(TokenKind::RightParen) {
+            loop {
+                let function = self.cur_function();
+                function.arity += 1;
+                if function.arity > 255 {
+                    record_error_at_current!(self, ParseReason::TooMuchParameter);
+                }
+                let param_name = self.parse_variable("Expect parameter name.")?;
+                self.define_variable(param_name)?;
+
+                if !self.match_token(TokenKind::Comma) {
+                    break;
+                }
+            }
+        }
+
+        self.consume(TokenKind::RightParen, "Expect ')' after parameters.")?;
+        self.consume(TokenKind::LeftBrace, "Expect '{' before function body.")?;
+        self.block()?;
+
+        // Finish the nested function and pop its unit.
+        // `end_parse` restores `self.current_unit` to the enclosing.
+        let (inner_function, upvalues) = self.end_parse();
+        self.emit(Instruction::Closure { function: Value::Object(inner_function), upvalues });
+
+        Ok(())
     }
 
     fn block(&mut self) -> ParseResult<()> {
@@ -826,6 +894,10 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
+    fn this(parser: &mut Parser<'_>, _can_assign: bool) -> ParseResult<()> {
+        Parser::variable(parser, false)
+    }
+
     fn argument_list(&mut self) -> ParseResult<usize> {
         let mut arg_count = 0;
         if !self.check(TokenKind::RightParen) {
@@ -842,51 +914,6 @@ impl<'a> Parser<'a> {
         }
         self.consume(TokenKind::RightParen,"Expect ')' after arguments.")?;
         Ok(arg_count)
-    }
-
-    fn function(&mut self, kind: FunctionKind) -> ParseResult<()> {
-        let name = if kind != FunctionKind::Script {
-            self.previous().lexeme.to_string()
-        } else {
-            String::new()
-        };
-
-        // Push a new compilation unit for the nested function.
-        let enclosing = self.current_unit;
-        self.current_unit = self.units.len();
-        self.units.push(CompilationUnit::new(
-            &mut self.obj_heap, name, kind, enclosing,
-        ));
-
-        self.begin_scope();
-
-        self.consume(TokenKind::LeftParen, "Expect '(' after function name.")?;
-        if !self.check(TokenKind::RightParen) {
-            loop {
-                let function = self.cur_function();
-                function.arity += 1;
-                if function.arity > 255 {
-                    record_error_at_current!(self, ParseReason::TooMuchParameter);
-                }
-                let param_name = self.parse_variable("Expect parameter name.")?;
-                self.define_variable(param_name)?;
-
-                if !self.match_token(TokenKind::Comma) {
-                    break;
-                }
-            }
-        }
-
-        self.consume(TokenKind::RightParen, "Expect ')' after parameters.")?;
-        self.consume(TokenKind::LeftBrace, "Expect '{' before function body.")?;
-        self.block()?;
-
-        // Finish the nested function and pop its unit.
-        // `end_parse` restores `self.current_unit` to the enclosing.
-        let (inner_function, upvalues) = self.end_parse();
-        self.emit(Instruction::Closure { function: Value::Object(inner_function), upvalues });
-
-        Ok(())
     }
 
     fn named_variable(&mut self, name: ShrString, can_assign: bool) -> ParseResult<()> {

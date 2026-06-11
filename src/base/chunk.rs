@@ -148,13 +148,14 @@ impl Chunk {
             Instruction::Class(class_name) => {
                 self.write_const_op(ByteCode::Class, Value::String(class_name));
             }
-
             Instruction::SetProperty(class_name) => {
                 self.write_const_op(ByteCode::SetProperty, Value::String(class_name));
             }
-
             Instruction::GetProperty(class_name) => {
                 self.write_const_op(ByteCode::GetProperty, Value::String(class_name));
+            }
+            Instruction::Method(method_name) => {
+                self.write_const_op(ByteCode::Method, Value::String(method_name));
             }
         }
     }
@@ -263,6 +264,10 @@ impl Chunk {
             ByteCode::SetProperty => {
                 let field_name = self.read_string_constant(ip)?;
                 Ok(Instruction::SetProperty(field_name))
+            }
+            ByteCode::Method => {
+                let method_name = self.read_string_constant(ip)?;
+                Ok(Instruction::Method(method_name))
             }
         }
     }
