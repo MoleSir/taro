@@ -35,6 +35,10 @@ impl VirtualMachine {
             self.obj_heap.mark_object(*obj);
         }
 
+        // mark builtin class handles (always reachable)
+        self.obj_heap.mark_object(self.list_class);
+        self.obj_heap.mark_object(self.dict_class);
+
         // collect_garbage by gc
         self.obj_heap.collect_garbage();
 

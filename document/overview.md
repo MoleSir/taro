@@ -53,6 +53,11 @@ while (i < len(a)) {
     sum = sum + a[i];
     i = i + 1;
 }
+
+// List methods
+a.append(4);               // add to end
+print(a.pop());            // remove and return last item
+a.extend([5, 6]);          // add all items from another list
 ```
 
 ## Dicts
@@ -86,6 +91,13 @@ while (i < len(keys)) {
     print(d[keys[i]]);
     i = i + 1;
 }
+
+// Dict methods
+print(d.get("a"));          // 1 — get with nil default for missing
+print(d.get("z"));          // nil
+var key_list = d.keys();    // list of all keys
+var val_list = d.values();  // list of all values
+print(d.pop("a"));          // 1 — remove and return value
 ```
 
 Dict keys use `Value` equality and hashing — same-type comparisons apply.
@@ -281,3 +293,27 @@ Comparison fallback mechanism: `!=` works with only `__eq__`, `>=` works with on
 | `clock()` | Wall-clock time in seconds since Unix epoch (as float). |
 | `list(a, b, ...)` | Create a list from the given arguments (variadic). |
 | `dict()` | Create an empty dict. |
+
+## Builtin methods
+
+List and Dict objects have builtin methods callable via dot syntax:
+
+| Type | Method | Description |
+|------|--------|-------------|
+| List | `list.append(value)` | Add an item to the end; returns the value. |
+| List | `list.pop()` | Remove and return the last item; errors on empty. |
+| List | `list.extend(other)` | Add all items from another list. |
+| Dict | `dict.get(key)` | Return the value for `key`, or `nil` if missing. |
+| Dict | `dict.keys()` | Return a list of all keys. |
+| Dict | `dict.values()` | Return a list of all values. |
+| Dict | `dict.pop(key)` | Remove `key` and return its value; errors if missing. |
+
+Methods can be assigned to variables and called later (bound methods):
+
+```taro
+var appender = my_list.append;
+appender(42);   // same as my_list.append(42)
+
+var getter = my_dict.get;
+print(getter("key"));
+```

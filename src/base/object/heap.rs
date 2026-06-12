@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::{Chunk, ShrString, Value};
-use super::{BuiltinFn, Object, ObjectBoundMethod, ObjectBuiltinFn, ObjectClass, ObjectClosure, ObjectDict, ObjectError, ObjectFunction, ObjectInstance, ObjectList, ObjectUpvalue};
+use super::{BuiltinFn, Method, Object, ObjectBoundMethod, ObjectBuiltinFn, ObjectClass, ObjectClosure, ObjectDict, ObjectError, ObjectFunction, ObjectInstance, ObjectList, ObjectUpvalue};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ObjectHandle(pub usize);
@@ -27,9 +27,9 @@ impl ObjectHeap {
 }
 
 impl ObjectHeap {
-    // ================================================================================== // 
+    // ================================================================================== //
     //           Alloc
-    // ================================================================================== // 
+    // ================================================================================== //
 
     pub fn alloc_closure(&mut self, function: ObjectHandle) -> ObjectHandle {
         let obj = ObjectClosure::new(function);
@@ -61,18 +61,18 @@ impl ObjectHeap {
         self.alloc(obj)
     }
 
-    pub fn alloc_bound_method(&mut self, receiver: Value, method: ObjectHandle) -> ObjectHandle {
+    pub fn alloc_bound_method(&mut self, receiver: Value, method: Method) -> ObjectHandle {
         let obj = ObjectBoundMethod::new(receiver, method);
         self.alloc(obj)
     }
 
-    pub fn alloc_list(&mut self, items: Vec<Value>) -> ObjectHandle {
-        let obj = ObjectList::new(items);
+    pub fn alloc_list(&mut self, class: ObjectHandle, items: Vec<Value>) -> ObjectHandle {
+        let obj = ObjectList::new(class, items);
         self.alloc(obj)
     }
 
-    pub fn alloc_dict(&mut self, items: HashMap<Value, Value>) -> ObjectHandle {
-        let obj = ObjectDict::new(items);
+    pub fn alloc_dict(&mut self, class: ObjectHandle, items: HashMap<Value, Value>) -> ObjectHandle {
+        let obj = ObjectDict::new(class, items);
         self.alloc(obj)
     }
 
@@ -114,9 +114,9 @@ macro_rules! impl_getters {
 }
 
 impl ObjectHeap {
-    // ================================================================================== // 
+    // ================================================================================== //
     //           Get
-    // ================================================================================== // 
+    // ================================================================================== //
 
     pub fn get(&self, handle: ObjectHandle) -> &Object {
         self.objects[handle.0].as_ref().expect("Dangling handle accessed!")
@@ -140,7 +140,7 @@ impl ObjectHeap {
 impl ObjectHeap {
     // ================================================================================== //
     //           GC
-    // ================================================================================== // 
+    // ================================================================================== //
 
     pub fn collect_garbage(&mut self) {
         self.trace_references();
@@ -154,7 +154,7 @@ impl ObjectHeap {
     }
 
     pub fn mark_object(&mut self, handle: ObjectHandle) {
-        let index = handle.0;        
+        let index = handle.0;
         if self.marked[index] {
             return;
         }
@@ -175,7 +175,7 @@ impl ObjectHeap {
     fn blacken_object(&mut self, handle: ObjectHandle) {
         #[cfg(feature = "debug-gc")]
         println!("Blackening {:?}", handle);
-    
+
         let object = self.objects[handle.0].take();
         if let Some(ref obj) = object {
             match obj {
@@ -203,7 +203,9 @@ impl ObjectHeap {
                     }
                 }
                 Object::BoundMethod(bound) => {
-                    self.mark_object(bound.method);
+                    if let Method::User(method_handle) = bound.method {
+                        self.mark_object(method_handle);
+                    }
                     self.mark_value(&bound.receiver);
                 }
                 Object::Class(class) => {
@@ -211,26 +213,30 @@ impl ObjectHeap {
                         self.mark_object(superclass);
                     }
                     for method in class.methods.values() {
-                        self.mark_object(*method);
+                        if let Method::User(method_handle) = method {
+                            self.mark_object(*method_handle);
+                        }
                     }
                 }
                 Object::List(list) => {
+                    self.mark_object(list.class);
                     for item in list.items.iter() {
                         self.mark_value(item);
                     }
                 }
                 Object::Dict(dict) => {
+                    self.mark_object(dict.class);
                     for (k, v) in dict.items.iter() {
                         self.mark_value(k);
                         self.mark_value(v);
                     }
                 }
                 Object::BuiltinFn(_) => {
-                    
+                    // Builtin functions own no heap references.
                 }
             }
         }
-    
+
         self.objects[handle.0] = object;
     }
 
@@ -242,7 +248,7 @@ impl ObjectHeap {
                 } else {
                     #[cfg(feature = "debug-gc")]
                     println!("Sweeping object at {}", i);
-                    
+
                     self.objects[i] = None;
                     self.free_slots.push(i);
                     self.bytes_allocated -= std::mem::size_of::<Object>();

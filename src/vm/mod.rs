@@ -1,11 +1,12 @@
 mod magic;
 mod builtin;
+pub mod builtin_methods;
 mod error;
 mod gc;
 pub use error::*;
 #[cfg(test)]
 mod tests;
-use crate::{BuiltinFn, Instruction, Object, ObjectHandle, ObjectHeap, ShrString, Value};
+use crate::{BuiltinFn, Instruction, Method, Object, ObjectHandle, ObjectHeap, ShrString, Value};
 use std::collections::HashMap;
 
 pub struct VirtualMachine {
@@ -16,6 +17,9 @@ pub struct VirtualMachine {
     /// Sorted (by descending location) linked list of open upvalues.
     open_upvalues: Vec<ObjectHandle>,
     gc_threshold: usize,
+    /// Builtin class handles — allocated once at startup.
+    pub list_class: ObjectHandle,
+    pub dict_class: ObjectHandle,
 }
 
 /// A single function-call frame.  `slots_start` is the index into
@@ -41,7 +45,7 @@ macro_rules! binary_op {
 
 macro_rules! unary_op {
     ($vm:ident, $f:ident) => {
-        paste::paste! {{ 
+        paste::paste! {{
             let v = $vm.pop_stack()?;
             let res = $vm.[<__ $f __>](&v)?;
             $vm.push_stack(res);
@@ -58,12 +62,36 @@ impl VirtualMachine {
             globals: HashMap::new(),
             open_upvalues: vec![],
             gc_threshold: 1024 * 1026,
+            // Allocated immediately below, then methods registered in register_builtins().
+            list_class: ObjectHandle(0),
+            dict_class: ObjectHandle(0),
         };
+        // Allocate the builtin class objects first so they are valid GC roots.
+        vm.list_class = vm.obj_heap.alloc_class("list");
+        vm.dict_class = vm.obj_heap.alloc_class("dict");
         vm.register_builtins();
         vm
     }
 
     fn register_builtins(&mut self) {
+        // ---- builtin class methods ----
+        {
+            let list = self.obj_heap.get_class_mut(self.list_class)
+                .expect("list_class is a Class");
+            list.methods.insert("append".into(), Method::Builtin(VirtualMachine::list_append));
+            list.methods.insert("pop".into(), Method::Builtin(VirtualMachine::list_pop));
+            list.methods.insert("extend".into(), Method::Builtin(VirtualMachine::list_extend));
+        }
+        {
+            let dict = self.obj_heap.get_class_mut(self.dict_class)
+                .expect("dict_class is a Class");
+            dict.methods.insert("get".into(), Method::Builtin(VirtualMachine::dict_get));
+            dict.methods.insert("keys".into(), Method::Builtin(VirtualMachine::dict_keys));
+            dict.methods.insert("values".into(), Method::Builtin(VirtualMachine::dict_values));
+            dict.methods.insert("pop".into(), Method::Builtin(VirtualMachine::dict_pop));
+        }
+
+        // ---- global builtin functions ----
         self.define_builtin_fn("print", VirtualMachine::print);
         self.define_builtin_fn("str", VirtualMachine::str);
         self.define_builtin_fn("bool", VirtualMachine::bool);
@@ -93,11 +121,6 @@ impl VirtualMachine {
     }
 
     /// Compile `source` and execute it on this VM.
-    ///
-    /// This is the main entry point for running scripts — it encapsulates the
-    /// manual stack/frame setup that every caller otherwise has to duplicate.
-    /// Globals and the object heap are preserved across calls, which is what
-    /// the REPL relies on to share state between lines.
     pub fn interpret(&mut self, source: &str) -> Result<(), InterpretError> {
         let function = crate::compile::compile(source, &mut self.obj_heap)
             .map_err(InterpretError::Compile)?;
@@ -122,22 +145,10 @@ impl VirtualMachine {
         }
     }
 
-    /// Advance the VM by one instruction.  This is the core of the
-    /// interpreter loop, extracted so that synchronous method calls
-    /// (e.g. `__str__`) can re-enter it from within a builtin.
-    ///
-    /// For normal instructions, writes the updated `ip` back into the
-    /// current frame before returning.  Callers that change frames
-    /// (`Return`, `Call`, `Invoke`) skip that write-back.
+    /// Advance the VM by one instruction.
     fn step(&mut self) -> ExecuteResult<()> {
-        // Copy `ip` out of the frame so we can work with a local
-        // variable — this avoids a lingering mutable borrow on
-        // `self.frames` that would prevent access to `self.stack`.
         let mut ip = self.frame()?.ip;
 
-        // Decode the next instruction.  `read_instruction` only
-        // needs an immutable reference to the chunk, so this
-        // doesn't conflict with anything.
         let inst = {
             let closure = self.obj_heap.get_closure(self.frame()?.closure).expect("must closure");
             let function = self.obj_heap.get_function(closure.function).expect("must function");
@@ -174,8 +185,6 @@ impl VirtualMachine {
                 self.push_stack(value);
             }
             Instruction::SetLocal(slot) => {
-                // Assignment is an expression — the value stays on the
-                // stack after being written into the local slot.
                 let base = self.frame()?.slots_start;
                 let index = base + slot;
                 let value = self.stack
@@ -190,18 +199,13 @@ impl VirtualMachine {
             Instruction::Return => {
                 let frame = self.frames.pop().expect("not empty frame");
                 if self.frames.is_empty() {
-                    // Top-level script finished — the return value (if any)
-                    // stays on the stack so callers can inspect it.
                     return Ok(());
                 }
-                // Function return: pop the return value, close any
-                // upvalues referencing this frame, clean up the callee's
-                // stack window, and push the result onto the caller's stack.
                 let result = self.pop_stack()?;
                 self.close_upvalues(frame.slots_start)?;
                 self.stack.truncate(frame.slots_start);
                 self.push_stack(result);
-                return Ok(()); // was `continue` — skip writing callee's ip
+                return Ok(());
             }
             Instruction::Nil => self.push_stack(()),
             Instruction::True => self.push_stack(true),
@@ -235,25 +239,20 @@ impl VirtualMachine {
             }
 
             Instruction::Call(arg_count) => {
-                // Save the caller's ip (already advanced past Call)
-                // before we push the callee frame.
                 self.frame_mut()?.ip = ip;
                 let callee = self.peek_stack(arg_count)?.clone();
                 self.call_value(callee, arg_count)?;
-                return Ok(()); // was `continue` — callee frame is now active
+                return Ok(());
             }
 
             Instruction::Closure { function, upvalues } => {
                 let function_handle = function.as_object().expect("must object");
                 let closure_handle = self.obj_heap.alloc_closure(function_handle);
-                // Capture upvalues from the enclosing frame/closure.
                 for uv_desc in upvalues {
                     let upvalue = if uv_desc.is_local {
-                        // Capture from the current frame's stack.
                         let slot = self.frame()?.slots_start + uv_desc.index;
                         self.capture_upvalue(slot)?
                     } else {
-                        // Capture from the enclosing closure's upvalue array.
                         let enclosing_closure = self.obj_heap
                             .get_closure(self.frame()?.closure)
                             .expect("must closure");
@@ -305,33 +304,41 @@ impl VirtualMachine {
                 let class = self.obj_heap.alloc_class(class_name);
                 self.push_stack(class);
             }
-            Instruction::GetProperty(field_name) => {
-                let instance = self.peek_stack(0)?.as_object()?;
-                let instance = self.obj_heap.get_instance(instance)?;
 
-                // try field
-                match instance.fields.get(&field_name).cloned() {
-                    Some(value) => {
-                        self.pop_stack()?;
-                        self.push_stack(value);
-                    }
-                    None => {
-                        // try method
-                        let class = self.obj_heap.get_class(instance.class)?;
-                        match class.methods.get(&field_name).cloned() {
-                            Some(method) => {
-                                let receiver = self.peek_stack(0)?.clone();
-                                let bound_method = self.obj_heap.alloc_bound_method(receiver, method);
-                                self.pop_stack()?;
-                                self.push_stack(bound_method);
-                            }
-                            None => {
-                                Err(ExecuteError::UndefinedProperty(field_name.to_string()))?
-                            }
+            // ---- GetProperty — unified dispatch ----
+            Instruction::GetProperty(field_name) => {
+                let receiver_val = self.peek_stack(0)?.clone();
+                let receiver_handle = receiver_val.as_object()?;
+
+                // Extract the class handle (and optional field value for Instance).
+                let (class_handle, field_value) = {
+                    let obj = self.obj_heap.get(receiver_handle);
+                    match obj {
+                        Object::Instance(inst) => {
+                            let val = inst.fields.get(&field_name).cloned();
+                            (inst.class, val)
                         }
+                        Object::List(list) => (list.class, None),
+                        Object::Dict(dict) => (dict.class, None),
+                        _ => Err(ExecuteError::UndefinedProperty(field_name.to_string()))?,
                     }
+                }; // immutable borrow released
+
+                if let Some(value) = field_value {
+                    self.pop_stack()?;
+                    self.push_stack(value);
+                } else {
+                    let method = {
+                        let class = self.obj_heap.get_class(class_handle)?;
+                        class.methods.get(&field_name).cloned()
+                            .ok_or_else(|| ExecuteError::UndefinedProperty(field_name.to_string()))?
+                    };
+                    let receiver = self.pop_stack()?;
+                    let bound = self.obj_heap.alloc_bound_method(receiver, method);
+                    self.push_stack(bound);
                 }
             }
+
             Instruction::SetProperty(field_name) => {
                 let value = self.peek_stack(0)?.clone();
                 let instance = self.peek_stack(1)?.as_object()?;
@@ -342,11 +349,10 @@ impl VirtualMachine {
                 self.pop_stack()?;
                 self.push_stack(value);
             }
+
             Instruction::Inherit => {
                 let superclass = self.peek_stack(0)?.as_object()?;
                 let subclass = self.peek_stack(1)?.as_object()?;
-                // Copy all methods from superclass into subclass.
-                // Subclass methods (defined later) will override these.
                 let super_methods = {
                     let sc = self.obj_heap.get_class(superclass)?;
                     sc.methods.clone()
@@ -356,38 +362,52 @@ impl VirtualMachine {
                 for (name, method) in super_methods {
                     sub.methods.entry(name).or_insert(method);
                 }
-                self.pop_stack()?; // pop superclass
+                self.pop_stack()?;
             }
+
             Instruction::Method(method_name) => {
                 self.define_method(method_name)?;
             }
 
+            // ---- Invoke — unified dispatch ----
             Instruction::Invoke(method_name, arg_count) => {
-                // Look up the method on the receiver's class.
-                let method_handle = {
-                    let receiver = self.peek_stack(arg_count)?.clone();
-                    let instance_handle = receiver.as_object()?;
-                    let instance = self.obj_heap.get_instance(instance_handle)?;
-                    let class = self.obj_heap.get_class(instance.class)?;
-                    class
-                        .methods
-                        .get(&method_name)
-                        .ok_or_else(|| {
-                            ExecuteError::UndefinedProperty(method_name.as_str().to_string())
-                        })?
-                        .clone()
-                }; // all borrows released before calling call_method()
+                let receiver = self.peek_stack(arg_count)?.clone();
+                let receiver_handle = receiver.as_object()?;
 
-                // Save ip before switching to callee frame (same pattern as Call).
-                // +1 for the receiver (explicit self), which is already on the stack.
-                self.frame_mut()?.ip = ip;
-                self.call_method(method_handle, arg_count + 1)?;
-                return Ok(()); // was `continue` — callee frame is now active
+                // Extract the class handle.
+                let class_handle = {
+                    let obj = self.obj_heap.get(receiver_handle);
+                    match obj {
+                        Object::Instance(inst) => inst.class,
+                        Object::List(list) => list.class,
+                        Object::Dict(dict) => dict.class,
+                        _ => Err(ExecuteError::UndefinedProperty(method_name.as_str().to_string()))?,
+                    }
+                };
+
+                // Look up the method in the class.
+                let method = {
+                    let class = self.obj_heap.get_class(class_handle)?;
+                    class.methods.get(&method_name).cloned()
+                        .ok_or_else(|| ExecuteError::UndefinedProperty(method_name.as_str().to_string()))?
+                };
+
+                match method {
+                    Method::User(closure_handle) => {
+                        self.frame_mut()?.ip = ip;
+                        self.call_method(closure_handle, arg_count + 1)?;
+                        return Ok(());
+                    }
+                    Method::Builtin(builtin_fn) => {
+                        let result = builtin_fn(self, arg_count + 1)?;
+                        self.stack.truncate(self.stack.len() - arg_count - 1);
+                        self.push_stack(result);
+                    }
+                }
             }
 
             Instruction::SuperInvoke(method_name, arg_count) => {
-                // Look up the method on the superclass (not the instance's own class).
-                let method_handle = {
+                let method = {
                     let receiver = self.peek_stack(arg_count)?.clone();
                     let instance_handle = receiver.as_object()?;
                     let instance = self.obj_heap.get_instance(instance_handle)?;
@@ -399,37 +419,43 @@ impl VirtualMachine {
                     superclass
                         .methods
                         .get(&method_name)
+                        .cloned()
                         .ok_or_else(|| {
                             ExecuteError::UndefinedProperty(method_name.as_str().to_string())
                         })?
-                        .clone()
                 };
 
-                // Save ip before switching to callee frame.
-                // +1 for the receiver (explicit self), which is already on the stack.
-                self.frame_mut()?.ip = ip;
-                self.call_method(method_handle, arg_count + 1)?;
-                return Ok(());
+                match method {
+                    Method::User(closure_handle) => {
+                        self.frame_mut()?.ip = ip;
+                        self.call_method(closure_handle, arg_count + 1)?;
+                        return Ok(());
+                    }
+                    Method::Builtin(builtin_fn) => {
+                        let result = builtin_fn(self, arg_count + 1)?;
+                        self.stack.truncate(self.stack.len() - arg_count - 1);
+                        self.push_stack(result);
+                    }
+                }
             }
-        
+
             Instruction::BuildList(count) => {
                 let mut items = vec![];
                 for _ in 0..count {
                     items.push(self.pop_stack()?);
                 }
                 items.reverse();
-                let list = self.obj_heap.alloc_list(items);
+                let list = self.obj_heap.alloc_list(self.list_class, items);
                 self.push_stack(list);
             }
             Instruction::BuildDict(count) => {
                 let mut items = HashMap::new();
                 for _ in 0..count {
-                    // Parser pushes key then value, so value is on top.
                     let val = self.pop_stack()?;
                     let key = self.pop_stack()?;
                     items.insert(key, val);
                 }
-                let dict = self.obj_heap.alloc_dict(items);
+                let dict = self.obj_heap.alloc_dict(self.dict_class, items);
                 self.push_stack(dict);
             }
             Instruction::IndexGet => {
@@ -447,33 +473,25 @@ impl VirtualMachine {
             }
         }
 
-        // Persist the (potentially modified) ip back into the frame.
         self.frame_mut()?.ip = ip;
         Ok(())
     }
 
-    /// Invoke a method on a receiver synchronously, running its bytecode 
+    /// Invoke a method on a receiver synchronously, running its bytecode
     /// to completion and returning the result value.
-    /// TODO: gc?
     fn invoke_method_sync(&mut self, receiver: ObjectHandle, method: ObjectHandle, extra_args: &[Value]) -> ExecuteResult<Value> {
-        let method_handle = method;
-
-        // Push the receiver and extra args onto the stack.
-        // call_method expects: stack[slots_start] = receiver, then args.
         self.push_stack(receiver);
         for arg in extra_args {
             self.push_stack(arg.clone());
         }
         let saved_frame_count = self.frames.len();
-        let total_args = 1 + extra_args.len(); // receiver + explicit args
-        self.call_method(method_handle, total_args)?;
+        let total_args = 1 + extra_args.len();
+        self.call_method(method, total_args)?;
 
-        // Sub-loop: run until the method's frame (and any frames it pushes) unwind back to the caller.
         while self.frames.len() > saved_frame_count {
             self.step()?;
         }
 
-        // The method's return value is now on top of the stack.
         self.pop_stack()
     }
 
@@ -503,20 +521,24 @@ impl VirtualMachine {
             match obj {
                 Object::Closure(_) => self.call(handle, arg_count),
                 Object::Class(_) => {
-                    // Look up __init__() before allocating the instance (avoid borrow conflict).
-                    let init_handle = {
+                    let init_method = {
                         let class = self.obj_heap.get_class(handle)?;
-                        class.methods.get("__init__").copied()
+                        class.methods.get("__init__").cloned()
                     };
                     let instance = self.obj_heap.alloc_instance(handle);
                     let index = self.stack.len() - arg_count - 1;
                     self.stack[index] = Value::Object(instance);
-                    if let Some(init_handle) = init_handle {
-                        // Call the __init__() method on the fresh instance.
-                        // +1 for the receiver (explicit self), already on the stack.
-                        self.call_method(init_handle, arg_count + 1)
+                    if let Some(method) = init_method {
+                        match method {
+                            Method::User(closure_handle) => {
+                                self.call_method(closure_handle, arg_count + 1)
+                            }
+                            Method::Builtin(_) => {
+                                unreachable!("__init__ on builtin classes is not supported")
+                            }
+                        }
                     } else if arg_count != 0 {
-                        Err(ExecuteError::ArgmentCountUnmatch { expcted: 0, got: arg_count, })?;
+                        Err(ExecuteError::ArgmentCountUnmatch { expcted: 0, got: arg_count })?;
                         unreachable!()
                     } else {
                         Ok(())
@@ -525,8 +547,17 @@ impl VirtualMachine {
                 Object::BoundMethod(bound_method) => {
                     let index = self.stack.len() - arg_count - 1;
                     self.stack[index] = bound_method.receiver.clone();
-                    // +1 for the receiver (explicit self), already on the stack.
-                    self.call_method(bound_method.method, arg_count + 1)
+                    match &bound_method.method {
+                        Method::User(closure_handle) => {
+                            self.call_method(*closure_handle, arg_count + 1)
+                        }
+                        Method::Builtin(builtin_fn) => {
+                            let result = (*builtin_fn)(self, arg_count + 1)?;
+                            self.stack.truncate(self.stack.len() - arg_count - 1);
+                            self.push_stack(result);
+                            Ok(())
+                        }
+                    }
                 }
                 Object::BuiltinFn(builtin_fn) => {
                     let result = (builtin_fn.function)(self, arg_count)?;
@@ -540,12 +571,8 @@ impl VirtualMachine {
             Err(ExecuteError::CanNotCall(callee.type_name()))
         }
     }
-    
+
     /// Push a call frame for a regular function call.
-    ///
-    /// The closure lives on the stack at `slots_start` (slot 0), followed by the
-    /// arguments at slots 1..=arg_count.  This matches the layout produced by
-    /// `OP_CALL`.
     fn call(&mut self, closure_handle: ObjectHandle, arg_count: usize) -> ExecuteResult<()> {
         let closure = self.obj_heap.get_closure(closure_handle).expect("must closure");
         let function = self.obj_heap.get_function(closure.function).expect("must function");
@@ -558,12 +585,7 @@ impl VirtualMachine {
         Ok(())
     }
 
-    /// Push a call frame for a method call (via `OP_INVOKE`, bound-method,
-    /// or class instantiation with `__init__()`).
-    ///
-    /// The receiver is already on the stack at `slots_start` (slot 0) and
-    /// counts toward `arg_count` (explicit `self`).  There is no closure on
-    /// the stack, unlike `call()`.
+    /// Push a call frame for a method call (user-defined closure only).
     fn call_method(&mut self, closure_handle: ObjectHandle, arg_count: usize) -> ExecuteResult<()> {
         let closure = self.obj_heap.get_closure(closure_handle).expect("must closure");
         let function = self.obj_heap.get_function(closure.function).expect("must function");
@@ -582,19 +604,16 @@ impl VirtualMachine {
     }
 
     fn define_method(&mut self, name: ShrString) -> ExecuteResult<()> {
-        let method = self.peek_stack(0)?.as_object()?;
-        let class = self.peek_stack(1)?.as_object()?;
-        let class = self.obj_heap.get_class_mut(class)?;
-        class.methods.insert(name, method);
+        let method_handle = self.peek_stack(0)?.as_object()?;
+        let class_handle = self.peek_stack(1)?.as_object()?;
+        let class = self.obj_heap.get_class_mut(class_handle)?;
+        class.methods.insert(name, Method::User(method_handle));
         self.pop_stack()?;
         Ok(())
     }
 
-    /// Capture a stack slot as an upvalue.  If an open upvalue already
-    /// references this slot, reuse it; otherwise allocate a new one.
+    /// Capture a stack slot as an upvalue.
     fn capture_upvalue(&mut self, slot: usize) -> ExecuteResult<ObjectHandle> {
-        // Walk the linked list of open upvalues rooted at this slot (if any
-        // exist) to see whether we already have one.
         let mut prev: Option<ObjectHandle> = None;
         let mut curr = self.open_upvalues.last().copied();
         while let Some(handle) = curr {
@@ -603,21 +622,16 @@ impl VirtualMachine {
                 break;
             }
             if uv.location == Some(slot) {
-                return Ok(handle); // reuse existing
+                return Ok(handle);
             }
             prev = curr;
             curr = uv.next;
         }
 
-        // Allocate a new open upvalue and insert it into the list, keeping
-        // the list sorted by descending location.
         let new_handle = self.obj_heap.alloc_upvalue(Some(slot));
         if let Some(prev_handle) = prev {
             self.obj_heap.get_upvalue_mut(prev_handle).expect("must upvalue").next = Some(new_handle);
         } else {
-            // This becomes the new head.  We don't have a direct head
-            // pointer — we rely on `open_upvalues` tracking.  For now,
-            // just push onto the tracker.
             self.open_upvalues.push(new_handle);
         }
         Ok(new_handle)
@@ -640,4 +654,3 @@ impl VirtualMachine {
         Ok(())
     }
 }
-

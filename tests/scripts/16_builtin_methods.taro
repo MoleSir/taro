@@ -1,0 +1,142 @@
+// Builtin methods for List and Dict
+
+// === 1. list.append() ===
+print("=== list.append ===");
+var a = [1, 2, 3];
+a.append(4);
+print(a);
+print(len(a));
+
+// === 2. list.append() returns value ===
+print("=== list.append returns ===");
+var b = [1, 2];
+var result = b.append(3);
+print(result);
+print(b);
+
+// === 3. list.pop() ===
+print("=== list.pop ===");
+var c = [10, 20, 30];
+var last = c.pop();
+print(last);
+print(len(c));
+print(c);
+
+// === 4. list.pop() on empty error ===
+print("=== list.pop empty ===");
+var empty = [];
+var err = nil;
+// uncomment to test: empty.pop();
+
+// === 5. list.extend() ===
+print("=== list.extend ===");
+var d = [1, 2];
+d.extend([3, 4, 5]);
+print(len(d));
+print(d[2]);
+print(d);
+
+// === 6. list method via variable ===
+print("=== list method variable ===");
+var e = [1, 2];
+var appender = e.append;
+appender(3);
+appender(4);
+print(e);
+print(len(e));
+
+// === 7. list in loop with append ===
+print("=== list in loop with append ===");
+var f = [];
+var i = 0;
+while (i < 5) {
+    f.append(i);
+    i = i + 1;
+}
+print(f);
+print(len(f));
+
+// === 8. dict.get() ===
+print("=== dict.get ===");
+var g = {"a": 1, "b": 2, "c": 3};
+print(g.get("a"));
+print(g.get("b"));
+print(g.get("c"));
+
+// === 9. dict.get() missing returns nil ===
+print("=== dict.get missing ===");
+print(g.get("nonexistent"));
+print(g.get("missing") == nil);
+
+// === 10. dict.keys() ===
+print("=== dict.keys ===");
+var keys = g.keys();
+print(len(keys));
+
+// === 11. dict.values() ===
+print("=== dict.values ===");
+var vals = g.values();
+print(len(vals));
+print(vals);
+
+// === 12. dict.pop() ===
+print("=== dict.pop ===");
+var h = {"x": 10, "y": 20, "z": 30};
+var val = h.pop("y");
+print(val);
+print(len(h));
+
+// === 13. dict method via variable ===
+print("=== dict method variable ===");
+var d2 = {"a": 1, "b": 2};
+var getter = d2.get;
+print(getter("a"));
+print(getter("c"));
+
+// === 14. chained: dict.keys() then list methods ===
+print("=== chained dict.keys list ===");
+var d3 = {"first": 1, "second": 2, "third": 3};
+var key_list = d3.keys();
+key_list.append("extra");
+print(len(key_list));
+
+// === 15. list.extend with list literal ===
+print("=== list.extend literal ===");
+var x = [1];
+x.extend([2, 3]);
+print(x);
+
+// === 16. dict.keys/values on empty dict ===
+print("=== empty dict methods ===");
+var ed = {};
+print(ed.get("any"));
+print(ed.keys());
+print(ed.values());
+
+// === 17. dict.get in expression ===
+print("=== dict.get in expression ===");
+var src = {"x": 5, "y": 10};
+var sum = src.get("x") + src.get("y");
+print(sum);
+
+// === 18. list builtin methods with literal ===
+print("=== list methods with literal ===");
+var items = [];
+items.append("hello");
+items.append("world");
+print(items);
+print(items.pop());
+print(items);
+
+// === 19. Build dict, use methods ===
+print("=== build dict use methods ===");
+var built = dict();
+built["one"] = 1;
+built["two"] = 2;
+print(built.get("one"));
+print(len(built.keys()));
+var popped = built.pop("one");
+print(popped);
+print(len(built));
+
+print("builtin methods done");

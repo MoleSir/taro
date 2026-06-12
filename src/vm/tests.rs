@@ -2261,3 +2261,202 @@ pub fn test_dict_overwrite_value() {
         print(len(d));  // still 1
     "#).unwrap();
 }
+
+// ------------------------------------------------------------------------
+//  List methods (append, pop, extend)
+// ------------------------------------------------------------------------
+
+#[test]
+pub fn test_list_append() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        var a = [1, 2];
+        a.append(3);
+        print(len(a));
+        print(a[2]);
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_list_append_returns_value() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        var a = [1, 2];
+        var x = a.append(3);
+        print(x);
+        print(a[2]);
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_list_pop() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        var a = [1, 2, 3];
+        var last = a.pop();
+        print(last);
+        print(len(a));
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_list_pop_empty_errors() {
+    let mut vm = VirtualMachine::new();
+    let result = vm.interpret(r#"
+        var a = [];
+        a.pop();
+    "#);
+    assert!(result.is_err(), "pop on empty list should error");
+}
+
+#[test]
+pub fn test_list_extend() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        var a = [1, 2];
+        a.extend([3, 4, 5]);
+        print(len(a));
+        print(a[2]);
+        print(a[4]);
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_list_method_via_getproperty() {
+    // Method captured as a value and called later.
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        var a = [1, 2];
+        var appender = a.append;
+        appender(3);
+        print(len(a));
+        print(a[2]);
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_list_method_undefined_errors() {
+    let mut vm = VirtualMachine::new();
+    let result = vm.interpret(r#"
+        var a = [1, 2];
+        a.nonexistent();
+    "#);
+    assert!(result.is_err(), "undefined method should error");
+}
+
+// ------------------------------------------------------------------------
+//  Dict methods (get, keys, values, pop)
+// ------------------------------------------------------------------------
+
+#[test]
+pub fn test_dict_get_existing() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        var d = {"a": 1, "b": 2};
+        print(d.get("a"));
+        print(d.get("b"));
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_dict_get_missing_returns_nil() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        var d = {"a": 1};
+        var v = d.get("nonexistent");
+        print(v);
+        if (v == nil) { print("is nil"); }
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_dict_keys() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        var d = {"a": 1, "b": 2, "c": 3};
+        var keys = d.keys();
+        print(len(keys));
+        print(keys[0]);
+        print(keys[1]);
+        print(keys[2]);
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_dict_values() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        var d = {"x": 10, "y": 20, "z": 30};
+        var vals = d.values();
+        print(len(vals));
+        print(vals[0]);
+        print(vals[1]);
+        print(vals[2]);
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_dict_pop_existing() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        var d = {"a": 1, "b": 2, "c": 3};
+        var v = d.pop("b");
+        print(v);
+        print(len(d));
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_dict_pop_missing_errors() {
+    let mut vm = VirtualMachine::new();
+    let result = vm.interpret(r#"
+        var d = {"a": 1};
+        d.pop("nonexistent");
+    "#);
+    assert!(result.is_err(), "pop missing key should error");
+}
+
+#[test]
+pub fn test_dict_method_via_getproperty() {
+    // Method captured as a value and called later.
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        var d = {"a": 1, "b": 2};
+        var getter = d.get;
+        print(getter("a"));
+        print(getter("b"));
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_dict_method_undefined_errors() {
+    let mut vm = VirtualMachine::new();
+    let result = vm.interpret(r#"
+        var d = {"a": 1};
+        d.nonexistent();
+    "#);
+    assert!(result.is_err(), "undefined method should error");
+}
+
+#[test]
+pub fn test_list_dict_method_chained() {
+    // dict.keys() returns a list, then call list methods on it.
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        var d = {"a": 1, "b": 2, "c": 3};
+        var keys = d.keys();
+        keys.append("new_key");
+        print(len(keys));
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_dict_method_on_empty_dict() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        var d = {};
+        print(d.get("any"));
+        print(len(d.keys()));
+        print(len(d.values()));
+    "#).unwrap();
+}

@@ -73,4 +73,7 @@ pub enum ExecuteError {
 
     #[error("key not found in dict")]
     KeyNotFound,
+
+    #[error("cannot pop from empty list")]
+    EmptyPop,
 }

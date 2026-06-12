@@ -80,15 +80,19 @@ impl VirtualMachine {
         self.__float__(&arg).map(Value::Float)
     }
 
-    /// `type(value)` — for instances, return the class object; otherwise the type name string.
+    /// `type(value)` — for instances, list, and dict, return the class object;
+    /// otherwise the type name string.
     pub fn typeof_val(&mut self, arg_count: usize) -> ExecuteResult<Value> {
         let arg = get_1_arg!(self, arg_count);
         match &arg {
             Value::Object(h) => {
-                if let Object::Instance(instance) = self.obj_heap.get(*h) {
-                    return Ok(Value::Object(instance.class));
+                let obj = self.obj_heap.get(*h);
+                match obj {
+                    Object::Instance(instance) => return Ok(Value::Object(instance.class)),
+                    Object::List(list) => return Ok(Value::Object(list.class)),
+                    Object::Dict(dict) => return Ok(Value::Object(dict.class)),
+                    _ => Ok(Value::String(self.value_type_name(&arg).into()))
                 }
-                Ok(Value::String(self.value_type_name(&arg).into()))
             }
             _ => Ok(Value::String(self.value_type_name(&arg).into()))
         }
@@ -166,14 +170,16 @@ impl VirtualMachine {
         Ok(Value::Float(dur.as_secs_f64()))
     }
 
-    /// list 
+    /// list
     pub fn list(&mut self, arg_count: usize) -> ExecuteResult<Value> {
         let items: Vec<Value> = get_args!(self, arg_count).to_vec();
-        Ok(Value::Object(self.obj_heap.alloc_list(items)))
+        let list_class = self.list_class;
+        Ok(Value::Object(self.obj_heap.alloc_list(list_class, items)))
     }
 
-    /// dict 
+    /// dict
     pub fn dict(&mut self, _arg_count: usize) -> ExecuteResult<Value> {
-        Ok(Value::Object(self.obj_heap.alloc_dict(HashMap::new())))
+        let dict_class = self.dict_class;
+        Ok(Value::Object(self.obj_heap.alloc_dict(dict_class, HashMap::new())))
     }
 }

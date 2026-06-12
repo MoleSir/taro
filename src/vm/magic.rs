@@ -1,4 +1,4 @@
-use crate::{vm::{ExecuteError, ExecuteResult}, format_shr, Object, ShrString, ToShrString};
+use crate::{vm::{ExecuteError, ExecuteResult}, format_shr, Method, Object, ShrString, ToShrString};
 use super::{Value, VirtualMachine};
 
 macro_rules! binary_magic_op {
@@ -7,8 +7,8 @@ macro_rules! binary_magic_op {
             // lhs is Object & Instance & has method
             if let Value::Object(handle) = $lhs && let Object::Instance(instance) = $vm.obj_heap.get(*handle) {
                 let class = $vm.obj_heap.get_class(instance.class)?;
-                if let Some(add_method) = class.methods.get(stringify!([<__ $method __>])).cloned() {
-                    return $vm.invoke_method_sync(*handle, add_method, &[$rhs.clone()])
+                if let Some(&Method::User(method_handle)) = class.methods.get(stringify!([<__ $method __>])) {
+                    return $vm.invoke_method_sync(*handle, method_handle, &[$rhs.clone()])
                 }
             }
         }
@@ -30,8 +30,8 @@ macro_rules! unary_magic_op_with_error {
             // lhs is Object & Instance & has method
             if let Value::Object(handle) = $value && let Object::Instance(instance) = $vm.obj_heap.get(*handle) {
                 let class = $vm.obj_heap.get_class(instance.class)?;
-                if let Some(add_method) = class.methods.get(stringify!([<__ $method __>])).cloned() {
-                    return $vm.invoke_method_sync(*handle, add_method, &[])
+                if let Some(&Method::User(method_handle)) = class.methods.get(stringify!([<__ $method __>])) {
+                    return $vm.invoke_method_sync(*handle, method_handle, &[])
                 }
             }
             Err(ExecuteError::UnaryOpTypeMismatch(stringify!($method), $vm.value_type_name($value)))
@@ -61,13 +61,13 @@ impl VirtualMachine {
                     let object = self.obj_heap.get(*h);
                     if let Object::Instance(instance) = object {
                         let class = self.obj_heap.get_class(instance.class)?;
-                        class.methods.get("__not__").cloned()
+                        class.methods.get("__not__").copied()
                     } else {
                         None
                     }
                 };
-                if let Some(not_method) = not_result {
-                    return self.invoke_method_sync(*h, not_method, &[]);
+                if let Some(Method::User(not_handle)) = not_result {
+                    return self.invoke_method_sync(*h, not_handle, &[]);
                 }
                 // Fallback: use __bool__ and invert the result.
                 let b = self.__bool__(value)?;
@@ -179,7 +179,7 @@ impl VirtualMachine {
             (Value::Integer(l), Value::Float(r)) => Ok(Value::Bool(*l as f64 >= *r)),
             (Value::Float(l), Value::Integer(r)) => Ok(Value::Bool(*l >= *r as f64)),
             (Value::String(l), Value::String(r)) => Ok(Value::Bool(l.as_str() >= r.as_str())),
-            (lhs, rhs) => {   
+            (lhs, rhs) => {
                 binary_magic_op!(self, lhs, rhs, ge);
                 let invert = self.__lt__(lhs, rhs)?;
                 self.__not__(&invert)
@@ -205,7 +205,7 @@ impl VirtualMachine {
             (Value::Integer(l), Value::Float(r)) => Ok(Value::Bool(*l as f64 <= *r)),
             (Value::Float(l), Value::Integer(r)) => Ok(Value::Bool(*l <= *r as f64)),
             (Value::String(l), Value::String(r)) => Ok(Value::Bool(l.as_str() <= r.as_str())),
-            (lhs, rhs) => {   
+            (lhs, rhs) => {
                 binary_magic_op!(self, lhs, rhs, le);
                 let invert = self.__gt__(lhs, rhs)?;
                 self.__not__(&invert)
@@ -230,8 +230,8 @@ impl VirtualMachine {
                     Object::Function(function) => Ok(format_shr!("<function {} at {}>", function.name, h.0)),
                     Object::Instance(instance) => {
                         let class = self.obj_heap.get_class(instance.class)?;
-                        if let Some(str_method) = class.methods.get("__str__").cloned() {
-                            let result = self.invoke_method_sync(*h, str_method, &[])?;
+                        if let Some(&Method::User(str_handle)) = class.methods.get("__str__") {
+                            let result = self.invoke_method_sync(*h, str_handle, &[])?;
                             if let Value::String(s) = result {
                                 return Ok(s);
                             }
@@ -243,7 +243,6 @@ impl VirtualMachine {
                     Object::Upvalue(_) => Ok("<upvalue>".into()),
                     Object::List(list) => {
                         let items = list.items.clone();
-                        // immutable borrow ends here; now we can call __str__ recursively.
                         let mut result = String::from("[");
                         for (i, item) in items.iter().enumerate() {
                             if i > 0 {
@@ -256,7 +255,6 @@ impl VirtualMachine {
                     }
                     Object::Dict(dict) => {
                         let items = dict.items.clone();
-                        // immutable borrow ends here; now we can call __str__ recursively.
                         let mut result = String::from("{");
                         let mut first = true;
                         for (k, v) in items.iter() {
@@ -288,8 +286,8 @@ impl VirtualMachine {
                 match object {
                     Object::Instance(instance) => {
                         let class = self.obj_heap.get_class(instance.class)?;
-                        if let Some(str_method) = class.methods.get("__bool__").cloned() {
-                            let result = self.invoke_method_sync(*h, str_method, &[])?;
+                        if let Some(&Method::User(bool_handle)) = class.methods.get("__bool__") {
+                            let result = self.invoke_method_sync(*h, bool_handle, &[])?;
                             if let Value::Bool(v) = result {
                                 return Ok(v);
                             }
@@ -313,8 +311,8 @@ impl VirtualMachine {
                 match self.obj_heap.get(*h) {
                     Object::Instance(instance) => {
                         let class = self.obj_heap.get_class(instance.class)?;
-                        if let Some(len_method) = class.methods.get("__len__").cloned() {
-                            let result = self.invoke_method_sync(*h, len_method, &[])?;
+                        if let Some(&Method::User(len_handle)) = class.methods.get("__len__") {
+                            let result = self.invoke_method_sync(*h, len_handle, &[])?;
                             if let Value::Integer(v) = result {
                                 return Ok(v);
                             }
@@ -356,8 +354,8 @@ impl VirtualMachine {
                 }
                 Object::Instance(instance) => {
                     let class = self.obj_heap.get_class(instance.class)?;
-                    if let Some(method) = class.methods.get("__getitem__").cloned() {
-                        return self.invoke_method_sync(*h, method, &[index.clone()]);
+                    if let Some(&Method::User(method_handle)) = class.methods.get("__getitem__") {
+                        return self.invoke_method_sync(*h, method_handle, &[index.clone()]);
                     }
                     Err(ExecuteError::UnexpectType("list, dict, or instance with __getitem__", self.value_type_name(collection)))
                 }
@@ -380,21 +378,19 @@ impl VirtualMachine {
                     if idx < 0 || idx as usize >= len {
                         return Err(ExecuteError::IndexOutOfRange(i, len));
                     }
-                    // `list` borrow ends here (NLL) — now we can get mutable access.
                     let list_mut = self.obj_heap.get_list_mut(*h)?;
                     list_mut.items[idx as usize] = value.clone();
                     Ok(value.clone())
                 }
                 Object::Dict(_dict) => {
-                    // `_dict` borrow ends here (NLL) — now we can get mutable access.
                     let dict_mut = self.obj_heap.get_dict_mut(*h)?;
                     dict_mut.items.insert(index.clone(), value.clone());
                     Ok(value.clone())
                 }
                 Object::Instance(instance) => {
                     let class = self.obj_heap.get_class(instance.class)?;
-                    if let Some(method) = class.methods.get("__setitem__").cloned() {
-                        return self.invoke_method_sync(*h, method, &[index.clone(), value.clone()]);
+                    if let Some(&Method::User(method_handle)) = class.methods.get("__setitem__") {
+                        return self.invoke_method_sync(*h, method_handle, &[index.clone(), value.clone()]);
                     }
                     Err(ExecuteError::UnexpectType("list, dict, or instance with __setitem__", self.value_type_name(collection)))
                 }
@@ -412,8 +408,8 @@ impl VirtualMachine {
             Value::Object(h) => {
                 if let Object::Instance(instance) = self.obj_heap.get(*h) {
                     let class = self.obj_heap.get_class(instance.class)?;
-                    if let Some(method) = class.methods.get("__int__").cloned() {
-                        let result = self.invoke_method_sync(*h, method, &[])?;
+                    if let Some(&Method::User(method_handle)) = class.methods.get("__int__") {
+                        let result = self.invoke_method_sync(*h, method_handle, &[])?;
                         if let Value::Integer(v) = result {
                             return Ok(v);
                         }
@@ -434,8 +430,8 @@ impl VirtualMachine {
             Value::Object(h) => {
                 if let Object::Instance(instance) = self.obj_heap.get(*h) {
                     let class = self.obj_heap.get_class(instance.class)?;
-                    if let Some(method) = class.methods.get("__float__").cloned() {
-                        let result = self.invoke_method_sync(*h, method, &[])?;
+                    if let Some(&Method::User(method_handle)) = class.methods.get("__float__") {
+                        let result = self.invoke_method_sync(*h, method_handle, &[])?;
                         if let Value::Float(v) = result {
                             return Ok(v);
                         }

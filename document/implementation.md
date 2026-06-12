@@ -25,6 +25,7 @@ src/
 └── vm/
     ├── mod.rs            # VirtualMachine — execution loop, call frames, stack ops
     ├── builtin.rs        # Builtin functions (print, str, len, min, max, …)
+    ├── builtin_methods.rs # Builtin methods for List/Dict (append, pop, get, keys, …)
     ├── magic.rs          # Magic method implementations (__add__, __eq__, __str__, …)
     ├── error.rs          # Error types
     ├── gc.rs             # GC threshold & trigger
@@ -36,5 +37,6 @@ tests/scripts/
 ├── 12_builin.taro        # Builtin function integration tests
 ├── 13_super.taro         # Super method call integration tests
 ├── 14_list.taro          # List integration tests
-└── 15_dict.taro          # Dict integration tests
+├── 15_dict.taro          # Dict integration tests
+└── 16_builtin_methods.taro  # Builtin methods (list.append, dict.get, …)
 ```
