@@ -1,4 +1,4 @@
-mod op;
+mod magic;
 mod builtin;
 mod error;
 mod gc;
@@ -29,20 +29,24 @@ pub struct CallFrame {
 }
 
 macro_rules! binary_op {
-    ($vm:ident, $f:ident) => {{
-        let rhs = $vm.pop_stack()?;
-        let lhs = $vm.pop_stack()?;
-        let res = $vm.$f(&lhs, &rhs)?;
-        $vm.push_stack(res);
-    }};
+    ($vm:ident, $f:ident) => {
+        paste::paste! {{
+            let rhs = $vm.pop_stack()?;
+            let lhs = $vm.pop_stack()?;
+            let res = $vm.[<__ $f __>](&lhs, &rhs)?;
+            $vm.push_stack(res);
+        }}
+    };
 }
 
 macro_rules! unary_op {
-    ($vm:ident, $f:ident) => {{
-        let v = $vm.pop_stack()?;
-        let res = $vm.$f(&v)?;
-        $vm.push_stack(res);
-    }};
+    ($vm:ident, $f:ident) => {
+        paste::paste! {{ 
+            let v = $vm.pop_stack()?;
+            let res = $vm.[<__ $f __>](&v)?;
+            $vm.push_stack(res);
+        }}
+    };
 }
 
 impl VirtualMachine {
@@ -61,6 +65,17 @@ impl VirtualMachine {
 
     fn register_builtins(&mut self) {
         self.define_builtin_fn("print", VirtualMachine::print);
+        self.define_builtin_fn("str", VirtualMachine::str);
+        self.define_builtin_fn("bool", VirtualMachine::bool);
+        self.define_builtin_fn("len", VirtualMachine::len);
+        self.define_builtin_fn("int", VirtualMachine::int);
+        self.define_builtin_fn("float", VirtualMachine::float);
+        self.define_builtin_fn("type", VirtualMachine::typeof_val);
+        self.define_builtin_fn("input", VirtualMachine::input);
+        self.define_builtin_fn("abs", VirtualMachine::abs);
+        self.define_builtin_fn("min", VirtualMachine::min);
+        self.define_builtin_fn("max", VirtualMachine::max);
+        self.define_builtin_fn("clock", VirtualMachine::clock);
     }
 
     /// Return a reference to the top-most (currently executing) call frame.
@@ -205,7 +220,8 @@ impl VirtualMachine {
                 self.pop_stack()?;
             }
             Instruction::JumpIfFalse(offset) => {
-                if !Self::is_truthy(self.peek_stack(0)?) {
+                let value = self.peek_stack(0)?.clone();
+                if !self.__bool__(&value)? {
                     ip += offset;
                 }
             }

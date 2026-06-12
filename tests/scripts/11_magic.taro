@@ -1,36 +1,400 @@
-class Number {
-    fun __init__(self, i) {
-        self.i = i;
-    }
+// Magic methods — comprehensive coverage
 
+// === 1. __str__ magic method ===
+print("=== __str__ ===");
+class Greeting {
+    fun __init__(self, name) {
+        self.name = name;
+    }
     fun __str__(self) {
-        return "number";
-    }
-
-    fun __add__(self, n) {
-        return Number(self.i + n);
+        return "Hello, " + self.name + "!";
     }
 }
+print(Greeting("Taro"));
 
-var n = Number(0);
-print(n);
-print(n+1);
-
-
-class String {
-    fun __init__(self, s) {
-        self.s = s;
+// === 2. __bool__ magic method ===
+print("=== __bool__ ===");
+class Num {
+    fun __init__(self, n) {
+        self.n = n;
     }
-
-    fun __str__(self) {
-        return self.s;
-    }
-
-    fun __add__(self, s) {
-        return String(self.s + s);
+    fun __bool__(self) {
+        return self.n != 0;
     }
 }
+print(bool(Num(0)));   // false
+print(bool(Num(5)));   // true
+if (Num(10)) { print("truthy"); }
+if (!Num(0)) { print("falsy inverted"); }
 
-var s = String("Hello");
-print(s);
-print(s + " World");
+// === 3. __neg__ magic method ===
+print("=== __neg__ ===");
+class VecNeg {
+    fun __init__(self, x) {
+        self.x = x;
+    }
+    fun __neg__(self) {
+        return VecNeg(-self.x);
+    }
+    fun __str__(self) {
+        return "Vec(" + str(self.x) + ")";
+    }
+}
+print(-VecNeg(42));
+
+// === 4. __not__ magic method ===
+print("=== __not__ ===");
+class Toggle {
+    fun __init__(self, v) {
+        self.v = v;
+    }
+    fun __not__(self) {
+        return Toggle(!self.v);
+    }
+    fun __str__(self) {
+        if (self.v) { return "on"; }
+        return "off";
+    }
+}
+var t = Toggle(true);
+print(!t);
+
+// === 5. __add__ magic method ===
+print("=== __add__ ===");
+class Vec {
+    fun __init__(self, x, y) {
+        self.x = x;
+        self.y = y;
+    }
+    fun __add__(self, other) {
+        return Vec(self.x + other.x, self.y + other.y);
+    }
+    fun __str__(self) {
+        return "(" + str(self.x) + "," + str(self.y) + ")";
+    }
+}
+var v1 = Vec(1, 2);
+var v2 = Vec(3, 4);
+print(v1 + v2);
+
+// === 6. __sub__ magic method ===
+print("=== __sub__ ===");
+class VecSub {
+    fun __init__(self, x, y) {
+        self.x = x;
+        self.y = y;
+    }
+    fun __sub__(self, other) {
+        return VecSub(self.x - other.x, self.y - other.y);
+    }
+    fun __str__(self) {
+        return "(" + str(self.x) + "," + str(self.y) + ")";
+    }
+}
+print(VecSub(5, 3) - VecSub(2, 1));
+
+// === 7. __mul__ magic method ===
+print("=== __mul__ ===");
+class VecMul {
+    fun __init__(self, x, y) {
+        self.x = x;
+        self.y = y;
+    }
+    fun __mul__(self, s) {
+        return VecMul(self.x * s, self.y * s);
+    }
+    fun __str__(self) {
+        return "(" + str(self.x) + "," + str(self.y) + ")";
+    }
+}
+print(VecMul(2, 3) * 4);
+
+// === 8. __div__ magic method ===
+print("=== __div__ ===");
+class VecDiv {
+    fun __init__(self, x, y) {
+        self.x = x;
+        self.y = y;
+    }
+    fun __div__(self, s) {
+        return VecDiv(self.x / s, self.y / s);
+    }
+    fun __str__(self) {
+        return "(" + str(self.x) + "," + str(self.y) + ")";
+    }
+}
+print(VecDiv(10, 6) / 2);
+
+// === 9. __eq__ magic method ===
+print("=== __eq__ ===");
+class Person {
+    fun __init__(self, id) {
+        self.id = id;
+    }
+    fun __eq__(self, other) {
+        return self.id == other;
+    }
+}
+var p = Person(1);
+print(p == 1);
+print(p == 2);
+
+// === 10. __ne__ magic method ===
+print("=== __ne__ ===");
+class NeCheck {
+    fun __init__(self, n) {
+        self.n = n;
+    }
+    fun __ne__(self, other) {
+        return self.n < other;
+    }
+}
+var nc = NeCheck(5);
+print(nc != 3);   // false: 5 < 3 is false
+print(nc != 10);  // true:  5 < 10 is true
+
+// === 11. __lt__ magic method ===
+print("=== __lt__ ===");
+class LT {
+    fun __init__(self, n) {
+        self.n = n;
+    }
+    fun __lt__(self, other) {
+        return self.n < other;
+    }
+}
+print(LT(5) < 10);
+print(LT(5) < 3);
+
+// === 12. __le__ magic method ===
+print("=== __le__ ===");
+class LE {
+    fun __init__(self, n) {
+        self.n = n;
+    }
+    fun __le__(self, other) {
+        return self.n <= other;
+    }
+}
+print(LE(5) <= 5);
+print(LE(5) <= 10);
+print(LE(5) <= 3);
+
+// === 13. __gt__ magic method ===
+print("=== __gt__ ===");
+class GT {
+    fun __init__(self, n) {
+        self.n = n;
+    }
+    fun __gt__(self, other) {
+        return self.n > other;
+    }
+}
+print(GT(5) > 3);
+print(GT(5) > 10);
+
+// === 14. __ge__ magic method ===
+print("=== __ge__ ===");
+class GE {
+    fun __init__(self, n) {
+        self.n = n;
+    }
+    fun __ge__(self, other) {
+        return self.n >= other;
+    }
+}
+print(GE(5) >= 5);
+print(GE(5) >= 3);
+print(GE(5) >= 10);
+
+// === 15. Fallback comparisons ===
+print("=== fallback ===");
+// Instance with only __lt__: >= uses __lt__ + invert
+class OnlyLT {
+    fun __init__(self, n) {
+        self.n = n;
+    }
+    fun __lt__(self, other) {
+        return self.n < other;
+    }
+}
+print(OnlyLT(5) >= 3);   // true
+print(OnlyLT(5) >= 10);  // false
+
+// Instance with only __eq__: != uses __eq__ + invert
+class OnlyEQ {
+    fun __init__(self, n) {
+        self.n = n;
+    }
+    fun __eq__(self, other) {
+        return self.n == other;
+    }
+}
+print(OnlyEQ(5) != 5);   // false
+print(OnlyEQ(5) != 3);   // true
+
+// === 16. __len__ magic method ===
+print("=== __len__ ===");
+class MyList {
+    fun __init__(self) {
+        self.count = 0;
+    }
+    fun add(self) {
+        self.count = self.count + 1;
+    }
+    fun __len__(self) {
+        return self.count;
+    }
+}
+var ml = MyList();
+print(len(ml));  // 0
+ml.add();
+ml.add();
+ml.add();
+print(len(ml));  // 3
+
+// === 17. String length with len() ===
+print("=== len string ===");
+print(len(""));
+print(len("hello"));
+
+// === 18. Inherited magic method ===
+print("=== inherited magic ===");
+class Base {
+    fun __add__(self, other) {
+        return self.n + other;
+    }
+}
+class Child extends Base {
+    fun __init__(self, n) {
+        self.n = n;
+    }
+}
+var c = Child(10);
+print(c + 5);
+
+// === 19. Overridden magic method ===
+print("=== overridden magic ===");
+class BaseStr {
+    fun __str__(self) {
+        return "base";
+    }
+}
+class ChildStr extends BaseStr {
+    fun __str__(self) {
+        return "child";
+    }
+}
+print(BaseStr());
+print(ChildStr());
+
+// === 20. Chained magic operations ===
+print("=== chained ===");
+class Chain {
+    fun __init__(self, n) {
+        self.n = n;
+    }
+    fun __add__(self, other) {
+        return Chain(self.n + other);
+    }
+    fun __eq__(self, other) {
+        return self.n == other;
+    }
+    fun __str__(self) {
+        return str(self.n);
+    }
+}
+print(Chain(1) + 2 + 3);
+print(Chain(1) + 2 + 3 == 6);
+
+// === 21. __int__ magic method ===
+print("=== __int__ ===");
+class MyInt {
+    fun __init__(self, n) {
+        self.n = n;
+    }
+    fun __int__(self) {
+        return self.n;
+    }
+}
+print(int(MyInt(42)));
+print(int(MyInt(-7)));
+
+// === 22. int() on primitives ===
+print("=== int primitives ===");
+print(int(42));
+print(int(3.14));
+print(int(true));
+print(int(false));
+
+// === 23. __float__ magic method ===
+print("=== __float__ ===");
+class MyFloat {
+    fun __init__(self, n) {
+        self.n = n;
+    }
+    fun __float__(self) {
+        return self.n + 0.0;
+    }
+}
+print(float(MyFloat(3)));
+
+// === 24. float() on primitives ===
+print("=== float primitives ===");
+print(float(3.14));
+print(float(42));
+print(float(true));
+
+// === 25. Inherited __int__ and __float__ ===
+print("=== inherited int/float ===");
+class NumBase {
+    fun __int__(self) {
+        return self.n;
+    }
+    fun __float__(self) {
+        return self.n + 0.0;
+    }
+}
+class NumChild extends NumBase {
+    fun __init__(self, n) {
+        self.n = n;
+    }
+}
+var nc = NumChild(12);
+print(int(nc));
+print(float(nc));
+
+// === 26. type() builtin ===
+print("=== type ===");
+print(type(nil));
+print(type(42));
+print(type(3.14));
+print(type(true));
+print(type("hello"));
+class T {}
+var t = T();
+print(type(t) == T);     // true — instance returns its class
+print(type(print));      // string for non-instance objects
+var t2 = type(t)();      // can create new instance from type
+print(type(t2) == T);    // true
+
+// === 27. abs() builtin ===
+print("=== abs ===");
+print(abs(5));
+print(abs(-5));
+print(abs(3.14));
+print(abs(-3.14));
+
+// === 28. min() / max() builtins ===
+print("=== min/max ===");
+print(min(3, 1, 4, 1, 5));
+print(max(3, 1, 4, 1, 5));
+print(min(2.5, 1.5, 3.5));
+print(max(2.5, 1.5, 3.5));
+
+// === 29. clock() builtin ===
+print("=== clock ===");
+var t = clock();
+print(t > 0);
+
+print("magic done");

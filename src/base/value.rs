@@ -1,5 +1,5 @@
 use std::fmt;
-use crate::execute::{ExecuteError, ExecuteResult};
+use crate::vm::{ExecuteError, ExecuteResult};
 use super::{ObjectHandle, ShrString};
 
 #[derive(Debug, Clone, PartialEq)]

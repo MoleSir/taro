@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{execute::{ExecuteResult, VirtualMachine}, Chunk, ShrString, Value};
+use crate::{vm::{ExecuteResult, VirtualMachine}, Chunk, ShrString, Value};
 use super::ObjectHandle;
 
 pub struct ObjectFunction {

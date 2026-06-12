@@ -1,0 +1,203 @@
+// Builtin functions — comprehensive coverage
+
+// === 1. print() ===
+print("=== print ===");
+print("hello");
+print(42);
+print(3.14);
+print(true);
+print(nil);
+print("a", "b", "c");       // variadic with spaces
+print(1, 2, 3 + 4);         // expressions as args
+
+// === 2. str() ===
+print("=== str ===");
+print(str(42));
+print(str(3.14));
+print(str(true));
+print(str(false));
+print(str(nil));
+print(str("already string"));
+
+// str() on instance via __str__
+class Greeting {
+    fun __init__(self, name) {
+        self.name = name;
+    }
+    fun __str__(self) {
+        return "Hello, " + self.name + "!";
+    }
+}
+print(str(Greeting("Taro")));
+
+// str() on instance without __str__
+class Plain {}
+print(str(Plain()));
+
+// === 3. bool() ===
+print("=== bool ===");
+print(bool(true));       // true
+print(bool(false));      // false
+print(bool(nil));        // false
+print(bool(0));          // false
+print(bool(1));          // true
+print(bool(-1));         // true
+print(bool(0.0));        // false
+print(bool(3.14));       // true
+print(bool(""));         // false
+print(bool("hi"));       // true
+
+// bool() on instance via __bool__
+class Even {
+    fun __init__(self, n) {
+        self.n = n;
+    }
+    fun __bool__(self) {
+        return self.n == 0;
+    }
+}
+print(bool(Even(0)));   // true
+print(bool(Even(5)));   // false
+
+// bool() on instance without __bool__ (default: true)
+class Always {}
+print(bool(Always()));   // true
+
+// === 4. len() ===
+print("=== len ===");
+print(len(""));          // 0
+print(len("hello"));     // 5
+print(len("abc"));       // 3
+
+// len() on instance via __len__
+class MyList {
+    fun __init__(self) {
+        self.count = 0;
+    }
+    fun add(self) {
+        self.count = self.count + 1;
+    }
+    fun __len__(self) {
+        return self.count;
+    }
+}
+var ml = MyList();
+print(len(ml));          // 0
+ml.add();
+ml.add();
+ml.add();
+print(len(ml));          // 3
+
+// === 5. int() ===
+print("=== int ===");
+print(int(42));          // 42
+print(int(0));           // 0
+print(int(-7));          // -7
+print(int(3.14));        // 3
+print(int(-2.7));        // -2
+print(int(true));        // 1
+print(int(false));       // 0
+
+// int() on instance via __int__
+class MyInt {
+    fun __init__(self, n) {
+        self.n = n;
+    }
+    fun __int__(self) {
+        return self.n;
+    }
+}
+print(int(MyInt(99)));   // 99
+print(int(MyInt(-5)));   // -5
+
+// === 6. float() ===
+print("=== float ===");
+print(float(3.14));      // 3.14
+print(float(0.0));       // 0
+print(float(42));        // 42
+print(float(true));      // 1
+print(float(false));     // 0
+
+// float() on instance via __float__
+class MyFloat {
+    fun __init__(self, n) {
+        self.n = n;
+    }
+    fun __float__(self) {
+        return self.n + 0.0;
+    }
+}
+print(float(MyFloat(7)));  // 7
+
+// === 7. type() ===
+print("=== type ===");
+// primitives return type-name strings
+print(type(nil));
+print(type(42));
+print(type(3.14));
+print(type(true));
+print(type("hello"));
+
+// instances return their class object
+class Foo {}
+class Bar {}
+var f = Foo();
+var b = Bar();
+print(type(f) == Foo);   // true
+print(type(f) == Bar);   // false
+print(type(b) == Bar);   // true
+
+// non-instance objects return type-name string
+print(type(print));
+
+// create new instance from type()
+var t = type(f);
+var f2 = t();
+print(type(f2) == Foo);  // true
+print(type(f2) == type(f));  // true
+
+// === 8. abs() ===
+print("=== abs ===");
+print(abs(5));           // 5
+print(abs(-5));          // 5
+print(abs(0));           // 0
+print(abs(3.14));        // 3.14
+print(abs(-3.14));       // 3.14
+print(abs(-100));        // 100
+
+// === 9. min() ===
+print("=== min ===");
+print(min(5));                        // 5
+print(min(3, 1, 2));                  // 1
+print(min(3, 1, 4, 1, 5, 9, 2));     // 1
+print(min(-1, -5, 0));               // -5
+print(min(2.5, 1.5, 3.5));           // 1.5
+print(min(1, 2.0, 3));               // 1
+
+// === 10. max() ===
+print("=== max ===");
+print(max(5));                        // 5
+print(max(3, 1, 2));                  // 3
+print(max(3, 1, 4, 1, 5, 9, 2));     // 9
+print(max(-1, -5, 0));               // 0
+print(max(2.5, 1.5, 3.5));           // 3.5
+print(max(1, 2.0, 3));               // 3
+
+// === 11. clock() ===
+print("=== clock ===");
+var t1 = clock();
+// burn some cycles
+var i = 0;
+while (i < 1000) {
+    i = i + 1;
+}
+var t2 = clock();
+print(t2 >= t1);    // should be true
+
+// === 12. input() ===
+print("=== input ===");
+var s = input("Input your name: ");
+print(s);
+print(clock());
+
+print("builtin done");

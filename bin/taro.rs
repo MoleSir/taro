@@ -2,7 +2,7 @@ use std::env;
 use std::io::{self, Write};
 use anyhow::Context;
 use taro::compile::CompileError;
-use taro::execute::{InterpretError, VirtualMachine};
+use taro::vm::{InterpretError, VirtualMachine};
 
 fn main() {
     if let Err(e) = result_main() {

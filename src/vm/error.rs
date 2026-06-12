@@ -1,6 +1,5 @@
 use crate::{compile::CompileError, ChunkError, ObjectError};
 
-/// Error that can occur during the full interpret pipeline (compile + execute).
 #[derive(Debug)]
 pub enum InterpretError {
     Compile(CompileError),
@@ -50,4 +49,19 @@ pub enum ExecuteError {
 
     #[error("__str__ method must return a string, got '{0}'")]
     BadStrResult(&'static str),
+
+    #[error("__bool__ method must return a bool, got '{0}'")]
+    BadBoolResult(&'static str),
+
+    #[error("__len__ method must return an integer, got '{0}'")]
+    BadLenResult(&'static str),
+
+    #[error("__int__ method must return an integer, got '{0}'")]
+    BadIntResult(&'static str),
+
+    #[error("__float__ method must return a float, got '{0}'")]
+    BadFloatResult(&'static str),
+
+    #[error("I/O error: {0}")]
+    IoError(String),
 }
