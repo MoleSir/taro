@@ -162,6 +162,10 @@ impl Chunk {
                 self.write_const_op(ByteCode::Invoke, Value::String(method_name));
                 self.write_byte(arg_count as u8);
             }
+            Instruction::SuperInvoke(method_name, arg_count) => {
+                self.write_const_op(ByteCode::SuperInvoke, Value::String(method_name));
+                self.write_byte(arg_count as u8);
+            }
         }
     }
 
@@ -279,6 +283,11 @@ impl Chunk {
                 let method_name = self.read_string_constant(ip)?;
                 let arg_count = self.read_byte(ip)? as usize;
                 Ok(Instruction::Invoke(method_name, arg_count))
+            }
+            ByteCode::SuperInvoke => {
+                let method_name = self.read_string_constant(ip)?;
+                let arg_count = self.read_byte(ip)? as usize;
+                Ok(Instruction::SuperInvoke(method_name, arg_count))
             }
         }
     }

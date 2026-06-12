@@ -382,6 +382,33 @@ impl VirtualMachine {
                 self.call_method(method_handle, arg_count + 1)?;
                 return Ok(()); // was `continue` — callee frame is now active
             }
+
+            Instruction::SuperInvoke(method_name, arg_count) => {
+                // Look up the method on the superclass (not the instance's own class).
+                let method_handle = {
+                    let receiver = self.peek_stack(arg_count)?.clone();
+                    let instance_handle = receiver.as_object()?;
+                    let instance = self.obj_heap.get_instance(instance_handle)?;
+                    let class = self.obj_heap.get_class(instance.class)?;
+                    let superclass_handle = class
+                        .superclass
+                        .ok_or(ExecuteError::NoSuperclass)?;
+                    let superclass = self.obj_heap.get_class(superclass_handle)?;
+                    superclass
+                        .methods
+                        .get(&method_name)
+                        .ok_or_else(|| {
+                            ExecuteError::UndefinedProperty(method_name.as_str().to_string())
+                        })?
+                        .clone()
+                };
+
+                // Save ip before switching to callee frame.
+                // +1 for the receiver (explicit self), which is already on the stack.
+                self.frame_mut()?.ip = ip;
+                self.call_method(method_handle, arg_count + 1)?;
+                return Ok(());
+            }
         }
 
         // Persist the (potentially modified) ip back into the frame.

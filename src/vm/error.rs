@@ -44,6 +44,9 @@ pub enum ExecuteError {
     #[error("Expected {expcted} arguments but got {got}")]
     ArgmentCountUnmatch { expcted: usize, got: usize },
 
+    #[error("no superclass to call super method on")]
+    NoSuperclass,
+
     #[error("Undefined property {0}")]
     UndefinedProperty(String),
 

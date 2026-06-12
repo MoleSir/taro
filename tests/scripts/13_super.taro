@@ -1,0 +1,121 @@
+// Super method calls — comprehensive coverage
+
+// === 1. Basic super.method() ===
+print("=== basic super.method() ===");
+class Base {
+    fun value(self) {
+        return 42;
+    }
+}
+class Derived extends Base {
+    fun value(self) {
+        return 99;
+    }
+    fun call_super(self) {
+        return super.value();
+    }
+}
+var d = Derived();
+print(d.value());       // 99 — overridden
+print(d.call_super());  // 42 — superclass method
+
+// === 2. Super with arguments ===
+print("=== super with args ===");
+class Greeter {
+    fun greet(self, msg) {
+        print(msg);
+    }
+}
+class QuietGreeter extends Greeter {
+    fun greet(self, msg) {
+        // override that does nothing
+    }
+    fun test(self) {
+        super.greet("hello from base");
+    }
+}
+QuietGreeter().test();
+
+// === 3. Multi-level inheritance ===
+print("=== multi-level ===");
+class A {
+    fun name(self) { return "A"; }
+}
+class B extends A {
+    fun name(self) { return "B"; }
+}
+class C extends B {
+    fun name(self) { return "C"; }
+    fun parent_name(self) {
+        return super.name();
+    }
+}
+print(C().name());         // "C"
+print(C().parent_name());  // "B", not "A"
+
+// === 4. Super inside __init__ ===
+print("=== super in __init__ ===");
+class Animal {
+    fun __init__(self, name) {
+        self.name = name;
+    }
+}
+class Dog extends Animal {
+    fun __init__(self, name, breed) {
+        super.__init__(name);
+        self.breed = breed;
+    }
+}
+var dog = Dog("Buddy", "Golden");
+print(dog.name);   // Buddy
+print(dog.breed);  // Golden
+
+// === 5. Super with multiple args ===
+print("=== super multiple args ===");
+class Math {
+    fun sum(self, a, b, c) {
+        return a + b + c;
+    }
+}
+class SubMath extends Math {
+    fun sum(self, a, b, c) {
+        // delegate to parent
+        return super.sum(a, b, c);
+    }
+}
+print(SubMath().sum(1, 2, 3));  // 6
+
+// === 6. Super in method that also does work ===
+print("=== super with extra work ===");
+class Writer {
+    fun write(self, text) {
+        print("base: " + text);
+    }
+}
+class FancyWriter extends Writer {
+    fun write(self, text) {
+        print("--- fancy start ---");
+        super.write(text);
+        print("--- fancy end ---");
+    }
+}
+FancyWriter().write("hello");
+
+// === 7. Super.__bool__ ===
+print("=== super __bool__ ===");
+class Truthy {
+    fun __bool__(self) {
+        return true;
+    }
+}
+class AlwaysFalse extends Truthy {
+    fun __bool__(self) {
+        return false;
+    }
+    fun parent_bool(self) {
+        return super.__bool__();
+    }
+}
+print(AlwaysFalse().parent_bool());  // true (from parent)
+
+print("super done");

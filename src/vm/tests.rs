@@ -1720,3 +1720,124 @@ pub fn test_clock_returns_float() {
         print(t > 0);   // must be positive
     "#).unwrap();
 }
+
+// ------------------------------------------------------------------------
+//  Super (super.method() calls)
+// ------------------------------------------------------------------------
+
+#[test]
+pub fn test_super_invoke_method() {
+    // super.method() should call the superclass method, not the overridden one.
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        class Base {
+            fun value(self) {
+                return 42;
+            }
+        }
+        class Derived extends Base {
+            fun value(self) {
+                return 99;
+            }
+            fun call_super(self) {
+                return super.value();
+            }
+        }
+        var d = Derived();
+        print(d.call_super());  // 42, not 99
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_super_invoke_with_args() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        class Base {
+            fun greet(self, msg) {
+                print(msg);
+            }
+        }
+        class Derived extends Base {
+            fun greet(self, msg) {
+                // override that does nothing
+            }
+            fun test(self) {
+                super.greet("hello from base");
+            }
+        }
+        Derived().test();
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_super_invoke_no_superclass_errors() {
+    let mut vm = VirtualMachine::new();
+    let result = vm.interpret(r#"
+        class NoSuper {
+            fun method(self) {
+                super.nope();
+            }
+        }
+        NoSuper().method();
+    "#);
+    assert!(result.is_err(), "super on class without superclass should error");
+}
+
+#[test]
+pub fn test_super_invoke_undefined_method_errors() {
+    let mut vm = VirtualMachine::new();
+    let result = vm.interpret(r#"
+        class Base {}
+        class Derived extends Base {
+            fun test(self) {
+                super.undefinedMethod();
+            }
+        }
+        Derived().test();
+    "#);
+    assert!(result.is_err(), "super call to undefined method should error");
+}
+
+#[test]
+pub fn test_super_invoke_multi_level() {
+    // super from C should call B's method, not A's.
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        class A {
+            fun name(self) { return "A"; }
+        }
+        class B extends A {
+            fun name(self) { return "B"; }
+        }
+        class C extends B {
+            fun name(self) { return "C"; }
+            fun test(self) {
+                return super.name();
+            }
+        }
+        var c = C();
+        print(c.test());  // "B", not "A"
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_super_init() {
+    // super.__init__() should call parent constructor.
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        class Animal {
+            fun __init__(self, name) {
+                self.name = name;
+            }
+        }
+        class Dog extends Animal {
+            fun __init__(self, name, breed) {
+                super.__init__(name);
+                self.breed = breed;
+            }
+        }
+        var d = Dog("Buddy", "Golden");
+        print(d.name);   // Buddy
+        print(d.breed);  // Golden
+    "#).unwrap();
+}
