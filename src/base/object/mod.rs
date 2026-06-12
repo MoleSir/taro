@@ -12,6 +12,7 @@ pub enum Object {
     Instance(ObjectInstance),
     BoundMethod(ObjectBoundMethod),
     List(ObjectList),
+    Dict(ObjectDict),
 }
 
 macro_rules! impl_object_conversions {
@@ -88,6 +89,7 @@ impl_object_conversions! {
     Instance => { ty: ObjectInstance, method: instance, name: "Instance" },
     BoundMethod => { ty: ObjectBoundMethod, method: bound_method, name: "BoundMethod" },
     List => { ty: ObjectList, method: list, name: "List" },
+    Dict => { ty: ObjectDict, method: dict, name: "Dict" },
 }
 
 #[derive(Debug, thiserror::Error)]

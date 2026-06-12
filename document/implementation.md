@@ -35,5 +35,6 @@ tests/scripts/
 ├── 11_magic.taro         # Magic method integration tests
 ├── 12_builin.taro        # Builtin function integration tests
 ├── 13_super.taro         # Super method call integration tests
-└── 14_list.taro          # List integration tests
+├── 14_list.taro          # List integration tests
+└── 15_dict.taro          # Dict integration tests
 ```

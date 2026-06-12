@@ -1,5 +1,5 @@
 - [x] super
 - [x] list
-- [ ] map
+- [x] dict(TODO: all value as key??)
 - [ ] import
 - [ ] std

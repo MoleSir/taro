@@ -254,6 +254,23 @@ impl VirtualMachine {
                         result.push(']');
                         Ok(result.into())
                     }
+                    Object::Dict(dict) => {
+                        let items = dict.items.clone();
+                        // immutable borrow ends here; now we can call __str__ recursively.
+                        let mut result = String::from("{");
+                        let mut first = true;
+                        for (k, v) in items.iter() {
+                            if !first {
+                                result.push_str(", ");
+                            }
+                            first = false;
+                            result.push_str(&self.__str__(k)?);
+                            result.push_str(": ");
+                            result.push_str(&self.__str__(v)?);
+                        }
+                        result.push('}');
+                        Ok(result.into())
+                    }
                 }
             }
         }
@@ -281,7 +298,8 @@ impl VirtualMachine {
                             Ok(true)
                         }
                     }
-                    Object::List(list) => Ok(list.items.len() != 0),
+                    Object::List(list) => Ok(!list.items.is_empty()),
+                    Object::Dict(dict) => Ok(!dict.items.is_empty()),
                     _ => Ok(true),
                 }
             }
@@ -306,6 +324,9 @@ impl VirtualMachine {
                     Object::List(list) => {
                         return Ok(list.items.len() as i64);
                     }
+                    Object::Dict(dict) => {
+                        return Ok(dict.items.len() as i64);
+                    }
                     _ => {}
                 };
                 Err(ExecuteError::UnexpectType("string or instance with __len__", self.value_type_name(value)))
@@ -329,16 +350,20 @@ impl VirtualMachine {
                     }
                     Ok(list.items[idx as usize].clone())
                 }
+                Object::Dict(dict) => {
+                    dict.items.get(index).cloned()
+                        .ok_or(ExecuteError::KeyNotFound)
+                }
                 Object::Instance(instance) => {
                     let class = self.obj_heap.get_class(instance.class)?;
                     if let Some(method) = class.methods.get("__getitem__").cloned() {
                         return self.invoke_method_sync(*h, method, &[index.clone()]);
                     }
-                    Err(ExecuteError::UnexpectType("list or instance with __getitem__", self.value_type_name(collection)))
+                    Err(ExecuteError::UnexpectType("list, dict, or instance with __getitem__", self.value_type_name(collection)))
                 }
-                _ => Err(ExecuteError::UnexpectType("list or instance with __getitem__", self.value_type_name(collection))),
+                _ => Err(ExecuteError::UnexpectType("list, dict, or instance with __getitem__", self.value_type_name(collection))),
             },
-            _ => Err(ExecuteError::UnexpectType("list or instance with __getitem__", self.value_type_name(collection))),
+            _ => Err(ExecuteError::UnexpectType("list, dict, or instance with __getitem__", self.value_type_name(collection))),
         }
     }
 
@@ -360,16 +385,22 @@ impl VirtualMachine {
                     list_mut.items[idx as usize] = value.clone();
                     Ok(value.clone())
                 }
+                Object::Dict(_dict) => {
+                    // `_dict` borrow ends here (NLL) — now we can get mutable access.
+                    let dict_mut = self.obj_heap.get_dict_mut(*h)?;
+                    dict_mut.items.insert(index.clone(), value.clone());
+                    Ok(value.clone())
+                }
                 Object::Instance(instance) => {
                     let class = self.obj_heap.get_class(instance.class)?;
                     if let Some(method) = class.methods.get("__setitem__").cloned() {
                         return self.invoke_method_sync(*h, method, &[index.clone(), value.clone()]);
                     }
-                    Err(ExecuteError::UnexpectType("list or instance with __setitem__", self.value_type_name(collection)))
+                    Err(ExecuteError::UnexpectType("list, dict, or instance with __setitem__", self.value_type_name(collection)))
                 }
-                _ => Err(ExecuteError::UnexpectType("list or instance with __setitem__", self.value_type_name(collection))),
+                _ => Err(ExecuteError::UnexpectType("list, dict, or instance with __setitem__", self.value_type_name(collection))),
             },
-            _ => Err(ExecuteError::UnexpectType("list or instance with __setitem__", self.value_type_name(collection))),
+            _ => Err(ExecuteError::UnexpectType("list, dict, or instance with __setitem__", self.value_type_name(collection))),
         }
     }
 
@@ -435,6 +466,7 @@ impl VirtualMachine {
                     Object::Instance(_) => "instance",
                     Object::Upvalue(_) => "upvalue",
                     Object::List(_) => "list",
+                    Object::Dict(_) => "dict",
                 }
             }
         }

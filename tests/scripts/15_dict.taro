@@ -1,0 +1,137 @@
+// Dict — comprehensive coverage
+
+// === 1. Empty dict ===
+print("=== empty dict ===");
+var empty = {};
+print(empty);           // {}
+print(len(empty));      // 0
+print(bool(empty));     // false
+
+// === 2. Dict literal ===
+print("=== dict literal ===");
+var d = {"a": 1, "b": 2, "c": 3};
+print(d);
+print(len(d));          // 3
+print(bool(d));         // true
+
+// === 3. Mixed key/value types ===
+print("=== mixed types ===");
+var m = {1: "one", "two": 2, true: "yes", 3.14: "pi"};
+print(len(m));          // 4
+print(m);
+
+// === 4. Index get ===
+print("=== index get ===");
+print(d["a"]);          // 1
+print(d["b"]);          // 2
+print(d["c"]);          // 3
+
+// === 5. Index set ===
+print("=== index set ===");
+d["a"] = 99;
+d["b"] = 88;
+print(d["a"]);          // 99
+print(d["b"]);          // 88
+
+// === 6. Add new key via index set ===
+print("=== add new key ===");
+var e = {};
+e["new"] = 42;
+print(e["new"]);        // 42
+print(len(e));          // 1
+
+// === 7. Overwrite value ===
+print("=== overwrite value ===");
+var f = {"key": 1};
+print(f["key"]);        // 1
+f["key"] = 2;
+print(f["key"]);        // 2
+f["key"] = 3;
+print(f["key"]);        // 3
+print(len(f));          // 1
+
+// === 8. Nested dicts ===
+print("=== nested dicts ===");
+var nested = {"a": {"x": 1, "y": 2}, "b": {"x": 3, "y": 4}};
+print(nested["a"]["x"]);  // 1
+print(nested["b"]["y"]);  // 4
+
+// === 9. Loop over dict keys via list ===
+print("=== loop over dict ===");
+var d2 = {"a": 1, "b": 2, "c": 3};
+var keys = ["a", "b", "c"];
+var i = 0;
+var sum = 0;
+while (i < len(keys)) {
+    sum = sum + d2[keys[i]];
+    i = i + 1;
+}
+print(sum);             // 6
+
+// === 10. Index set is expression ===
+print("=== index set expression ===");
+var d3 = {"x": 10};
+var val = d3["x"] = 42;
+print(val);             // 42
+print(d3["x"]);         // 42
+
+// === 11. Dict in variable assignment ===
+print("=== dict assignment ===");
+var original = {"a": 1, "b": 2};
+var copy = original;
+copy["a"] = 99;
+print(original["a"]);   // 99 — same object
+
+// === 12. Dict with functions ===
+print("=== dict functions ===");
+fun make_dict(a, b) {
+    return {"first": a, "second": b};
+}
+var md = make_dict("hello", 42);
+print(md["first"]);     // hello
+print(md["second"]);    // 42
+
+// === 13. Integer keys ===
+print("=== integer keys ===");
+var ik = {0: "zero", 1: "one", 2: "two"};
+print(ik[0]);           // zero
+print(ik[1]);           // one
+print(ik[2]);           // two
+
+// === 14. Bool keys ===
+print("=== bool keys ===");
+var bk = {true: "yes", false: "no"};
+print(bk[true]);        // yes
+print(bk[false]);       // no
+
+// === 15. Dict of lists ===
+print("=== dict of lists ===");
+var dl = {1: [10, 20], 2: [30, 40]};
+print(dl[1][0]);        // 10
+print(dl[2][1]);        // 40
+
+// === 16. List of dicts ===
+print("=== list of dicts ===");
+var ld = [{"a": 1}, {"a": 2}, {"a": 3}];
+print(ld[0]["a"]);      // 1
+print(ld[2]["a"]);      // 3
+
+// === 17. dict() builtin ===
+print("=== dict() builtin ===");
+var built = dict();
+print(built);           // {}
+print(len(built));      // 0
+print(bool(built));     // false
+
+// === 18. dict() with setitem ===
+print("=== dict() with setitem ===");
+var built2 = dict();
+built2["hello"] = "world";
+print(built2["hello"]); // world
+
+// === 19. str() on dict ===
+print("=== str() on dict ===");
+var sd = {"a": 1, "b": 2};
+print(str(sd));         // {a: 1, b: 2}
+
+print("dict done");

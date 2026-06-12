@@ -72,11 +72,12 @@ fn get_rule(kind: TokenKind) -> ParseRule {
         // Single-character tokens -------------------------------------------
         TokenKind::LeftParen    => ParseRule::new(Some(Parser::grouping), Some(Parser::call), Prec::Call),
         TokenKind::RightParen   => ParseRule::NONE,
-        TokenKind::LeftBrace    => ParseRule::NONE,
+        TokenKind::LeftBrace    => ParseRule::new(Some(Parser::dict_literal), None, Prec::Call),
         TokenKind::RightBrace   => ParseRule::NONE,
         TokenKind::LeftBracket  => ParseRule::new(Some(Parser::list_literal), Some(Parser::index), Prec::Call),
         TokenKind::RightBracket => ParseRule::NONE,
         TokenKind::Comma        => ParseRule::NONE,
+        TokenKind::Colon        => ParseRule::NONE,
         TokenKind::Dot          => ParseRule::new(None, Some(Parser::dot), Prec::Call),
         TokenKind::Minus        => ParseRule::new(Some(Parser::unary), Some(Parser::binary), Prec::Term),
         TokenKind::Plus         => ParseRule::new(None, Some(Parser::binary), Prec::Term),
@@ -965,14 +966,41 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
+    fn dict_literal(parser: &mut Parser<'_>, _can_assign: bool) -> ParseResult<()> {
+        if !parser.check(TokenKind::RightBrace) {
+            let mut count = 0;
+            loop {
+                if count >= u16::MAX as usize {
+                    record_error_at_current!(parser, ParseReason::TooMuchItems);
+                }
+
+                parser.expression()?;
+                parser.consume(TokenKind::Colon, "Expect ':' after key")?;
+                parser.expression()?;
+                count += 1;
+                if !parser.match_token(TokenKind::Comma) {
+                    break;
+                }
+            }
+            parser.consume(TokenKind::RightBrace, "Expect '}' after dict literal.")?;
+            parser.emit(Instruction::BuildDict(count));
+            Ok(())
+        } else {
+            parser.consume(TokenKind::RightBrace, "Expect '}' after dict literal.")?;
+            parser.emit(Instruction::BuildDict(0));
+            Ok(())
+        }
+    }
+
     fn list_literal(parser: &mut Parser<'_>, _can_assign: bool) -> ParseResult<()> {
         if !parser.check(TokenKind::RightBracket) {
             let mut count = 0;
             loop {
-                parser.expression()?;
                 if count >= u16::MAX as usize {
                     record_error_at_current!(parser, ParseReason::TooMuchItems);
                 }
+
+                parser.expression()?;
                 count += 1;
                 if !parser.match_token(TokenKind::Comma) {
                     break;

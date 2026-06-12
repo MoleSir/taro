@@ -2066,3 +2066,198 @@ pub fn test_list_assignment_is_expression() {
         print(a[0]);
     "#).unwrap();
 }
+
+// ------------------------------------------------------------------------
+//  Dict
+// ------------------------------------------------------------------------
+
+#[test]
+pub fn test_dict_literal_empty() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        var d = {};
+        print(len(d));
+        print(bool(d));
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_dict_literal_simple() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        var d = {"a": 1, "b": 2, "c": 3};
+        print(len(d));
+        print(bool(d));
+        print(d);
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_dict_literal_mixed_types() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        var d = {1: "one", "two": 2, true: "yes", 3.14: "pi"};
+        print(len(d));
+        print(d);
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_dict_index_get() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        var d = {"x": 10, "y": 20};
+        print(d["x"]);
+        print(d["y"]);
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_dict_index_get_key_not_found_errors() {
+    let mut vm = VirtualMachine::new();
+    let result = vm.interpret(r#"
+        var d = {"a": 1};
+        print(d["nonexistent"]);
+    "#);
+    assert!(result.is_err(), "key not found should error");
+}
+
+#[test]
+pub fn test_dict_index_set() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        var d = {"a": 1, "b": 2};
+        d["a"] = 99;
+        d["b"] = 88;
+        print(d["a"]);
+        print(d["b"]);
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_dict_index_set_new_key() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        var d = {};
+        d["new"] = 42;
+        print(d["new"]);
+        print(len(d));
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_dict_nested() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        var d = {"a": {"x": 1, "y": 2}, "b": {"x": 3, "y": 4}};
+        print(d["a"]["x"]);
+        print(d["b"]["y"]);
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_dict_in_loop() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        var d = {"a": 1, "b": 2, "c": 3};
+        var keys = ["a", "b", "c"];
+        var s = 0;
+        var i = 0;
+        while (i < len(keys)) {
+            s = s + d[keys[i]];
+            i = i + 1;
+        }
+        print(s);  // 6
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_dict_bool() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        print(bool({}));
+        print(bool({"a": 1}));
+        if ({}) { print("impossible"); }
+        if ({"a": 1}) { print("yep"); }
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_dict_len() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        print(len({}));
+        print(len({"a": 1}));
+        print(len({"a": 1, "b": 2, "c": 3}));
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_dict_str() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        var d = {"a": 1, "b": 2};
+        print(str(d));
+        var empty = {};
+        print(str(empty));
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_dict_assignment_is_expression() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        var d = {"a": 1};
+        var x = d["a"] = 99;
+        print(x);
+        print(d["a"]);
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_dict_builtin_empty() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        var d = dict();
+        print(len(d));
+        print(bool(d));
+        print(d);
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_dict_integer_keys() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        var d = {0: "zero", 1: "one", 2: "two"};
+        print(d[0]);
+        print(d[1]);
+        print(d[2]);
+        d[1] = "ONE";
+        print(d[1]);
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_dict_bool_keys() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        var d = {true: "yes", false: "no"};
+        print(d[true]);
+        print(d[false]);
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_dict_overwrite_value() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        var d = {"key": 1};
+        print(d["key"]);
+        d["key"] = 2;
+        print(d["key"]);
+        d["key"] = 3;
+        print(d["key"]);
+        print(len(d));  // still 1
+    "#).unwrap();
+}

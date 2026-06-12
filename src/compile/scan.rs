@@ -73,6 +73,7 @@ impl<'a> Scanner<'a> {
             ';' => Ok(self.make_token(TokenKind::Semicolon)),
             '/' => Ok(self.make_token(TokenKind::Slash)),
             '*' => Ok(self.make_token(TokenKind::Star)),
+            ':' => Ok(self.make_token(TokenKind::Colon)),
 
             '!' => {
                 let kind = if self.match_then_advance('=')? {

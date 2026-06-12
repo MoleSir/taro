@@ -101,7 +101,17 @@ pub struct ObjectList {
 }
 
 impl ObjectList {
-    pub fn new(items:Vec<Value>) -> Self {
+    pub fn new(items: Vec<Value>) -> Self {
+        Self { items } 
+    }
+}
+
+pub struct ObjectDict {
+    pub items: HashMap<Value, Value>,
+}
+
+impl ObjectDict {
+    pub fn new(items: HashMap<Value, Value>) -> Self {
         Self { items } 
     }
 }

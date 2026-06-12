@@ -1,5 +1,7 @@
+use std::collections::HashMap;
+
 use crate::{Chunk, ShrString, Value};
-use super::{BuiltinFn, Object, ObjectBoundMethod, ObjectBuiltinFn, ObjectClass, ObjectClosure, ObjectError, ObjectFunction, ObjectInstance, ObjectList, ObjectUpvalue};
+use super::{BuiltinFn, Object, ObjectBoundMethod, ObjectBuiltinFn, ObjectClass, ObjectClosure, ObjectDict, ObjectError, ObjectFunction, ObjectInstance, ObjectList, ObjectUpvalue};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ObjectHandle(pub usize);
@@ -69,6 +71,11 @@ impl ObjectHeap {
         self.alloc(obj)
     }
 
+    pub fn alloc_dict(&mut self, items: HashMap<Value, Value>) -> ObjectHandle {
+        let obj = ObjectDict::new(items);
+        self.alloc(obj)
+    }
+
     fn alloc(&mut self, obj: impl Into<Object>) -> ObjectHandle {
         let obj = obj.into();
         self.bytes_allocated += std::mem::size_of::<Object>();
@@ -127,6 +134,7 @@ impl ObjectHeap {
     impl_getters!(class, ObjectClass);
     impl_getters!(bound_method, ObjectBoundMethod);
     impl_getters!(list, ObjectList);
+    impl_getters!(dict, ObjectDict);
 }
 
 impl ObjectHeap {
@@ -209,6 +217,12 @@ impl ObjectHeap {
                 Object::List(list) => {
                     for item in list.items.iter() {
                         self.mark_value(item);
+                    }
+                }
+                Object::Dict(dict) => {
+                    for (k, v) in dict.items.iter() {
+                        self.mark_value(k);
+                        self.mark_value(v);
                     }
                 }
                 Object::BuiltinFn(_) => {

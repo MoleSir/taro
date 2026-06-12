@@ -70,4 +70,7 @@ pub enum ExecuteError {
 
     #[error("index {0} out of range (len = {1})")]
     IndexOutOfRange(i64, usize),
+
+    #[error("key not found in dict")]
+    KeyNotFound,
 }

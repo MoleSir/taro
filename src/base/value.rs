@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, hash::{Hash, Hasher}};
 use crate::vm::{ExecuteError, ExecuteResult};
 use super::{ObjectHandle, ShrString};
 
@@ -117,3 +117,35 @@ impl fmt::Display for Value {
         }
     }
 }
+
+// 手动实现 Hash
+impl Hash for Value {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            Value::Nil => 0u8.hash(state),
+            Value::Float(f) => {
+                1u8.hash(state);
+                let bits = if *f == 0.0 { 0.0f64.to_bits() } else { f.to_bits() };
+                bits.hash(state);
+            }
+            Value::Integer(i) => {
+                2u8.hash(state);
+                i.hash(state);
+            }
+            Value::Bool(b) => {
+                3u8.hash(state);
+                b.hash(state);
+            }
+            Value::String(s) => {
+                4u8.hash(state);
+                s.as_str().hash(state);
+            }
+            Value::Object(h) => {
+                5u8.hash(state);
+                h.hash(state);
+            }
+        }
+    }
+}
+
+impl Eq for Value {}

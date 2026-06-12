@@ -20,6 +20,7 @@ pub enum TokenKind {
     Plus,
     Semicolon,
     Slash,
+    Colon,
     Star,
 
     // One or two character tokens.

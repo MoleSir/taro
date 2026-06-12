@@ -9,7 +9,8 @@ Taro is a small, class-based scripting language with closures, garbage collectio
 - Numbers: integers (`42`, `-7`) and floats (`3.14`, `-2.7`)
 - Strings: `"hello"`, concatenation with `+`
 - Lists: `[1, 2, 3]`, indexing, nested lists
-- Objects: functions, classes, instances, closures, bound methods, lists
+- Dicts: `{"key": value}`, key-value storage, indexing by key
+- Objects: functions, classes, instances, closures, bound methods, lists, dicts
 
 ## Variables and scope
 
@@ -53,6 +54,41 @@ while (i < len(a)) {
     i = i + 1;
 }
 ```
+
+## Dicts
+
+```taro
+var d = {"a": 1, "b": 2, "c": 3};  // literal
+print(d["a"]);              // 1 — indexing by key
+print(len(d));              // 3
+print(bool({}));            // false
+print(bool({"a": 1}));      // true
+
+// Mutation
+d["a"] = 99;                // update existing key
+d["new"] = 42;              // add new key
+
+// Mixed key types
+var m = {1: "one", "two": 2, true: "yes"};
+
+// Nested dicts
+var nested = {"a": {"x": 1, "y": 2}, "b": {"x": 3, "y": 4}};
+print(nested["a"]["x"]);    // 1
+
+// dict() builtin (creates empty dict)
+var e = dict();
+e["hello"] = "world";
+
+// Loop over dict keys via list
+var keys = ["a", "b", "c"];
+var i = 0;
+while (i < len(keys)) {
+    print(d[keys[i]]);
+    i = i + 1;
+}
+```
+
+Dict keys use `Value` equality and hashing — same-type comparisons apply.
 
 ## Control flow
 
@@ -244,3 +280,4 @@ Comparison fallback mechanism: `!=` works with only `__eq__`, `>=` works with on
 | `input(prompt?)` | Read a line from stdin, with optional prompt (no trailing newline). |
 | `clock()` | Wall-clock time in seconds since Unix epoch (as float). |
 | `list(a, b, ...)` | Create a list from the given arguments (variadic). |
+| `dict()` | Create an empty dict. |

@@ -51,6 +51,7 @@ pub enum ByteCode {
     SuperInvoke,
 
     BuildList,
+    BuildDict,
     IndexGet,
     IndexSet,
 }
@@ -123,6 +124,7 @@ pub enum Instruction {
     Inherit,
 
     BuildList(usize),
+    BuildDict(usize),
     IndexGet,
     IndexSet,
 }

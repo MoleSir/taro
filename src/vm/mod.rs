@@ -77,6 +77,7 @@ impl VirtualMachine {
         self.define_builtin_fn("max", VirtualMachine::max);
         self.define_builtin_fn("clock", VirtualMachine::clock);
         self.define_builtin_fn("list", VirtualMachine::list);
+        self.define_builtin_fn("dict", VirtualMachine::dict);
     }
 
     /// Return a reference to the top-most (currently executing) call frame.
@@ -419,6 +420,17 @@ impl VirtualMachine {
                 items.reverse();
                 let list = self.obj_heap.alloc_list(items);
                 self.push_stack(list);
+            }
+            Instruction::BuildDict(count) => {
+                let mut items = HashMap::new();
+                for _ in 0..count {
+                    // Parser pushes key then value, so value is on top.
+                    let val = self.pop_stack()?;
+                    let key = self.pop_stack()?;
+                    items.insert(key, val);
+                }
+                let dict = self.obj_heap.alloc_dict(items);
+                self.push_stack(dict);
             }
             Instruction::IndexGet => {
                 let index = self.pop_stack()?;

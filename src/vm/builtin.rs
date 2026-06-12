@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::{vm::VirtualMachine, Object, Value};
 use super::{ExecuteError, ExecuteResult};
 
@@ -168,5 +170,10 @@ impl VirtualMachine {
     pub fn list(&mut self, arg_count: usize) -> ExecuteResult<Value> {
         let items: Vec<Value> = get_args!(self, arg_count).to_vec();
         Ok(Value::Object(self.obj_heap.alloc_list(items)))
+    }
+
+    /// dict 
+    pub fn dict(&mut self, _arg_count: usize) -> ExecuteResult<Value> {
+        Ok(Value::Object(self.obj_heap.alloc_dict(HashMap::new())))
     }
 }

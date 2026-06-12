@@ -1495,3 +1495,37 @@ fn test_index_set_bytecode() {
         "should contain IndexSet bytecode"
     );
 }
+
+// ------------------------------------------------------------------------
+//  Dict literals — bytecode verification
+// ------------------------------------------------------------------------
+
+#[test]
+fn test_dict_literal_bytecode() {
+    // var d = {"a": 1, "b": 2}; should emit BuildDict.
+    // Note: {} at statement level is parsed as a block, so dict literals
+    // must appear in expression context (e.g. assignment).
+    let c = codes("var d = {\"a\": 1, \"b\": 2};");
+    let bytes: Vec<u8> = c.iter().map(|&b| b).collect();
+    assert!(
+        bytes.iter().any(|&b| b == ByteCode::BuildDict as u8),
+        "should contain BuildDict bytecode"
+    );
+}
+
+#[test]
+fn test_empty_dict_bytecode() {
+    let c = codes("var d = {};");
+    let bytes: Vec<u8> = c.iter().map(|&b| b).collect();
+    assert!(
+        bytes.iter().any(|&b| b == ByteCode::BuildDict as u8),
+        "empty dict should also emit BuildDict"
+    );
+}
+
+#[test]
+fn test_dict_colon_required() {
+    // Dict literal without colon after key should be an error.
+    // Must be in expression context (assignment) to be parsed as dict.
+    assert_err("var d = {\"a\" 1};");
+}
