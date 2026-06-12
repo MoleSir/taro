@@ -166,6 +166,18 @@ impl Chunk {
                 self.write_const_op(ByteCode::SuperInvoke, Value::String(method_name));
                 self.write_byte(arg_count as u8);
             }
+
+            Instruction::BuildList(count) => {
+                assert!(count < u16::MAX as usize, "Too much elements.");
+                self.write_op(ByteCode::BuildList);
+                self.write_u16(count as u16);
+            }
+            Instruction::IndexGet => {
+                self.write_op(ByteCode::IndexGet);
+            }
+            Instruction::IndexSet => {
+                self.write_op(ByteCode::IndexSet);
+            }
         }
     }
 
@@ -289,6 +301,13 @@ impl Chunk {
                 let arg_count = self.read_byte(ip)? as usize;
                 Ok(Instruction::SuperInvoke(method_name, arg_count))
             }
+
+            ByteCode::BuildList => {
+                let count = self.read_u16(ip)?;
+                Ok(Instruction::BuildList(count as usize))
+            }
+            ByteCode::IndexGet => Ok(Instruction::IndexGet),
+            ByteCode::IndexSet => Ok(Instruction::IndexSet),
         }
     }
 

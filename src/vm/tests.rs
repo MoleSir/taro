@@ -1841,3 +1841,228 @@ pub fn test_super_init() {
         print(d.breed);  // Golden
     "#).unwrap();
 }
+
+// ------------------------------------------------------------------------
+//  List
+// ------------------------------------------------------------------------
+
+#[test]
+pub fn test_list_literal_empty() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        var a = [];
+        print(len(a));
+        print(bool(a));
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_list_literal_simple() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        var a = [1, 2, 3];
+        print(len(a));
+        print(bool(a));
+        print(a);
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_list_literal_mixed_types() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        var a = [1, "hello", true, nil, 3.14];
+        print(len(a));
+        print(a);
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_list_index_get() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        var a = [10, 20, 30];
+        print(a[0]);
+        print(a[1]);
+        print(a[2]);
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_list_index_get_negative() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        var a = [10, 20, 30];
+        print(a[-1]);
+        print(a[-2]);
+        print(a[-3]);
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_list_index_get_out_of_range_errors() {
+    let mut vm = VirtualMachine::new();
+    let result = vm.interpret(r#"
+        var a = [1, 2, 3];
+        print(a[5]);
+    "#);
+    assert!(result.is_err(), "index out of range should error");
+}
+
+#[test]
+pub fn test_list_index_get_negative_out_of_range_errors() {
+    let mut vm = VirtualMachine::new();
+    let result = vm.interpret(r#"
+        var a = [1, 2, 3];
+        print(a[-4]);
+    "#);
+    assert!(result.is_err(), "negative index out of range should error");
+}
+
+#[test]
+pub fn test_list_index_set() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        var a = [10, 20, 30];
+        a[0] = 99;
+        a[1] = 88;
+        print(a[0]);
+        print(a[1]);
+        print(a[2]);
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_list_index_set_negative() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        var a = [10, 20, 30];
+        a[-1] = 99;
+        print(a[2]);
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_list_index_set_out_of_range_errors() {
+    let mut vm = VirtualMachine::new();
+    let result = vm.interpret(r#"
+        var a = [1, 2, 3];
+        a[5] = 99;
+    "#);
+    assert!(result.is_err(), "index set out of range should error");
+}
+
+#[test]
+pub fn test_list_nested() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        var a = [[1, 2], [3, 4], [5, 6]];
+        print(a[0][1]);
+        print(a[2][0]);
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_list_in_loop() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        var a = [1, 2, 3];
+        var s = 0;
+        var i = 0;
+        while (i < len(a)) {
+            s = s + a[i];
+            i = i + 1;
+        }
+        print(s);  // 6
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_list_bool() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        print(bool([]));
+        print(bool([1]));
+        print(bool([nil]));
+        if ([]) { print("impossible"); }
+        if ([1]) { print("yep"); }
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_list_len() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        print(len([]));
+        print(len([1]));
+        print(len([1, 2, 3, 4, 5]));
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_list_str() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        var a = [1, 2, 3];
+        print(str(a));
+        var b = ["a", "b"];
+        print(str(b));
+        var empty = [];
+        print(str(empty));
+    "#).unwrap();
+}
+
+// ------------------------------------------------------------------------
+//  __getitem__ / __setitem__ magic methods
+// ------------------------------------------------------------------------
+
+#[test]
+pub fn test_magic_getitem() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        class Wrapper {
+            fun __init__(self, v) { self.v = v; }
+            fun __getitem__(self, idx) { return self.v; }
+        }
+        var w = Wrapper(42);
+        print(w[0]);
+        print(w[999]);
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_magic_setitem() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        class Wrapper {
+            fun __init__(self) { self.v = 0; }
+            fun __setitem__(self, idx, val) { self.v = val; }
+            fun __getitem__(self, idx) { return self.v; }
+        }
+        var w = Wrapper();
+        w[0] = 99;
+        print(w[0]);
+    "#).unwrap();
+}
+
+#[test]
+pub fn test_magic_getitem_undefined_on_list_errors() {
+    let mut vm = VirtualMachine::new();
+    // Indexing a non-list non-instance value should error
+    let result = vm.interpret(r#"
+        print(42[0]);
+    "#);
+    assert!(result.is_err(), "indexing integer should error");
+}
+
+#[test]
+pub fn test_list_assignment_is_expression() {
+    // IndexSet should return the assigned value (like other assignments in Taro)
+    let mut vm = VirtualMachine::new();
+    vm.interpret(r#"
+        var a = [1, 2, 3];
+        var x = a[0] = 99;
+        print(x);
+        print(a[0]);
+    "#).unwrap();
+}

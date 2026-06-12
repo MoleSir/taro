@@ -64,6 +64,8 @@ impl<'a> Scanner<'a> {
             ')' => Ok(self.make_token(TokenKind::RightParen)),
             '{' => Ok(self.make_token(TokenKind::LeftBrace)),
             '}' => Ok(self.make_token(TokenKind::RightBrace)),
+            '[' => Ok(self.make_token(TokenKind::LeftBracket)),
+            ']' => Ok(self.make_token(TokenKind::RightBracket)),
             ',' => Ok(self.make_token(TokenKind::Comma)),
             '.' => Ok(self.make_token(TokenKind::Dot)),
             '-' => Ok(self.make_token(TokenKind::Minus)),

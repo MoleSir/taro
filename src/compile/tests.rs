@@ -1453,3 +1453,45 @@ fn test_inheritance_bytecode() {
         "should contain Inherit bytecode"
     );
 }
+
+#[test]
+fn test_list_literal_bytecode() {
+    // [1, 2, 3]; should emit:
+    //   Constant(1), Constant(2), Constant(3), BuildList(3), Pop, Nil, Return
+    let c = codes("[1, 2, 3];");
+    let bytes: Vec<u8> = c.iter().map(|&b| b).collect();
+    assert!(
+        bytes.iter().any(|&b| b == ByteCode::BuildList as u8),
+        "should contain BuildList bytecode"
+    );
+}
+
+#[test]
+fn test_empty_list_bytecode() {
+    let c = codes("[];");
+    let bytes: Vec<u8> = c.iter().map(|&b| b).collect();
+    assert!(
+        bytes.iter().any(|&b| b == ByteCode::BuildList as u8),
+        "empty list should also emit BuildList"
+    );
+}
+
+#[test]
+fn test_index_get_bytecode() {
+    let c = codes("a[0];");
+    let bytes: Vec<u8> = c.iter().map(|&b| b).collect();
+    assert!(
+        bytes.iter().any(|&b| b == ByteCode::IndexGet as u8),
+        "should contain IndexGet bytecode"
+    );
+}
+
+#[test]
+fn test_index_set_bytecode() {
+    let c = codes("a[0] = 1;");
+    let bytes: Vec<u8> = c.iter().map(|&b| b).collect();
+    assert!(
+        bytes.iter().any(|&b| b == ByteCode::IndexSet as u8),
+        "should contain IndexSet bytecode"
+    );
+}

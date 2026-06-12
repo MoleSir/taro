@@ -95,3 +95,13 @@ impl ObjectBoundMethod {
         Self { receiver, method }
     }
 }
+
+pub struct ObjectList {
+    pub items: Vec<Value>,
+}
+
+impl ObjectList {
+    pub fn new(items:Vec<Value>) -> Self {
+        Self { items } 
+    }
+}

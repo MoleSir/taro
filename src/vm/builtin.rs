@@ -163,4 +163,10 @@ impl VirtualMachine {
             .unwrap_or_default();
         Ok(Value::Float(dur.as_secs_f64()))
     }
+
+    /// list 
+    pub fn list(&mut self, arg_count: usize) -> ExecuteResult<Value> {
+        let items: Vec<Value> = get_args!(self, arg_count).to_vec();
+        Ok(Value::Object(self.obj_heap.alloc_list(items)))
+    }
 }

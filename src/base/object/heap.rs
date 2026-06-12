@@ -1,5 +1,5 @@
 use crate::{Chunk, ShrString, Value};
-use super::{BuiltinFn, Object, ObjectBoundMethod, ObjectBuiltinFn, ObjectClass, ObjectClosure, ObjectError, ObjectFunction, ObjectInstance, ObjectUpvalue};
+use super::{BuiltinFn, Object, ObjectBoundMethod, ObjectBuiltinFn, ObjectClass, ObjectClosure, ObjectError, ObjectFunction, ObjectInstance, ObjectList, ObjectUpvalue};
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ObjectHandle(pub usize);
@@ -22,7 +22,9 @@ impl ObjectHeap {
             bytes_allocated: 0,
         }
     }
+}
 
+impl ObjectHeap {
     // ================================================================================== // 
     //           Alloc
     // ================================================================================== // 
@@ -62,6 +64,11 @@ impl ObjectHeap {
         self.alloc(obj)
     }
 
+    pub fn alloc_list(&mut self, items: Vec<Value>) -> ObjectHandle {
+        let obj = ObjectList::new(items);
+        self.alloc(obj)
+    }
+
     fn alloc(&mut self, obj: impl Into<Object>) -> ObjectHandle {
         let obj = obj.into();
         self.bytes_allocated += std::mem::size_of::<Object>();
@@ -81,7 +88,25 @@ impl ObjectHeap {
 
         handle
     }
+}
 
+macro_rules! impl_getters {
+    ($name:ident, $ty:ty) => {
+        paste::paste! {
+            #[inline]
+            pub fn [<get_ $name>](&self, handle: ObjectHandle) -> Result<&$ty, ObjectError> {
+                self.get(handle).[<as_ $name>]()
+            }
+
+            #[inline]
+            pub fn [<get_ $name _mut>](&mut self, handle: ObjectHandle) -> Result<&mut $ty, ObjectError> {
+                self.get_mut(handle).[<as_ $name _mut>]()
+            }
+        }
+    };
+}
+
+impl ObjectHeap {
     // ================================================================================== // 
     //           Get
     // ================================================================================== // 
@@ -94,76 +119,17 @@ impl ObjectHeap {
         self.objects[handle.0].as_mut().expect("Dangling handle accessed!")
     }
 
-    #[inline]
-    pub fn get_function(&self, handle: ObjectHandle) -> Result<&ObjectFunction, ObjectError> {
-        self.get(handle).as_function()
-    }
+    impl_getters!(function, ObjectFunction);
+    impl_getters!(builtin_fn, ObjectBuiltinFn);
+    impl_getters!(closure, ObjectClosure);
+    impl_getters!(upvalue, ObjectUpvalue);
+    impl_getters!(instance, ObjectInstance);
+    impl_getters!(class, ObjectClass);
+    impl_getters!(bound_method, ObjectBoundMethod);
+    impl_getters!(list, ObjectList);
+}
 
-    #[inline]
-    pub fn get_function_mut(&mut self, handle: ObjectHandle) -> Result<&mut ObjectFunction, ObjectError> {
-        self.get_mut(handle).as_function_mut()
-    }
-
-    #[inline]
-    pub fn get_builtin_fn(&self, handle: ObjectHandle) -> Result<&ObjectBuiltinFn, ObjectError> {
-        self.get(handle).as_builtin_fn()
-    }
-
-    #[inline]
-    pub fn get_builtin_fn_mut(&mut self, handle: ObjectHandle) -> Result<&mut ObjectBuiltinFn, ObjectError> {
-        self.get_mut(handle).as_builtin_fn_mut()
-    }
-
-    #[inline]
-    pub fn get_closure(&self, handle: ObjectHandle) -> Result<&ObjectClosure, ObjectError> {
-        self.get(handle).as_closure()
-    }
-
-    #[inline]
-    pub fn get_closure_mut(&mut self, handle: ObjectHandle) -> Result<&mut ObjectClosure, ObjectError> {
-        self.get_mut(handle).as_closure_mut()
-    }
-
-    #[inline]
-    pub fn get_upvalue(&self, handle: ObjectHandle) -> Result<&ObjectUpvalue, ObjectError> {
-        self.get(handle).as_upvalue()
-    }
-
-    #[inline]
-    pub fn get_upvalue_mut(&mut self, handle: ObjectHandle) -> Result<&mut ObjectUpvalue, ObjectError> {
-        self.get_mut(handle).as_upvalue_mut()
-    }
-
-    #[inline]
-    pub fn get_instance(&self, handle: ObjectHandle) -> Result<&ObjectInstance, ObjectError> {
-        self.get(handle).as_instance()
-    }
-
-    #[inline]
-    pub fn get_instance_mut(&mut self, handle: ObjectHandle) -> Result<&mut ObjectInstance, ObjectError> {
-        self.get_mut(handle).as_instance_mut()
-    }
-
-    #[inline]
-    pub fn get_class(&self, handle: ObjectHandle) -> Result<&ObjectClass, ObjectError> {
-        self.get(handle).as_class()
-    }
-
-    #[inline]
-    pub fn get_class_mut(&mut self, handle: ObjectHandle) -> Result<&mut ObjectClass, ObjectError> {
-        self.get_mut(handle).as_class_mut()
-    }
-
-    #[inline]
-    pub fn get_bound_method(&self, handle: ObjectHandle) -> Result<&ObjectBoundMethod, ObjectError> {
-        self.get(handle).as_bound_method()
-    }
-
-    #[inline]
-    pub fn get_bound_method_mut(&mut self, handle: ObjectHandle) -> Result<&mut ObjectBoundMethod, ObjectError> {
-        self.get_mut(handle).as_bound_method_mut()
-    }
-
+impl ObjectHeap {
     // ================================================================================== //
     //           GC
     // ================================================================================== // 
@@ -238,6 +204,11 @@ impl ObjectHeap {
                     }
                     for method in class.methods.values() {
                         self.mark_object(*method);
+                    }
+                }
+                Object::List(list) => {
+                    for item in list.items.iter() {
+                        self.mark_value(item);
                     }
                 }
                 Object::BuiltinFn(_) => {

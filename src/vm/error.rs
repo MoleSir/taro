@@ -67,4 +67,7 @@ pub enum ExecuteError {
 
     #[error("I/O error: {0}")]
     IoError(String),
+
+    #[error("index {0} out of range (len = {1})")]
+    IndexOutOfRange(i64, usize),
 }

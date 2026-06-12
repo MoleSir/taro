@@ -11,6 +11,7 @@ pub enum Object {
     Class(ObjectClass),
     Instance(ObjectInstance),
     BoundMethod(ObjectBoundMethod),
+    List(ObjectList),
 }
 
 macro_rules! impl_object_conversions {
@@ -86,6 +87,7 @@ impl_object_conversions! {
     Class => { ty: ObjectClass, method: class, name: "Class" },
     Instance => { ty: ObjectInstance, method: instance, name: "Instance" },
     BoundMethod => { ty: ObjectBoundMethod, method: bound_method, name: "BoundMethod" },
+    List => { ty: ObjectList, method: list, name: "List" },
 }
 
 #[derive(Debug, thiserror::Error)]

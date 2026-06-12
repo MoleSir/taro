@@ -49,6 +49,10 @@ pub enum ByteCode {
     Invoke,
     Inherit,
     SuperInvoke,
+
+    BuildList,
+    IndexGet,
+    IndexSet,
 }
 
 /// Descriptor for a single upvalue captured by a closure.
@@ -117,4 +121,8 @@ pub enum Instruction {
     Invoke(ShrString, usize),
     SuperInvoke(ShrString, usize),
     Inherit,
+
+    BuildList(usize),
+    IndexGet,
+    IndexSet,
 }

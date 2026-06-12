@@ -1,5 +1,5 @@
 - [x] super
-- [ ] list
+- [x] list
 - [ ] map
 - [ ] import
 - [ ] std

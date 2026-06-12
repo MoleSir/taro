@@ -76,6 +76,7 @@ impl VirtualMachine {
         self.define_builtin_fn("min", VirtualMachine::min);
         self.define_builtin_fn("max", VirtualMachine::max);
         self.define_builtin_fn("clock", VirtualMachine::clock);
+        self.define_builtin_fn("list", VirtualMachine::list);
     }
 
     /// Return a reference to the top-most (currently executing) call frame.
@@ -408,6 +409,29 @@ impl VirtualMachine {
                 self.frame_mut()?.ip = ip;
                 self.call_method(method_handle, arg_count + 1)?;
                 return Ok(());
+            }
+        
+            Instruction::BuildList(count) => {
+                let mut items = vec![];
+                for _ in 0..count {
+                    items.push(self.pop_stack()?);
+                }
+                items.reverse();
+                let list = self.obj_heap.alloc_list(items);
+                self.push_stack(list);
+            }
+            Instruction::IndexGet => {
+                let index = self.pop_stack()?;
+                let collection = self.pop_stack()?;
+                let result = self.__getitem__(&collection, &index)?;
+                self.push_stack(result);
+            }
+            Instruction::IndexSet => {
+                let value = self.pop_stack()?;
+                let index = self.pop_stack()?;
+                let collection = self.pop_stack()?;
+                let result = self.__setitem__(&collection, &index, &value)?;
+                self.push_stack(result);
             }
         }
 

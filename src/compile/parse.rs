@@ -74,6 +74,8 @@ fn get_rule(kind: TokenKind) -> ParseRule {
         TokenKind::RightParen   => ParseRule::NONE,
         TokenKind::LeftBrace    => ParseRule::NONE,
         TokenKind::RightBrace   => ParseRule::NONE,
+        TokenKind::LeftBracket  => ParseRule::new(Some(Parser::list_literal), Some(Parser::index), Prec::Call),
+        TokenKind::RightBracket => ParseRule::NONE,
         TokenKind::Comma        => ParseRule::NONE,
         TokenKind::Dot          => ParseRule::new(None, Some(Parser::dot), Prec::Call),
         TokenKind::Minus        => ParseRule::new(Some(Parser::unary), Some(Parser::binary), Prec::Term),
@@ -202,6 +204,9 @@ pub enum ParseReason {
 
     #[error("Can't have more than 255 arguments.")]
     TooMuchArgument,
+
+    #[error("Can't have more than 255 items.")]
+    TooMuchItems,
 
     #[error("Can't return from top-level code.")]
     ReturnInTop,
@@ -957,6 +962,41 @@ impl<'a> Parser<'a> {
             bail_error_at_current!(parser, ParseReason::ExpectedToken("Expect '(' after super method name."));
         }
 
+        Ok(())
+    }
+
+    fn list_literal(parser: &mut Parser<'_>, _can_assign: bool) -> ParseResult<()> {
+        if !parser.check(TokenKind::RightBracket) {
+            let mut count = 0;
+            loop {
+                parser.expression()?;
+                if count >= u16::MAX as usize {
+                    record_error_at_current!(parser, ParseReason::TooMuchItems);
+                }
+                count += 1;
+                if !parser.match_token(TokenKind::Comma) {
+                    break;
+                }
+            }
+            parser.consume(TokenKind::RightBracket, "Expect ']' list literal.")?;
+            parser.emit(Instruction::BuildList(count));
+            Ok(())
+        } else {
+            parser.consume(TokenKind::RightBracket, "Expect ']' after list literal.")?;
+            parser.emit(Instruction::BuildList(0));
+            Ok(())
+        }
+    }
+
+    fn index(parser: &mut Parser<'_>, can_assign: bool) -> ParseResult<()> {
+        parser.expression()?;
+        parser.consume(TokenKind::RightBracket, "Expect ']' index.")?;
+        if can_assign && parser.match_token(TokenKind::Equal) {
+            parser.expression()?;
+            parser.emit(Instruction::IndexSet);
+        } else {
+            parser.emit(Instruction::IndexGet);
+        }
         Ok(())
     }
 
