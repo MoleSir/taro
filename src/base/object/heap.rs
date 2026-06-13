@@ -1,10 +1,22 @@
 use std::collections::HashMap;
+use std::sync::LazyLock;
 
-use crate::{Chunk, ShrString, Value};
-use super::{BuiltinFn, Method, Object, ObjectBoundMethod, ObjectBuiltinFn, ObjectClass, ObjectClosure, ObjectDict, ObjectError, ObjectFunction, ObjectInstance, ObjectList, ObjectUpvalue};
+use crate::{Chunk, ShrString};
+use super::{BuiltinFn, BuiltinInstance, Method, Object, ObjectBoundMethod, ObjectBuiltinFn, ObjectBuiltinInstance, ObjectClass, ObjectClosure, ObjectError, ObjectFunction, ObjectInstance, ObjectUpvalue};
+
+/// Static nil object — backing for `ObjectHandle::NIL`.
+static NIL_OBJECT: LazyLock<Object> = LazyLock::new(|| {
+    Object::BuiltinInstance(ObjectBuiltinInstance::new(BuiltinInstance::Nil))
+});
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ObjectHandle(pub usize);
+
+/// Sentinel handle representing nil — no heap allocation needed.
+impl ObjectHandle {
+    pub const NIL: Self = ObjectHandle(0);
+    pub fn is_nil(self) -> bool { self.0 == 0 }
+}
 
 pub struct ObjectHeap {
     objects: Vec<Option<Object>>,
@@ -12,23 +24,34 @@ pub struct ObjectHeap {
     free_slots: Vec<usize>,
     gray_stack: Vec<ObjectHandle>,
     pub bytes_allocated: usize,
+
+    // ---- interning caches ----
+    /// Small-integer cache (-5..256) so arithmetic doesn't allocate every time.
+    int_cache: HashMap<i64, ObjectHandle>,
+    /// String-object handle cache keyed by ShrString.
+    string_cache: HashMap<ShrString, ObjectHandle>,
 }
 
 impl ObjectHeap {
     pub fn new() -> Self {
+        // Slot 0 is reserved for nil sentinel.
+        let objects = vec![None];
+        let marked = vec![false];
         Self {
-            objects: Vec::new(),
-            marked: Vec::new(),
+            objects,
+            marked,
             free_slots: Vec::new(),
             gray_stack: Vec::new(),
             bytes_allocated: 0,
+            int_cache: HashMap::new(),
+            string_cache: HashMap::new(),
         }
     }
 }
 
 impl ObjectHeap {
     // ================================================================================== //
-    //           Alloc
+    //           Alloc — convenience helpers
     // ================================================================================== //
 
     pub fn alloc_closure(&mut self, function: ObjectHandle) -> ObjectHandle {
@@ -42,7 +65,7 @@ impl ObjectHeap {
     }
 
     pub fn alloc_upvalue(&mut self, location: Option<usize>) -> ObjectHandle {
-        let obj = ObjectUpvalue { location, closed: Value::Nil, next: None };
+        let obj = ObjectUpvalue { location, closed: ObjectHandle::NIL, next: None };
         self.alloc(obj)
     }
 
@@ -61,19 +84,56 @@ impl ObjectHeap {
         self.alloc(obj)
     }
 
-    pub fn alloc_bound_method(&mut self, receiver: Value, method: Method) -> ObjectHandle {
+    pub fn alloc_bound_method(&mut self, receiver: ObjectHandle, method: Method) -> ObjectHandle {
         let obj = ObjectBoundMethod::new(receiver, method);
         self.alloc(obj)
     }
 
-    pub fn alloc_list(&mut self, class: ObjectHandle, items: Vec<Value>) -> ObjectHandle {
-        let obj = ObjectList::new(class, items);
+    // ---- BuiltinInstance allocators ----
+
+    /// Allocate a builtin instance with the given data.
+    pub fn alloc_builtin_instance(&mut self, data: BuiltinInstance) -> ObjectHandle {
+        let obj = ObjectBuiltinInstance::new(data);
         self.alloc(obj)
     }
 
-    pub fn alloc_dict(&mut self, class: ObjectHandle, items: HashMap<Value, Value>) -> ObjectHandle {
-        let obj = ObjectDict::new(class, items);
-        self.alloc(obj)
+    pub fn alloc_bool(&mut self, v: bool) -> ObjectHandle {
+        self.alloc_builtin_instance(BuiltinInstance::Bool(v))
+    }
+
+    pub fn alloc_integer(&mut self, v: i64) -> ObjectHandle {
+        // Small-integer interning: -5..256
+        if (-5..=256).contains(&v) {
+            if let Some(&handle) = self.int_cache.get(&v) {
+                return handle;
+            }
+            let handle = self.alloc_builtin_instance(BuiltinInstance::Integer(v));
+            self.int_cache.insert(v, handle);
+            return handle;
+        }
+        self.alloc_builtin_instance(BuiltinInstance::Integer(v))
+    }
+
+    pub fn alloc_float(&mut self, v: f64) -> ObjectHandle {
+        self.alloc_builtin_instance(BuiltinInstance::Float(v))
+    }
+
+    pub fn alloc_string(&mut self, s: ShrString) -> ObjectHandle {
+        // Interning: same ShrString → same handle
+        if let Some(&handle) = self.string_cache.get(&s) {
+            return handle;
+        }
+        let handle = self.alloc_builtin_instance(BuiltinInstance::String(s.clone()));
+        self.string_cache.insert(s, handle);
+        handle
+    }
+
+    pub fn alloc_list(&mut self, items: Vec<ObjectHandle>) -> ObjectHandle {
+        self.alloc_builtin_instance(BuiltinInstance::List(items))
+    }
+
+    pub fn alloc_dict(&mut self, items: Vec<(ObjectHandle, ObjectHandle)>) -> ObjectHandle {
+        self.alloc_builtin_instance(BuiltinInstance::Dict(items))
     }
 
     fn alloc(&mut self, obj: impl Into<Object>) -> ObjectHandle {
@@ -119,11 +179,22 @@ impl ObjectHeap {
     // ================================================================================== //
 
     pub fn get(&self, handle: ObjectHandle) -> &Object {
+        if handle.is_nil() {
+            return &NIL_OBJECT;
+        }
         self.objects[handle.0].as_ref().expect("Dangling handle accessed!")
     }
 
     pub fn get_mut(&mut self, handle: ObjectHandle) -> &mut Object {
+        if handle.is_nil() {
+            panic!("Cannot mutate nil object");
+        }
         self.objects[handle.0].as_mut().expect("Dangling handle accessed!")
+    }
+
+    pub fn alloc_nil(&mut self) -> ObjectHandle {
+        // Nil is a singleton — always handle 0, backed by the static NIL_OBJECT.
+        ObjectHandle::NIL
     }
 
     impl_getters!(function, ObjectFunction);
@@ -133,8 +204,7 @@ impl ObjectHeap {
     impl_getters!(instance, ObjectInstance);
     impl_getters!(class, ObjectClass);
     impl_getters!(bound_method, ObjectBoundMethod);
-    impl_getters!(list, ObjectList);
-    impl_getters!(dict, ObjectDict);
+    impl_getters!(builtin_instance, ObjectBuiltinInstance);
 }
 
 impl ObjectHeap {
@@ -143,17 +213,23 @@ impl ObjectHeap {
     // ================================================================================== //
 
     pub fn collect_garbage(&mut self) {
+        // Mark interning caches so cached objects don't get swept.
+        let int_handles: Vec<ObjectHandle> = self.int_cache.values().copied().collect();
+        let str_handles: Vec<ObjectHandle> = self.string_cache.values().copied().collect();
+        for handle in int_handles {
+            self.mark_object(handle);
+        }
+        for handle in str_handles {
+            self.mark_object(handle);
+        }
         self.trace_references();
         self.sweep();
     }
 
-    pub fn mark_value(&mut self, value: &Value) {
-        if let Value::Object(handle) = value {
-            self.mark_object(*handle);
-        }
-    }
-
     pub fn mark_object(&mut self, handle: ObjectHandle) {
+        if handle.is_nil() {
+            return;
+        }
         let index = handle.0;
         if self.marked[index] {
             return;
@@ -180,8 +256,8 @@ impl ObjectHeap {
         if let Some(ref obj) = object {
             match obj {
                 Object::Function(function) => {
-                    for value in function.chunk.constants.iter() {
-                        self.mark_value(value);
+                    for &const_handle in function.chunk.constants.iter() {
+                        self.mark_object(const_handle);
                     }
                 }
                 Object::Closure(closure) => {
@@ -191,22 +267,22 @@ impl ObjectHeap {
                     }
                 }
                 Object::Upvalue(upvalue) => {
-                    self.mark_value(&upvalue.closed);
+                    self.mark_object(upvalue.closed);
                     if let Some(next) = upvalue.next {
                         self.mark_object(next);
                     }
                 }
                 Object::Instance(instance) => {
                     self.mark_object(instance.class);
-                    for value in instance.fields.values() {
-                        self.mark_value(value);
+                    for &field_handle in instance.fields.values() {
+                        self.mark_object(field_handle);
                     }
                 }
                 Object::BoundMethod(bound) => {
                     if let Method::User(method_handle) = bound.method {
                         self.mark_object(method_handle);
                     }
-                    self.mark_value(&bound.receiver);
+                    self.mark_object(bound.receiver);
                 }
                 Object::Class(class) => {
                     if let Some(superclass) = class.superclass {
@@ -218,17 +294,25 @@ impl ObjectHeap {
                         }
                     }
                 }
-                Object::List(list) => {
-                    self.mark_object(list.class);
-                    for item in list.items.iter() {
-                        self.mark_value(item);
-                    }
-                }
-                Object::Dict(dict) => {
-                    self.mark_object(dict.class);
-                    for (k, v) in dict.items.iter() {
-                        self.mark_value(k);
-                        self.mark_value(v);
+                Object::BuiltinInstance(bi) => {
+                    match &bi.data {
+                        BuiltinInstance::Nil | BuiltinInstance::Bool(_) | BuiltinInstance::Integer(_) | BuiltinInstance::Float(_) => {
+                            // leaf types — no heap references
+                        }
+                        BuiltinInstance::String(_s) => {
+                            // ShrString is internally Arc'd — no ObjectHandle refs
+                        }
+                        BuiltinInstance::List(items) => {
+                            for &item in items {
+                                self.mark_object(item);
+                            }
+                        }
+                        BuiltinInstance::Dict(entries) => {
+                            for &(k, v) in entries {
+                                self.mark_object(k);
+                                self.mark_object(v);
+                            }
+                        }
                     }
                 }
                 Object::BuiltinFn(_) => {
@@ -241,13 +325,18 @@ impl ObjectHeap {
     }
 
     pub fn sweep(&mut self) {
-        for i in 0..self.objects.len() {
+        for i in 1..self.objects.len() {
             if self.objects[i].is_some() {
                 if self.marked[i] {
                     self.marked[i] = false;
                 } else {
                     #[cfg(feature = "debug-gc")]
                     println!("Sweeping object at {}", i);
+
+                    // Remove from interning caches.
+                    let swept_handle = ObjectHandle(i);
+                    self.int_cache.retain(|_, &mut h| h != swept_handle);
+                    self.string_cache.retain(|_, &mut h| h != swept_handle);
 
                     self.objects[i] = None;
                     self.free_slots.push(i);

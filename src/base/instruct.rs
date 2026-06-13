@@ -1,6 +1,6 @@
 use num_enum::TryFromPrimitive;
 
-use super::{ShrString, Value};
+use super::{ObjectHandle, ShrString};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromPrimitive)]
 #[repr(u8)]
@@ -91,7 +91,7 @@ pub enum Instruction {
     Less,
     LessEqual,
 
-    Constant(Value),
+    Constant(ObjectHandle),
 
     DefineGlobal(ShrString),
     GetGlobal(ShrString),
@@ -107,7 +107,7 @@ pub enum Instruction {
     Call(usize),
 
     Closure {
-        function: Value,
+        function: ObjectHandle,
         upvalues: Vec<UpvalueDesc>,
     },
 
@@ -117,7 +117,7 @@ pub enum Instruction {
 
     Class(ShrString),
     SetProperty(ShrString),
-    GetProperty(ShrString),  
+    GetProperty(ShrString),
     Method(ShrString),
     Invoke(ShrString, usize),
     SuperInvoke(ShrString, usize),

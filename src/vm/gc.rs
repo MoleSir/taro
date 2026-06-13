@@ -15,14 +15,14 @@ impl VirtualMachine {
         #[cfg(feature = "debug-gc")]
         println!("-- GC begin");
 
-        // mark stacks
-        for value in &self.stack {
-            self.obj_heap.mark_value(value);
+        // mark stacks — stack is Vec<ObjectHandle> now
+        for &handle in &self.stack {
+            self.obj_heap.mark_object(handle);
         }
 
         // mark globals
-        for value in self.globals.values() {
-            self.obj_heap.mark_value(value);
+        for &handle in self.globals.values() {
+            self.obj_heap.mark_object(handle);
         }
 
         // mark frames
@@ -36,6 +36,11 @@ impl VirtualMachine {
         }
 
         // mark builtin class handles (always reachable)
+        self.obj_heap.mark_object(self.nil_class);
+        self.obj_heap.mark_object(self.int_class);
+        self.obj_heap.mark_object(self.float_class);
+        self.obj_heap.mark_object(self.bool_class);
+        self.obj_heap.mark_object(self.string_class);
         self.obj_heap.mark_object(self.list_class);
         self.obj_heap.mark_object(self.dict_class);
 

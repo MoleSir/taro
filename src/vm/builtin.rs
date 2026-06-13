@@ -1,7 +1,5 @@
-use std::collections::HashMap;
-
-use crate::{vm::VirtualMachine, Object, Value};
-use super::{ExecuteError, ExecuteResult};
+use crate::{BuiltinInstance, Object, ObjectHandle};
+use super::{ExecuteError, ExecuteResult, VirtualMachine};
 
 macro_rules! get_args {
     ($vm:ident, $arg_count:ident) => {
@@ -15,7 +13,7 @@ macro_rules! get_1_arg {
             Err(ExecuteError::ArgmentCountUnmatch { expcted: 1, got: $arg_count })?;
         }
         let args = get_args!($vm, $arg_count);
-        args[0].clone()
+        args[0]
     }};
 }
 
@@ -26,25 +24,25 @@ macro_rules! get_2_arg {
             Err(ExecuteError::ArgmentCountUnmatch { expcted: 2, got: $arg_count })?;
         }
         let args = get_args!($vm, $arg_count);
-        (args[0].clone(), args[1].clone())
+        (args[0], args[1])
     }};
 }
 
 #[allow(unused)]
 macro_rules! get_3_arg {
     ($vm:ident, $arg_count:ident) => {{
-        if $arg_count != 2 {
+        if $arg_count != 3 {
             Err(ExecuteError::ArgmentCountUnmatch { expcted: 3, got: $arg_count })?;
         }
         let args = get_args!($vm, $arg_count);
-        (args[0].clone(), args[1].clone(), args[2].clone())
+        (args[0], args[1], args[2])
     }};
 }
 
 impl VirtualMachine {
-    pub fn print(&mut self, arg_count: usize) -> ExecuteResult<Value> {
-        let args: Vec<Value> = get_args!(self, arg_count).to_vec();
-        for (i, arg) in args.iter().enumerate() {
+    pub fn print(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
+        let args = get_args!(self, arg_count).to_vec();
+        for (i, &arg) in args.iter().enumerate() {
             if i == 0 {
                 print!("{}", self.__str__(arg)?);
             } else {
@@ -52,57 +50,70 @@ impl VirtualMachine {
             }
         }
         println!("");
-        Ok(Value::Nil)
+        Ok(ObjectHandle::NIL)
     }
 
-    pub fn str(&mut self, arg_count: usize) -> ExecuteResult<Value> {
+    pub fn str(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         let arg = get_1_arg!(self, arg_count);
-        self.__str__(&arg).map(Value::String)
+        let s = self.__str__(arg)?;
+        Ok(self.obj_heap.alloc_string(s))
     }
 
-    pub fn bool(&mut self, arg_count: usize) -> ExecuteResult<Value> {
+    pub fn bool(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         let arg = get_1_arg!(self, arg_count);
-        self.__bool__(&arg).map(Value::Bool)
+        let b = self.__bool__(arg)?;
+        Ok(self.obj_heap.alloc_bool(b))
     }
 
-    pub fn len(&mut self, arg_count: usize) -> ExecuteResult<Value> {
+    pub fn len(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         let arg = get_1_arg!(self, arg_count);
-        self.__len__(&arg).map(Value::Integer)
+        let n = self.__len__(arg)?;
+        Ok(self.obj_heap.alloc_integer(n))
     }
 
-    pub fn int(&mut self, arg_count: usize) -> ExecuteResult<Value> {
+    pub fn int(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         let arg = get_1_arg!(self, arg_count);
-        self.__int__(&arg).map(Value::Integer)
+        let n = self.__int__(arg)?;
+        Ok(self.obj_heap.alloc_integer(n))
     }
 
-    pub fn float(&mut self, arg_count: usize) -> ExecuteResult<Value> {
+    pub fn float(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         let arg = get_1_arg!(self, arg_count);
-        self.__float__(&arg).map(Value::Float)
+        let n = self.__float__(arg)?;
+        Ok(self.obj_heap.alloc_float(n))
     }
 
-    /// `type(value)` — for instances, list, and dict, return the class object;
+    /// `type(value)` — for Instance or BuiltinInstance, return the class object;
     /// otherwise the type name string.
-    pub fn typeof_val(&mut self, arg_count: usize) -> ExecuteResult<Value> {
+    pub fn typeof_val(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         let arg = get_1_arg!(self, arg_count);
-        match &arg {
-            Value::Object(h) => {
-                let obj = self.obj_heap.get(*h);
-                match obj {
-                    Object::Instance(instance) => return Ok(Value::Object(instance.class)),
-                    Object::List(list) => return Ok(Value::Object(list.class)),
-                    Object::Dict(dict) => return Ok(Value::Object(dict.class)),
-                    _ => Ok(Value::String(self.value_type_name(&arg).into()))
-                }
+        let obj = self.obj_heap.get(arg);
+        match obj {
+            Object::Instance(inst) => return Ok(inst.class),
+            Object::BuiltinInstance(bi) => {
+                let class = match &bi.data {
+                    BuiltinInstance::Nil => self.nil_class,
+                    BuiltinInstance::Bool(_) => self.bool_class,
+                    BuiltinInstance::Integer(_) => self.int_class,
+                    BuiltinInstance::Float(_) => self.float_class,
+                    BuiltinInstance::String(_) => self.string_class,
+                    BuiltinInstance::List(_) => self.list_class,
+                    BuiltinInstance::Dict(_) => self.dict_class,
+                };
+                return Ok(class);
             }
-            _ => Ok(Value::String(self.value_type_name(&arg).into()))
+            _ => {
+                let name = self.value_type_name(arg);
+                Ok(self.obj_heap.alloc_string(name.into()))
+            }
         }
     }
 
     /// `input()` or `input("prompt")` — read a line from stdin.
-    pub fn input(&mut self, arg_count: usize) -> ExecuteResult<Value> {
+    pub fn input(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count > 0 {
             let prompt = get_1_arg!(self, arg_count);
-            print!("{}", self.__str__(&prompt)?);
+            print!("{}", self.__str__(prompt)?);
             use std::io::Write;
             let _ = std::io::stdout().flush();
         }
@@ -117,69 +128,68 @@ impl VirtualMachine {
         if line.ends_with('\r') {
             line.pop();
         }
-        Ok(Value::String(line.into()))
+        Ok(self.obj_heap.alloc_string(line.into()))
     }
 
     /// `abs(value)` — return the absolute value of a number.
-    pub fn abs(&mut self, arg_count: usize) -> ExecuteResult<Value> {
+    pub fn abs(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         let arg = get_1_arg!(self, arg_count);
-        match arg {
-            Value::Integer(v) => Ok(Value::Integer(v.wrapping_abs())),
-            Value::Float(v) => Ok(Value::Float(v.abs())),
-            ref other => Err(ExecuteError::UnexpectType("number", self.value_type_name(other)))
+        let bi = self.obj_heap.get_builtin_instance(arg)?;
+        match &bi.data {
+            BuiltinInstance::Integer(v) => Ok(self.obj_heap.alloc_integer(v.wrapping_abs())),
+            BuiltinInstance::Float(v) => Ok(self.obj_heap.alloc_float(v.abs())),
+            _ => Err(ExecuteError::UnexpectType("number", self.value_type_name(arg))),
         }
     }
 
     /// `min(a, b, ...)` — return the smallest argument.
-    pub fn min(&mut self, arg_count: usize) -> ExecuteResult<Value> {
+    pub fn min(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count == 0 {
             Err(ExecuteError::ArgmentCountUnmatch { expcted: 1, got: 0 })?;
         }
         let args = get_args!(self, arg_count).to_vec();
-        let mut min_val = args[0].clone();
-        for arg in &args[1..] {
-            let cmp = self.__lt__(arg, &min_val)?;
-            if self.__bool__(&cmp)? {
-                min_val = arg.clone();
+        let mut min_val = args[0];
+        for &arg in &args[1..] {
+            let cmp = self.__lt__(arg, min_val)?;
+            if self.__bool__(cmp)? {
+                min_val = arg;
             }
         }
         Ok(min_val)
     }
 
     /// `max(a, b, ...)` — return the largest argument.
-    pub fn max(&mut self, arg_count: usize) -> ExecuteResult<Value> {
+    pub fn max(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count == 0 {
             Err(ExecuteError::ArgmentCountUnmatch { expcted: 1, got: 0 })?;
         }
         let args = get_args!(self, arg_count).to_vec();
-        let mut max_val = args[0].clone();
-        for arg in &args[1..] {
-            let cmp = self.__gt__(arg, &max_val)?;
-            if self.__bool__(&cmp)? {
-                max_val = arg.clone();
+        let mut max_val = args[0];
+        for &arg in &args[1..] {
+            let cmp = self.__gt__(arg, max_val)?;
+            if self.__bool__(cmp)? {
+                max_val = arg;
             }
         }
         Ok(max_val)
     }
 
     /// `clock()` — return elapsed wall-clock time in seconds (fractional).
-    pub fn clock(&mut self, _arg_count: usize) -> ExecuteResult<Value> {
+    pub fn clock(&mut self, _arg_count: usize) -> ExecuteResult<ObjectHandle> {
         let dur = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default();
-        Ok(Value::Float(dur.as_secs_f64()))
+        Ok(self.obj_heap.alloc_float(dur.as_secs_f64()))
     }
 
     /// list
-    pub fn list(&mut self, arg_count: usize) -> ExecuteResult<Value> {
-        let items: Vec<Value> = get_args!(self, arg_count).to_vec();
-        let list_class = self.list_class;
-        Ok(Value::Object(self.obj_heap.alloc_list(list_class, items)))
+    pub fn list(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
+        let items: Vec<ObjectHandle> = get_args!(self, arg_count).to_vec();
+        Ok(self.obj_heap.alloc_list(items))
     }
 
     /// dict
-    pub fn dict(&mut self, _arg_count: usize) -> ExecuteResult<Value> {
-        let dict_class = self.dict_class;
-        Ok(Value::Object(self.obj_heap.alloc_dict(dict_class, HashMap::new())))
+    pub fn dict(&mut self, _arg_count: usize) -> ExecuteResult<ObjectHandle> {
+        Ok(self.obj_heap.alloc_dict(vec![]))
     }
 }

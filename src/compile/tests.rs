@@ -1,33 +1,58 @@
 use super::*;
 use super::parse::ParseReason;
-use crate::{ByteCode, Chunk, Instruction, ToShrString};
-use crate::Value;
+use crate::{ByteCode, Chunk, Instruction, ObjectHandle, ObjectHeap, BuiltinInstance};
 
 // ------------------------------------------------------------------------
 //  Helpers
 // ------------------------------------------------------------------------
 
-/// Compile source and return the chunk.
-fn chunk(source: &str) -> Chunk {
+/// Compile source and return (chunk, heap) so constants can be inspected.
+fn compile_with_heap(source: &str) -> (Chunk, ObjectHeap) {
     let mut obj_heap = ObjectHeap::new();
     let h = compile(source, &mut obj_heap).expect("compilation should succeed");
     let mut chunk = Chunk::new();
     std::mem::swap(
-        &mut chunk, 
-        &mut obj_heap.get_mut(h).as_function_mut().expect("must fun").chunk
+        &mut chunk,
+        &mut obj_heap.get_mut(h).as_function_mut().expect("must fun").chunk,
     );
-    chunk
+    (chunk, obj_heap)
 }
 
 /// Compile source and return just the code vector.
 fn codes(source: &str) -> Vec<u8> {
-    chunk(source).codes
+    compile_with_heap(source).0.codes
 }
 
-/// Compile source and return code + constants.
-fn compiled(source: &str) -> (Vec<u8>, Vec<Value>) {
-    let c = chunk(source);
-    (c.codes, c.constants)
+/// Get integer value from a constant handle.
+fn const_int(heap: &ObjectHeap, h: ObjectHandle) -> i64 {
+    match &heap.get_builtin_instance(h).unwrap().data {
+        BuiltinInstance::Integer(v) => *v,
+        _ => panic!("expected integer constant"),
+    }
+}
+
+/// Get float value from a constant handle.
+fn const_float(heap: &ObjectHeap, h: ObjectHandle) -> f64 {
+    match &heap.get_builtin_instance(h).unwrap().data {
+        BuiltinInstance::Float(v) => *v,
+        _ => panic!("expected float constant"),
+    }
+}
+
+/// Get string value from a constant handle.
+fn const_string(heap: &ObjectHeap, h: ObjectHandle) -> String {
+    match &heap.get_builtin_instance(h).unwrap().data {
+        BuiltinInstance::String(s) => s.as_str().to_string(),
+        _ => panic!("expected string constant"),
+    }
+}
+
+/// Check if a constant handle contains the given integer.
+fn is_const_int(heap: &ObjectHeap, h: ObjectHandle, expected: i64) -> bool {
+    match &heap.get_builtin_instance(h).unwrap().data {
+        BuiltinInstance::Integer(v) => *v == expected,
+        _ => false,
+    }
 }
 
 /// Assert that source fails to compile.
@@ -39,26 +64,35 @@ fn assert_err(source: &str) {
     );
 }
 
+/// Decode every instruction from a chunk into a Vec.
+fn instructions(chunk: &Chunk, heap: &ObjectHeap) -> Vec<Instruction> {
+    let mut ip = 0;
+    let mut insts = Vec::new();
+    while ip < chunk.codes.len() {
+        insts.push(chunk.read_instruction(&mut ip, heap).unwrap());
+    }
+    insts
+}
+
 // ------------------------------------------------------------------------
 //  Number literals
 // ------------------------------------------------------------------------
 
 #[test]
 fn test_integer_literal() {
-    let (codes, constants) = compiled("42;");
-    // Constant(0) 占 3 字节: [操作码, 索引低字节, 索引高字节]
+    let (chunk, heap) = compile_with_heap("42;");
+    let codes = &chunk.codes;
+    // Constant(0): opcode + u16
     assert_eq!(&codes[0..3], &[ByteCode::Constant as u8, 0, 0]);
-    assert_eq!(constants[0], Value::Integer(42));
-    
-    // 因为 Constant 占了 0,1,2，所以下一个指令在索引 3
+    assert_eq!(const_int(&heap, chunk.constants[0]), 42);
     assert_eq!(codes[3], ByteCode::Pop as u8);
     assert_eq!(*codes.last().unwrap(), ByteCode::Return as u8);
 }
 
 #[test]
 fn test_decimal_literal() {
-    let (_, constants) = compiled("3.14;");
-    assert_eq!(constants[0], Value::Float(3.14));
+    let (chunk, heap) = compile_with_heap("3.14;");
+    assert!((const_float(&heap, chunk.constants[0]) - 3.14).abs() < 0.001);
 }
 
 // ------------------------------------------------------------------------
@@ -92,14 +126,14 @@ fn test_nil_literal() {
 
 #[test]
 fn test_string_literal() {
-    let (_, constants) = compiled("\"hello\";");
-    assert_eq!(constants[0], Value::String("hello".to_shrstring()));
+    let (chunk, heap) = compile_with_heap("\"hello\";");
+    assert_eq!(const_string(&heap, chunk.constants[0]), "hello");
 }
 
 #[test]
 fn test_empty_string() {
-    let (_, constants) = compiled("\"\";");
-    assert_eq!(constants[0], Value::String("".to_shrstring()));
+    let (chunk, heap) = compile_with_heap("\"\";");
+    assert_eq!(const_string(&heap, chunk.constants[0]), "");
 }
 
 // ------------------------------------------------------------------------
@@ -109,15 +143,15 @@ fn test_empty_string() {
 #[test]
 fn test_unary_negate() {
     let c = codes("-5;");
-    assert_eq!(&c[0..3], &[ByteCode::Constant as u8, 0, 0]); // push 5
-    assert_eq!(c[3], ByteCode::Negate as u8);                // negate
+    assert_eq!(&c[0..3], &[ByteCode::Constant as u8, 0, 0]);
+    assert_eq!(c[3], ByteCode::Negate as u8);
 }
 
 #[test]
 fn test_unary_not() {
     let c = codes("!true;");
-    assert_eq!(c[0], ByteCode::True as u8);  // push true (dedicated opcode)
-    assert_eq!(c[1], ByteCode::Not as u8);   // not
+    assert_eq!(c[0], ByteCode::True as u8);
+    assert_eq!(c[1], ByteCode::Not as u8);
 }
 
 // ------------------------------------------------------------------------
@@ -127,9 +161,9 @@ fn test_unary_not() {
 #[test]
 fn test_addition() {
     let c = codes("1 + 2;");
-    assert_eq!(&c[0..3], &[ByteCode::Constant as u8, 0, 0]); // push 1 (index 0)
-    assert_eq!(&c[3..6], &[ByteCode::Constant as u8, 1, 0]); // push 2 (index 1)
-    assert_eq!(c[6], ByteCode::Add as u8);                   // add
+    assert_eq!(&c[0..3], &[ByteCode::Constant as u8, 0, 0]);
+    assert_eq!(&c[3..6], &[ByteCode::Constant as u8, 1, 0]);
+    assert_eq!(c[6], ByteCode::Add as u8);
 }
 
 #[test]
@@ -162,24 +196,22 @@ fn test_division() {
 
 #[test]
 fn test_precedence_mul_before_add() {
-    // 1 + 2 * 3  →  push 1; push 2; push 3; mul; add
     let c = codes("1 + 2 * 3;");
-    assert_eq!(&c[0..3], &[ByteCode::Constant as u8, 0, 0]); // 1
-    assert_eq!(&c[3..6], &[ByteCode::Constant as u8, 1, 0]); // 2
-    assert_eq!(&c[6..9], &[ByteCode::Constant as u8, 2, 0]); // 3
-    assert_eq!(c[9], ByteCode::Mul as u8);                   // 2*3
-    assert_eq!(c[10], ByteCode::Add as u8);                  // 1+(2*3)
+    assert_eq!(&c[0..3], &[ByteCode::Constant as u8, 0, 0]);
+    assert_eq!(&c[3..6], &[ByteCode::Constant as u8, 1, 0]);
+    assert_eq!(&c[6..9], &[ByteCode::Constant as u8, 2, 0]);
+    assert_eq!(c[9], ByteCode::Mul as u8);
+    assert_eq!(c[10], ByteCode::Add as u8);
 }
 
 #[test]
 fn test_grouping_overrides_precedence() {
-    // (1 + 2) * 3  →  push 1; push 2; add; push 3; mul
     let c = codes("(1 + 2) * 3;");
-    assert_eq!(&c[0..3], &[ByteCode::Constant as u8, 0, 0]); // 1
-    assert_eq!(&c[3..6], &[ByteCode::Constant as u8, 1, 0]); // 2
-    assert_eq!(c[6], ByteCode::Add as u8);                   // 1+2
-    assert_eq!(&c[7..10], &[ByteCode::Constant as u8, 2, 0]);// 3
-    assert_eq!(c[10], ByteCode::Mul as u8);                  // (1+2)*3
+    assert_eq!(&c[0..3], &[ByteCode::Constant as u8, 0, 0]);
+    assert_eq!(&c[3..6], &[ByteCode::Constant as u8, 1, 0]);
+    assert_eq!(c[6], ByteCode::Add as u8);
+    assert_eq!(&c[7..10], &[ByteCode::Constant as u8, 2, 0]);
+    assert_eq!(c[10], ByteCode::Mul as u8);
 }
 
 // ------------------------------------------------------------------------
@@ -196,7 +228,6 @@ fn test_equal() {
 
 #[test]
 fn test_not_equal() {
-    // `1 != 2` → push 1; push 2; not_equal
     let c = codes("1 != 2;");
     assert_eq!(&c[0..3], &[ByteCode::Constant as u8, 0, 0]);
     assert_eq!(&c[3..6], &[ByteCode::Constant as u8, 1, 0]);
@@ -221,7 +252,6 @@ fn test_greater() {
 
 #[test]
 fn test_less_equal() {
-    // `1 <= 2` → push 1; push 2; less_equal
     let c = codes("1 <= 2;");
     assert_eq!(&c[0..3], &[ByteCode::Constant as u8, 0, 0]);
     assert_eq!(&c[3..6], &[ByteCode::Constant as u8, 1, 0]);
@@ -230,7 +260,6 @@ fn test_less_equal() {
 
 #[test]
 fn test_greater_equal() {
-    // `1 >= 2` → push 1; push 2; greater_equal
     let c = codes("1 >= 2;");
     assert_eq!(&c[0..3], &[ByteCode::Constant as u8, 0, 0]);
     assert_eq!(&c[3..6], &[ByteCode::Constant as u8, 1, 0]);
@@ -244,21 +273,21 @@ fn test_greater_equal() {
 #[test]
 fn test_print_statement() {
     let c = codes("print(42);");
-    assert_eq!(&c[0..3], &[ByteCode::GetGlobal as u8, 0, 0]); // get "print"
-    assert_eq!(&c[3..6], &[ByteCode::Constant as u8, 1, 0]); // push 42
-    assert_eq!(&c[6..8], &[ByteCode::Call as u8, 1]);          // call(1)
-    assert_eq!(c[8], ByteCode::Pop as u8);                  // discard nil
+    assert_eq!(&c[0..3], &[ByteCode::GetGlobal as u8, 0, 0]);
+    assert_eq!(&c[3..6], &[ByteCode::Constant as u8, 1, 0]);
+    assert_eq!(&c[6..8], &[ByteCode::Call as u8, 1]);
+    assert_eq!(c[8], ByteCode::Pop as u8);
 }
 
 #[test]
 fn test_print_expression() {
     let c = codes("print(1 + 2);");
-    assert_eq!(&c[0..3], &[ByteCode::GetGlobal as u8, 0, 0]); // get "print"
-    assert_eq!(&c[3..6], &[ByteCode::Constant as u8, 1, 0]); // push 1
-    assert_eq!(&c[6..9], &[ByteCode::Constant as u8, 2, 0]); // push 2
-    assert_eq!(c[9], ByteCode::Add as u8);                   // add
-    assert_eq!(&c[10..12], &[ByteCode::Call as u8, 1]);        // call(1)
-    assert_eq!(c[12], ByteCode::Pop as u8);                  // discard nil
+    assert_eq!(&c[0..3], &[ByteCode::GetGlobal as u8, 0, 0]);
+    assert_eq!(&c[3..6], &[ByteCode::Constant as u8, 1, 0]);
+    assert_eq!(&c[6..9], &[ByteCode::Constant as u8, 2, 0]);
+    assert_eq!(c[9], ByteCode::Add as u8);
+    assert_eq!(&c[10..12], &[ByteCode::Call as u8, 1]);
+    assert_eq!(c[12], ByteCode::Pop as u8);
 }
 
 // ------------------------------------------------------------------------
@@ -268,12 +297,12 @@ fn test_print_expression() {
 #[test]
 fn test_multiple_statements() {
     let c = codes("1; 2;");
-    assert_eq!(&c[0..3], &[ByteCode::Constant as u8, 0, 0]); // push 1
-    assert_eq!(c[3], ByteCode::Pop as u8);                   // discard
-    assert_eq!(&c[4..7], &[ByteCode::Constant as u8, 1, 0]); // push 2
-    assert_eq!(c[7], ByteCode::Pop as u8);                   // discard
-    assert_eq!(c[8], ByteCode::Nil as u8);                   // implicit nil
-    assert_eq!(c[9], ByteCode::Return as u8);                // implicit return
+    assert_eq!(&c[0..3], &[ByteCode::Constant as u8, 0, 0]);
+    assert_eq!(c[3], ByteCode::Pop as u8);
+    assert_eq!(&c[4..7], &[ByteCode::Constant as u8, 1, 0]);
+    assert_eq!(c[7], ByteCode::Pop as u8);
+    assert_eq!(c[8], ByteCode::Nil as u8);
+    assert_eq!(c[9], ByteCode::Return as u8);
 }
 
 // ------------------------------------------------------------------------
@@ -282,17 +311,15 @@ fn test_multiple_statements() {
 
 #[test]
 fn test_complex_expression() {
-    // -5 * (3 + 2) / 4
-    // Expected: push 5; neg; push 3; push 2; add; mul; push 4; div
     let c = codes("-5 * (3 + 2) / 4;");
-    assert_eq!(&c[0..3], &[ByteCode::Constant as u8, 0, 0]);  // 5 (index 0)
-    assert_eq!(c[3], ByteCode::Negate as u8);                 // neg
-    assert_eq!(&c[4..7], &[ByteCode::Constant as u8, 1, 0]);  // 3 (index 1)
-    assert_eq!(&c[7..10], &[ByteCode::Constant as u8, 2, 0]); // 2 (index 2)
-    assert_eq!(c[10], ByteCode::Add as u8);                   // 3+2
-    assert_eq!(c[11], ByteCode::Mul as u8);                   // -5 * (3+2)
-    assert_eq!(&c[12..15], &[ByteCode::Constant as u8, 3, 0]);// 4 (index 3)
-    assert_eq!(c[15], ByteCode::Div as u8);                   // ... / 4
+    assert_eq!(&c[0..3], &[ByteCode::Constant as u8, 0, 0]);  // 5
+    assert_eq!(c[3], ByteCode::Negate as u8);
+    assert_eq!(&c[4..7], &[ByteCode::Constant as u8, 1, 0]);  // 3
+    assert_eq!(&c[7..10], &[ByteCode::Constant as u8, 2, 0]); // 2
+    assert_eq!(c[10], ByteCode::Add as u8);
+    assert_eq!(c[11], ByteCode::Mul as u8);
+    assert_eq!(&c[12..15], &[ByteCode::Constant as u8, 3, 0]);// 4
+    assert_eq!(c[15], ByteCode::Div as u8);
 }
 
 // ------------------------------------------------------------------------
@@ -301,170 +328,112 @@ fn test_complex_expression() {
 
 #[test]
 fn test_local_var_declaration() {
-    // { var x = 42; }
-    //   Constant(42)   ← initializer, x at slot 0
-    //   Pop            ← end_scope cleans up x
     let c = codes("{ var x = 42; }");
-    assert_eq!(&c[0..3], &[ByteCode::Constant as u8, 0, 0]); // push 42
-    assert_eq!(c[3], ByteCode::Pop as u8);                   // discard x
+    assert_eq!(&c[0..3], &[ByteCode::Constant as u8, 0, 0]);
+    assert_eq!(c[3], ByteCode::Pop as u8);
     assert_eq!(*c.last().unwrap(), ByteCode::Return as u8);
 }
 
 #[test]
 fn test_local_var_without_initializer() {
-    // { var x; }  →  Nil (implicit init); Pop (cleanup)
     let c = codes("{ var x; }");
-    assert_eq!(c[0], ByteCode::Nil as u8);  // implicit nil
-    assert_eq!(c[1], ByteCode::Pop as u8);  // discard x
+    assert_eq!(c[0], ByteCode::Nil as u8);
+    assert_eq!(c[1], ByteCode::Pop as u8);
     assert_eq!(*c.last().unwrap(), ByteCode::Return as u8);
 }
 
 #[test]
 fn test_local_var_read() {
-    // { var x = 5; print x; }
-    //   Constant(5)   ← x initializer
-    //   GetLocal(1)   ← read x from slot 1 (slot 0 is the script fn)
-    //   Print
-    //   Pop           ← cleanup x
     let c = codes("{ var x = 5; print(x); }");
-    assert_eq!(&c[0..3], &[ByteCode::Constant as u8, 0, 0]); // push 5 (x init)
-    assert_eq!(&c[3..6], &[ByteCode::GetGlobal as u8, 1, 0]); // get "print"
-    assert_eq!(&c[6..9], &[ByteCode::GetLocal as u8, 1, 0]);  // get x (slot 1)
-    assert_eq!(&c[9..11], &[ByteCode::Call as u8, 1]);        // call(1)
-    assert_eq!(c[11], ByteCode::Pop as u8);                  // discard nil
-    assert_eq!(c[12], ByteCode::Pop as u8);                  // cleanup x
+    assert_eq!(&c[0..3], &[ByteCode::Constant as u8, 0, 0]);
+    assert_eq!(&c[3..6], &[ByteCode::GetGlobal as u8, 1, 0]);
+    assert_eq!(&c[6..9], &[ByteCode::GetLocal as u8, 1, 0]);
+    assert_eq!(&c[9..11], &[ByteCode::Call as u8, 1]);
+    assert_eq!(c[11], ByteCode::Pop as u8);
+    assert_eq!(c[12], ByteCode::Pop as u8);
 }
 
 #[test]
 fn test_local_var_assignment() {
-    // { var x = 42; x = 99; }
-    //   Constant(42)   ← initializer
-    //   Constant(99)   ← new value
-    //   SetLocal(1)    ← write to slot 1 (value stays on stack)
-    //   Pop            ← discard assignment result
-    //   Pop            ← cleanup x
     let c = codes("{ var x = 42; x = 99; }");
-    assert_eq!(&c[0..3], &[ByteCode::Constant as u8, 0, 0]);     // push 42
-    assert_eq!(&c[3..6], &[ByteCode::Constant as u8, 1, 0]);     // push 99
-    assert_eq!(&c[6..9], &[ByteCode::SetLocal as u8, 1, 0]);     // set slot 1 (opcode + u16)
-    assert_eq!(c[9], ByteCode::Pop as u8);                       // discard expr result
-    assert_eq!(c[10], ByteCode::Pop as u8);                      // cleanup x
+    assert_eq!(&c[0..3], &[ByteCode::Constant as u8, 0, 0]);
+    assert_eq!(&c[3..6], &[ByteCode::Constant as u8, 1, 0]);
+    assert_eq!(&c[6..9], &[ByteCode::SetLocal as u8, 1, 0]);
+    assert_eq!(c[9], ByteCode::Pop as u8);
+    assert_eq!(c[10], ByteCode::Pop as u8);
 }
 
 #[test]
 fn test_multiple_locals() {
-    // { var a = 1; var b = 2; print a + b; }
-    //   Constant(1)   ← a at slot 1
-    //   Constant(2)   ← b at slot 2
-    //   GetLocal(1)   ← a
-    //   GetLocal(2)   ← b
-    //   Add
-    //   Print
-    //   Pop           ← cleanup b
-    //   Pop           ← cleanup a
     let c = codes("{ var a = 1; var b = 2; print(a + b); }");
-    assert_eq!(&c[0..3], &[ByteCode::Constant as u8, 0, 0]);     // push 1 (a)
-    assert_eq!(&c[3..6], &[ByteCode::Constant as u8, 1, 0]);     // push 2 (b)
-    assert_eq!(&c[6..9], &[ByteCode::GetGlobal as u8, 2, 0]);    // get "print"
-    assert_eq!(&c[9..12], &[ByteCode::GetLocal as u8, 1, 0]);    // get a (slot 1)
-    assert_eq!(&c[12..15], &[ByteCode::GetLocal as u8, 2, 0]);   // get b (slot 2)
+    assert_eq!(&c[0..3], &[ByteCode::Constant as u8, 0, 0]);
+    assert_eq!(&c[3..6], &[ByteCode::Constant as u8, 1, 0]);
+    assert_eq!(&c[6..9], &[ByteCode::GetGlobal as u8, 2, 0]);
+    assert_eq!(&c[9..12], &[ByteCode::GetLocal as u8, 1, 0]);
+    assert_eq!(&c[12..15], &[ByteCode::GetLocal as u8, 2, 0]);
     assert_eq!(c[15], ByteCode::Add as u8);
-    assert_eq!(&c[16..18], &[ByteCode::Call as u8, 1]);          // call(1)
-    assert_eq!(c[18], ByteCode::Pop as u8);                      // discard nil
-    assert_eq!(c[19], ByteCode::Pop as u8);                      // cleanup b
-    assert_eq!(c[20], ByteCode::Pop as u8);                      // cleanup a
+    assert_eq!(&c[16..18], &[ByteCode::Call as u8, 1]);
+    assert_eq!(c[18], ByteCode::Pop as u8);
+    assert_eq!(c[19], ByteCode::Pop as u8);
+    assert_eq!(c[20], ByteCode::Pop as u8);
 }
 
 #[test]
 fn test_local_in_arithmetic_expression() {
-    // { var a = 10; var b = 20; a * b + 5; }
-    //   Constant(10)
-    //   Constant(20)
-    //   GetLocal(1)   ← a
-    //   GetLocal(2)   ← b
-    //   Mul
-    //   Constant(5)
-    //   Add
-    //   Pop           ← discard expression result
-    //   Pop           ← cleanup b
-    //   Pop           ← cleanup a
     let c = codes("{ var a = 10; var b = 20; a * b + 5; }");
-    assert_eq!(&c[0..3], &[ByteCode::Constant as u8, 0, 0]);      // 10
-    assert_eq!(&c[3..6], &[ByteCode::Constant as u8, 1, 0]);      // 20
-    assert_eq!(&c[6..9], &[ByteCode::GetLocal as u8, 1, 0]);      // get a (slot 1)
-    assert_eq!(&c[9..12], &[ByteCode::GetLocal as u8, 2, 0]);     // get b (slot 2)
-    assert_eq!(c[12], ByteCode::Mul as u8);                       // a * b
-    assert_eq!(&c[13..16], &[ByteCode::Constant as u8, 2, 0]);    // 5
-    assert_eq!(c[16], ByteCode::Add as u8);                       // (a*b) + 5
-    assert_eq!(c[17], ByteCode::Pop as u8);                       // discard expr
-    assert_eq!(c[18], ByteCode::Pop as u8);                       // cleanup b
-    assert_eq!(c[19], ByteCode::Pop as u8);                       // cleanup a
+    assert_eq!(&c[0..3], &[ByteCode::Constant as u8, 0, 0]);
+    assert_eq!(&c[3..6], &[ByteCode::Constant as u8, 1, 0]);
+    assert_eq!(&c[6..9], &[ByteCode::GetLocal as u8, 1, 0]);
+    assert_eq!(&c[9..12], &[ByteCode::GetLocal as u8, 2, 0]);
+    assert_eq!(c[12], ByteCode::Mul as u8);
+    assert_eq!(&c[13..16], &[ByteCode::Constant as u8, 2, 0]);
+    assert_eq!(c[16], ByteCode::Add as u8);
+    assert_eq!(c[17], ByteCode::Pop as u8);
+    assert_eq!(c[18], ByteCode::Pop as u8);
+    assert_eq!(c[19], ByteCode::Pop as u8);
 }
 
 #[test]
 fn test_nested_block_locals() {
-    // { var a = 1; { var b = 2; print a + b; } print a; }
-    // Outer: Constant(1) as a (slot 1)
-    // Inner: Constant(2) as b (slot 2)
-    //        GetLocal(1), GetLocal(2), Add, Print
-    //        Pop ← cleanup b
-    // Outer: GetLocal(1), Print
-    //        Pop ← cleanup a
     let c = codes("{ var a = 1; { var b = 2; print(a + b); } print(a); }");
-    assert_eq!(&c[0..3], &[ByteCode::Constant as u8, 0, 0]);      // push 1 (a)
-    assert_eq!(&c[3..6], &[ByteCode::Constant as u8, 1, 0]);      // push 2 (b)
-    assert_eq!(&c[6..9], &[ByteCode::GetGlobal as u8, 2, 0]);     // get "print"
-    assert_eq!(&c[9..12], &[ByteCode::GetLocal as u8, 1, 0]);     // get a (slot 1)
-    assert_eq!(&c[12..15], &[ByteCode::GetLocal as u8, 2, 0]);    // get b (slot 2)
+    assert_eq!(&c[0..3], &[ByteCode::Constant as u8, 0, 0]);
+    assert_eq!(&c[3..6], &[ByteCode::Constant as u8, 1, 0]);
+    assert_eq!(&c[6..9], &[ByteCode::GetGlobal as u8, 2, 0]);
+    assert_eq!(&c[9..12], &[ByteCode::GetLocal as u8, 1, 0]);
+    assert_eq!(&c[12..15], &[ByteCode::GetLocal as u8, 2, 0]);
     assert_eq!(c[15], ByteCode::Add as u8);
-    assert_eq!(&c[16..18], &[ByteCode::Call as u8, 1]);           // call(1)
-    assert_eq!(c[18], ByteCode::Pop as u8);                       // discard nil
-    assert_eq!(c[19], ByteCode::Pop as u8);                       // cleanup b
-    assert_eq!(&c[20..23], &[ByteCode::GetGlobal as u8, 3, 0]);   // get "print"
-    assert_eq!(&c[23..26], &[ByteCode::GetLocal as u8, 1, 0]);    // get a (outer, slot 1)
-    assert_eq!(&c[26..28], &[ByteCode::Call as u8, 1]);           // call(1)
-    assert_eq!(c[28], ByteCode::Pop as u8);                       // discard nil
-    assert_eq!(c[29], ByteCode::Pop as u8);                       // cleanup a
+    assert_eq!(&c[16..18], &[ByteCode::Call as u8, 1]);
+    assert_eq!(c[18], ByteCode::Pop as u8);
+    assert_eq!(c[19], ByteCode::Pop as u8);
+    assert_eq!(&c[20..23], &[ByteCode::GetGlobal as u8, 3, 0]);
+    assert_eq!(&c[23..26], &[ByteCode::GetLocal as u8, 1, 0]);
+    assert_eq!(&c[26..28], &[ByteCode::Call as u8, 1]);
+    assert_eq!(c[28], ByteCode::Pop as u8);
+    assert_eq!(c[29], ByteCode::Pop as u8);
 }
 
 #[test]
 fn test_slot_reuse_after_block_exit() {
-    // { var a = 1; { var b = 2; } var c = 3; print c; }
-    // a = slot 1, b = slot 2 (then popped)
-    // c reuses slot 2, read with GetLocal(2)
     let c = codes("{ var a = 1; { var b = 2; } var c = 3; print(c); }");
-    // a initializer
-    assert_eq!(&c[0..3], &[ByteCode::Constant as u8, 0, 0]);      // push 1 (a, slot 1)
-    // b initializer
-    assert_eq!(&c[3..6], &[ByteCode::Constant as u8, 1, 0]);      // push 2 (b, slot 2)
-    // b cleanup (end of inner scope)
+    assert_eq!(&c[0..3], &[ByteCode::Constant as u8, 0, 0]);
+    assert_eq!(&c[3..6], &[ByteCode::Constant as u8, 1, 0]);
     assert_eq!(c[6], ByteCode::Pop as u8);
-    // c initializer — reuses slot 2
-    assert_eq!(&c[7..10], &[ByteCode::Constant as u8, 2, 0]);     // push 3 (c, slot 2)
-    // print c: GetGlobal then GetLocal then Call
-    assert_eq!(&c[10..13], &[ByteCode::GetGlobal as u8, 3, 0]);   // get "print"
-    assert_eq!(&c[13..16], &[ByteCode::GetLocal as u8, 2, 0]);    // get c (slot 2)
-    assert_eq!(&c[16..18], &[ByteCode::Call as u8, 1]);           // call(1)
-    assert_eq!(c[18], ByteCode::Pop as u8);                       // discard nil
-    // cleanup c and a
+    assert_eq!(&c[7..10], &[ByteCode::Constant as u8, 2, 0]);
+    assert_eq!(&c[10..13], &[ByteCode::GetGlobal as u8, 3, 0]);
+    assert_eq!(&c[13..16], &[ByteCode::GetLocal as u8, 2, 0]);
+    assert_eq!(&c[16..18], &[ByteCode::Call as u8, 1]);
+    assert_eq!(c[18], ByteCode::Pop as u8);
     assert_eq!(c[19], ByteCode::Pop as u8);
     assert_eq!(c[20], ByteCode::Pop as u8);
 }
 
 #[test]
 fn test_local_assignment_is_expression() {
-    // { var x = 1; var y = (x = 5); }
-    // The assignment x = 5 evaluates to 5,
-    // so y should be initialized with 5.
     let c = codes("{ var x = 1; var y = (x = 5); }");
-    assert_eq!(&c[0..3], &[ByteCode::Constant as u8, 0, 0]);      // push 1 (x, slot 1)
-    // x = 5 as expression:
-    assert_eq!(&c[3..6], &[ByteCode::Constant as u8, 1, 0]);      // push 5
-    assert_eq!(&c[6..9], &[ByteCode::SetLocal as u8, 1, 0]);      // x = 5 (slot 1)
-    // setlocal leaves 5 on stack → that becomes y's initializer
-    // Pop cleanup y
+    assert_eq!(&c[0..3], &[ByteCode::Constant as u8, 0, 0]);
+    assert_eq!(&c[3..6], &[ByteCode::Constant as u8, 1, 0]);
+    assert_eq!(&c[6..9], &[ByteCode::SetLocal as u8, 1, 0]);
     assert_eq!(c[9], ByteCode::Pop as u8);
-    // Pop cleanup x
     assert_eq!(c[10], ByteCode::Pop as u8);
 }
 
@@ -474,7 +443,6 @@ fn test_local_assignment_is_expression() {
 
 #[test]
 fn test_local_self_reference_is_error() {
-    // { var a = a; }  — can't read 'a' in its own initializer
     let source = "{ var a = a; }";
     let mut obj_heap = ObjectHeap::new();
     match compile(source, &mut obj_heap) {
@@ -488,7 +456,6 @@ fn test_local_self_reference_is_error() {
 
 #[test]
 fn test_duplicate_local_is_error() {
-    // { var a = 1; var a = 2; }  — redefinition in same scope
     let source = "{ var a = 1; var a = 2; }";
     let mut obj_heap = ObjectHeap::new();
     match compile(source, &mut obj_heap) {
@@ -508,110 +475,51 @@ fn test_duplicate_local_is_error() {
 
 #[test]
 fn test_if_statement() {
-    // `if (true) 1;`
-    //   True
-    //   JumpIfFalse → skip then-branch
-    //   Pop          ← pop condition when entering then-branch
-    //   Constant(1)  ← then-branch
-    //   Pop          ← discard expression result
-    //   Jump         ← skip else (absent)
-    //   Pop          ← pop condition when jumping from JumpIfFalse
     let c = codes("if (true) 1;");
     assert_eq!(c[0], ByteCode::True as u8);
     assert_eq!(c[1], ByteCode::JumpIfFalse as u8);
-    // offset bytes at 2-3: should jump to the second Pop (after then-branch + Jump)
     assert_eq!(c[4], ByteCode::Pop as u8);
     assert_eq!(&c[5..8], &[ByteCode::Constant as u8, 0, 0]);
     assert_eq!(c[8], ByteCode::Pop as u8);
     assert_eq!(c[9], ByteCode::Jump as u8);
-    // The sequence ends with Pop (condition) + Return
     assert_eq!(*c.last().unwrap(), ByteCode::Return as u8);
 }
 
 #[test]
 fn test_if_else_statement() {
-    // `if (true) 1; else 2;`
-    //   True
-    //   JumpIfFalse → else branch
-    //   Pop          ← pop condition
-    //   Constant(1)  ← then-branch (index 0)
-    //   Pop
-    //   Jump         → skip else
-    //   Pop          ← pop condition (else entry)
-    //   Constant(2)  ← else-branch (index 1)
-    //   Pop
     let c = codes("if (true) 1; else 2;");
     assert_eq!(c[0], ByteCode::True as u8);
     assert_eq!(c[1], ByteCode::JumpIfFalse as u8);
     assert_eq!(c[4], ByteCode::Pop as u8);
-    // then-branch: push 1, pop
-    assert_eq!(&c[5..8], &[ByteCode::Constant as u8, 0, 0]); // 1 at constant[0]
+    assert_eq!(&c[5..8], &[ByteCode::Constant as u8, 0, 0]);
     assert_eq!(c[8], ByteCode::Pop as u8);
     assert_eq!(c[9], ByteCode::Jump as u8);
-    // else entry pop
-    // find the else constant: it's at index 1
 }
 
 #[test]
 fn test_if_statement_condition_is_falsey_jumps() {
-    // `if (false) 1;` — JumpIfFalse offset should skip the then-branch
     let c = codes("if (false) 1;");
     assert_eq!(c[0], ByteCode::False as u8);
     assert_eq!(c[1], ByteCode::JumpIfFalse as u8);
-    // Verify structure: False, JumpIfFalse, Pop, Constant, Pop, Jump, Pop, Return
-    let opcodes: Vec<u8> = c.iter().cloned()
-        .filter(|&b| {
-            // keep only opcode bytes (skip offset/operand data)
-            b == ByteCode::Return as u8
-                || b == ByteCode::Pop as u8
-                || b == ByteCode::Nil as u8
-                || b == ByteCode::True as u8
-                || b == ByteCode::False as u8
-                || b == ByteCode::Negate as u8
-                || b == ByteCode::Not as u8
-                || b == ByteCode::Add as u8
-                || b == ByteCode::Sub as u8
-                || b == ByteCode::Mul as u8
-                || b == ByteCode::Div as u8
-                || b == ByteCode::Equal as u8
-                || b == ByteCode::NotEqual as u8
-                || b == ByteCode::Greater as u8
-                || b == ByteCode::GreaterEqual as u8
-                || b == ByteCode::Less as u8
-                || b == ByteCode::LessEqual as u8
-                || b == ByteCode::Constant as u8
-                || b == ByteCode::DefineGlobal as u8
-                || b == ByteCode::GetGlobal as u8
-                || b == ByteCode::SetGlobal as u8
-                || b == ByteCode::GetLocal as u8
-                || b == ByteCode::SetLocal as u8
-                || b == ByteCode::JumpIfFalse as u8
-                || b == ByteCode::Jump as u8
-                || b == ByteCode::Loop as u8
-        })
-        .collect();
-    // Expected opcode sequence
-    assert!(opcodes.contains(&(ByteCode::JumpIfFalse as u8)));
-    assert!(opcodes.contains(&(ByteCode::Jump as u8)));
 }
 
 #[test]
 fn test_if_else_constants() {
-    // Verify both branches' constants are present
-    let (_, constants) = compiled("if (true) 42; else 99;");
-    assert_eq!(constants.len(), 2);
-    assert_eq!(constants[0], Value::Integer(42));
-    assert_eq!(constants[1], Value::Integer(99));
+    let (chunk, heap) = compile_with_heap("if (true) 42; else 99;");
+    // Check that both constants exist
+    let has_42 = chunk.constants.iter().any(|&h| is_const_int(&heap, h, 42));
+    let has_99 = chunk.constants.iter().any(|&h| is_const_int(&heap, h, 99));
+    assert!(has_42);
+    assert!(has_99);
 }
 
 #[test]
 fn test_nested_if() {
-    // `if (true) if (false) 1; else 2;`
-    // The `else` binds to the nearest `if` (inner).
-    let (_, constants) = compiled("if (true) if (false) 1; else 2;");
-    // Both constants should be present
-    assert!(constants.contains(&Value::Integer(1)));
-    assert!(constants.contains(&Value::Integer(2)));
+    let (chunk, heap) = compile_with_heap("if (true) if (false) 1; else 2;");
+    let has_1 = chunk.constants.iter().any(|&h| is_const_int(&heap, h, 1));
+    let has_2 = chunk.constants.iter().any(|&h| is_const_int(&heap, h, 2));
+    assert!(has_1);
+    assert!(has_2);
 }
 
 // ------------------------------------------------------------------------
@@ -620,41 +528,24 @@ fn test_nested_if() {
 
 #[test]
 fn test_while_statement() {
-    // `while (false) 1;`
-    //   False
-    //   JumpIfFalse → exit
-    //   Pop          ← pop condition (entering body)
-    //   Constant(1)
-    //   Pop
-    //   Loop         ← back to condition
-    //   Pop          ← pop condition (exit)
     let c = codes("while (false) 1;");
     assert_eq!(c[0], ByteCode::False as u8);
     assert_eq!(c[1], ByteCode::JumpIfFalse as u8);
-    // Pop after condition
-    // (position depends on offset bytes, verify structural pattern)
     let has_loop = c.iter().any(|&b| b == ByteCode::Loop as u8);
-    assert!(has_loop, "while loop should emit a Loop instruction");
-    // The Loop should be before the final Pop/Return
+    assert!(has_loop);
 }
 
 #[test]
 fn test_while_statement_loops_back() {
-    // `while (true) 1;` — should have Loop jumping back to True
     let c = codes("while (true) 1;");
-    assert_eq!(c[0], ByteCode::True as u8);       // condition: true
-    // JumpIfFalse follows (offset bytes 1-2)
+    assert_eq!(c[0], ByteCode::True as u8);
     assert_eq!(c[1], ByteCode::JumpIfFalse as u8);
-    // Loop instruction must be present
     assert!(c.iter().any(|&b| b == ByteCode::Loop as u8));
 }
 
 #[test]
 fn test_while_with_condition_variable() {
-    // `{ var x = 0; while (x < 3) { print x; x = x + 1; } }`
-    // Verifies that locals work inside while loops
     let c = codes("{ var x = 0; while (x < 3) { print(x); x = x + 1; } }");
-    // Should contain: GetLocal (read x), SetLocal (assign x), Loop
     assert!(c.iter().any(|&b| b == ByteCode::GetLocal as u8));
     assert!(c.iter().any(|&b| b == ByteCode::SetLocal as u8));
     assert!(c.iter().any(|&b| b == ByteCode::Loop as u8));
@@ -667,77 +558,53 @@ fn test_while_with_condition_variable() {
 
 #[test]
 fn test_for_statement_infinite() {
-    // `for (;;) 1;` — infinite loop, no init/cond/incr
     let c = codes("for (;;) 1;");
-    assert!(c.iter().any(|&b| b == ByteCode::Loop as u8),
-        "infinite for-loop should emit a Loop instruction");
-    // Should NOT have JumpIfFalse (no condition)
-    assert!(!c.iter().any(|&b| b == ByteCode::JumpIfFalse as u8),
-        "infinite for-loop should not have JumpIfFalse");
+    assert!(c.iter().any(|&b| b == ByteCode::Loop as u8));
+    assert!(!c.iter().any(|&b| b == ByteCode::JumpIfFalse as u8));
 }
 
 #[test]
 fn test_for_statement_with_condition() {
-    // `for (; true ;) 1;` — condition only, no init/incr
     let c = codes("for (; true ;) 1;");
-    assert_eq!(c[0], ByteCode::True as u8);          // condition
-    assert_eq!(c[1], ByteCode::JumpIfFalse as u8);   // exit jump
+    assert_eq!(c[0], ByteCode::True as u8);
+    assert_eq!(c[1], ByteCode::JumpIfFalse as u8);
     assert!(c.iter().any(|&b| b == ByteCode::Loop as u8));
 }
 
 #[test]
 fn test_for_statement_with_initializer() {
-    // `for (var i = 0; i < 5; i = i + 1) print i;`
-    let (c, constants) = compiled("for (var i = 0; i < 5; i = i + 1) print(i);");
-    // GetLocal for reading i in condition, body, and increment
+    let (chunk, _heap) = compile_with_heap("for (var i = 0; i < 5; i = i + 1) print(i);");
+    let c = &chunk.codes;
     let get_local_count = c.windows(3)
         .filter(|w| w[0] == ByteCode::GetLocal as u8)
         .count();
-    assert!(get_local_count >= 3,
-        "expected at least 3 GetLocal (condition, body, increment), got {get_local_count}");
-    // SetLocal for i = i + 1
-    assert!(c.windows(3).any(|w| w[0] == ByteCode::SetLocal as u8),
-        "for with increment should have SetLocal");
-    // Should have Loop instructions (back to condition + back to increment)
+    assert!(get_local_count >= 3);
+    assert!(c.windows(3).any(|w| w[0] == ByteCode::SetLocal as u8));
     let loop_count = c.iter().filter(|&&b| b == ByteCode::Loop as u8).count();
-    assert_eq!(loop_count, 2, "for-loop should emit 2 Loop instructions, got {loop_count}");
-    // Constants: 0, 5, 1
-    assert!(constants.contains(&Value::Integer(0)));
-    assert!(constants.contains(&Value::Integer(5)));
-    assert!(constants.contains(&Value::Integer(1)));
+    assert_eq!(loop_count, 2);
 }
 
 #[test]
 fn test_for_statement_no_increment() {
-    // `for (var i = 0; i < 3;) print i;` — no increment clause
     let c = codes("for (var i = 0; i < 3;) print(i);");
-    // Should have exactly 1 Loop (back to condition), no increment loop
     let loop_count = c.iter().filter(|&&b| b == ByteCode::Loop as u8).count();
-    assert_eq!(loop_count, 1, "for without increment should have exactly 1 Loop, got {loop_count}");
+    assert_eq!(loop_count, 1);
     assert!(c.iter().any(|&b| b == ByteCode::JumpIfFalse as u8));
 }
 
 #[test]
 fn test_for_statement_no_condition() {
-    // `for (var i = 0;; i = i + 1) print i;` — no condition (infinite)
     let c = codes("for (var i = 0;; i = i + 1) print(i);");
-    // No JumpIfFalse (no condition to check)
-    assert!(!c.iter().any(|&b| b == ByteCode::JumpIfFalse as u8),
-        "for without condition should not have JumpIfFalse");
-    // Should have 2 Loop instructions
+    assert!(!c.iter().any(|&b| b == ByteCode::JumpIfFalse as u8));
     let loop_count = c.iter().filter(|&&b| b == ByteCode::Loop as u8).count();
-    assert_eq!(loop_count, 2, "for with increment but no condition: 2 Loops, got {loop_count}");
+    assert_eq!(loop_count, 2);
 }
 
 #[test]
 fn test_for_statement_variable_decl_in_initializer() {
-    // `for (var i = 0; i < 10; i = i + 1) { print i; }`
-    // The for-loop creates its own scope — i should be cleaned up by end_scope
     let c = codes("for (var i = 0; i < 10; i = i + 1) { print(i); }");
-    // After the for-loop, i should be popped (end_scope cleanup)
-    // The function always ends with Nil; Return.
     let last_bytes = &c[c.len() - 4..];
-    assert_eq!(last_bytes[1], ByteCode::Pop as u8, "expected Pop for local cleanup before Return");
+    assert_eq!(last_bytes[1], ByteCode::Pop as u8);
     assert_eq!(last_bytes[2], ByteCode::Nil as u8);
     assert_eq!(last_bytes[3], ByteCode::Return as u8);
 }
@@ -747,48 +614,28 @@ fn test_for_statement_variable_decl_in_initializer() {
 // ------------------------------------------------------------------------
 
 #[test]
-fn test_if_missing_parens() {
-    assert_err("if true) 1;");
-}
-
+fn test_if_missing_parens() { assert_err("if true) 1;"); }
 #[test]
-fn test_if_missing_condition() {
-    assert_err("if ();");
-}
-
+fn test_if_missing_condition() { assert_err("if ();"); }
 #[test]
-fn test_while_missing_parens() {
-    assert_err("while true) 1;");
-}
-
+fn test_while_missing_parens() { assert_err("while true) 1;"); }
 #[test]
-fn test_while_missing_condition() {
-    assert_err("while () 1;");
-}
-
+fn test_while_missing_condition() { assert_err("while () 1;"); }
 #[test]
-fn test_for_missing_parens() {
-    assert_err("for var i = 0; i < 10; i = i + 1) print(i);");
-}
+fn test_for_missing_parens() { assert_err("for var i = 0; i < 10; i = i + 1) print(i);"); }
 
 // ------------------------------------------------------------------------
 //  Error cases
 // ------------------------------------------------------------------------
 
 #[test]
-fn test_missing_semicolon() {
-    assert_err("42");
-}
+fn test_missing_semicolon() { assert_err("42"); }
 
 #[test]
-fn test_unterminated_grouping() {
-    assert_err("(1 + 2;");
-}
+fn test_unterminated_grouping() { assert_err("(1 + 2;"); }
 
 #[test]
-fn test_missing_expression_after_operator() {
-    assert_err("1 + ;");
-}
+fn test_missing_expression_after_operator() { assert_err("1 + ;"); }
 
 #[test]
 fn test_more_errors() {
@@ -808,163 +655,102 @@ var b = ;
 //  Function declarations
 // ------------------------------------------------------------------------
 
-/// Compile source and return (script_chunk, obj_heap).
-fn compile_with_heap(source: &str) -> (Chunk, ObjectHeap) {
-    let mut obj_heap = ObjectHeap::new();
-    let h = compile(source, &mut obj_heap).expect("compilation should succeed");
-    let mut chunk = Chunk::new();
-    std::mem::swap(
-        &mut chunk,
-        &mut obj_heap.get_mut(h).as_function_mut().expect("must fun").chunk,
-    );
-    (chunk, obj_heap)
-}
-
 #[test]
 fn test_empty_function_declaration() {
-    // `fun foo() {}`
-    // Script chunk should contain:
-    //   Constant(fn_obj)  — push the function object
-    //   DefineGlobal("foo")  — bind "foo" to the function
-    //   Nil; Return          — implicit script return
-    let (c, obj_heap) = compile_with_heap("fun foo() {}");
-    // First instruction: Closure with function object
-    assert_eq!(c.codes[0], ByteCode::Closure as u8);
-    let const_idx = u16::from_le_bytes([c.codes[1], c.codes[2]]) as usize;
-    // The constant should be an Object handle pointing to a function
-    let fn_val = &c.constants[const_idx];
-    assert!(matches!(fn_val, Value::Object(_)), "expected function object in constant pool");
-    // upvalue count = 0 (1 byte)
-    assert_eq!(c.codes[3], 0u8);
-    // DefineGlobal
-    assert_eq!(c.codes[4], ByteCode::DefineGlobal as u8);
+    let (chunk, heap) = compile_with_heap("fun foo() {}");
+    assert_eq!(chunk.codes[0], ByteCode::Closure as u8);
+    let const_idx = u16::from_le_bytes([chunk.codes[1], chunk.codes[2]]) as usize;
+    let fn_handle = chunk.constants[const_idx];
+    // upvalue count = 0
+    assert_eq!(chunk.codes[3], 0u8);
+    assert_eq!(chunk.codes[4], ByteCode::DefineGlobal as u8);
     // Verify the function object's chunk has Nil; Return
-    if let Value::Object(h) = fn_val {
-        let fn_chunk = &obj_heap.get(*h).as_function().unwrap().chunk;
-        assert_eq!(fn_chunk.codes.len(), 2);
-        assert_eq!(fn_chunk.codes[0], ByteCode::Nil as u8);
-        assert_eq!(fn_chunk.codes[1], ByteCode::Return as u8);
-    }
-    // Script ends with Nil; Return
-    assert_eq!(*c.codes.last().unwrap(), ByteCode::Return as u8);
+    let fn_chunk = &heap.get(fn_handle).as_function().unwrap().chunk;
+    assert_eq!(fn_chunk.codes.len(), 2);
+    assert_eq!(fn_chunk.codes[0], ByteCode::Nil as u8);
+    assert_eq!(fn_chunk.codes[1], ByteCode::Return as u8);
+    assert_eq!(*chunk.codes.last().unwrap(), ByteCode::Return as u8);
 }
 
 #[test]
 fn test_function_with_return_value() {
-    // `fun add(a, b) { return a + b; }`
-    // Function chunk should contain:
-    //   GetLocal(1)   — a (slot 1, slot 0 is fn)
-    //   GetLocal(2)   — b (slot 2)
-    //   Add
-    //   Return
-    let (c, obj_heap) = compile_with_heap("fun add(a, b) { return a + b; }");
-    // Extract the function object
-    let fn_val = &c.constants[0];
-    if let Value::Object(h) = fn_val {
-        let fn_chunk = &obj_heap.get(*h).as_function().unwrap().chunk;
-        // GetLocal(1): opcode + u16
-        assert_eq!(fn_chunk.codes[0], ByteCode::GetLocal as u8);
-        assert_eq!(u16::from_le_bytes([fn_chunk.codes[1], fn_chunk.codes[2]]), 1);
-        // GetLocal(2): opcode + u16
-        assert_eq!(fn_chunk.codes[3], ByteCode::GetLocal as u8);
-        assert_eq!(u16::from_le_bytes([fn_chunk.codes[4], fn_chunk.codes[5]]), 2);
-        // Add
-        assert_eq!(fn_chunk.codes[6], ByteCode::Add as u8);
-        // Return
-        assert_eq!(fn_chunk.codes[7], ByteCode::Return as u8);
-        // Verify arity
-        let fn_obj = obj_heap.get(*h).as_function().unwrap();
-        assert_eq!(fn_obj.arity, 2);
-        assert_eq!(fn_obj.name.as_str(), "add");
-    } else {
-        panic!("expected function object");
-    }
+    let (chunk, heap) = compile_with_heap("fun add(a, b) { return a + b; }");
+    let fn_handle = chunk.constants[0];
+    let fn_chunk = &heap.get(fn_handle).as_function().unwrap().chunk;
+    assert_eq!(fn_chunk.codes[0], ByteCode::GetLocal as u8);
+    assert_eq!(u16::from_le_bytes([fn_chunk.codes[1], fn_chunk.codes[2]]), 1);
+    assert_eq!(fn_chunk.codes[3], ByteCode::GetLocal as u8);
+    assert_eq!(u16::from_le_bytes([fn_chunk.codes[4], fn_chunk.codes[5]]), 2);
+    assert_eq!(fn_chunk.codes[6], ByteCode::Add as u8);
+    assert_eq!(fn_chunk.codes[7], ByteCode::Return as u8);
+    let fn_obj = heap.get(fn_handle).as_function().unwrap();
+    assert_eq!(fn_obj.arity, 2);
+    assert_eq!(fn_obj.name.as_str(), "add");
 }
 
 #[test]
 fn test_function_with_implicit_return() {
-    // `fun f() { 42; }` — implicit return with Nil
-    let (c, obj_heap) = compile_with_heap("fun f() { 42; }");
-    let fn_val = &c.constants[0];
-    if let Value::Object(h) = fn_val {
-        let fn_chunk = &obj_heap.get(*h).as_function().unwrap().chunk;
-        // Should have: Constant(42), Pop, Nil, Return
-        assert_eq!(fn_chunk.codes[0], ByteCode::Constant as u8);
-        // Pop
-        let pop_pos = 3;
-        assert_eq!(fn_chunk.codes[pop_pos], ByteCode::Pop as u8);
-        // Nil; Return at end
-        assert_eq!(fn_chunk.codes[pop_pos + 1], ByteCode::Nil as u8);
-        assert_eq!(fn_chunk.codes[pop_pos + 2], ByteCode::Return as u8);
-    }
+    let (chunk, heap) = compile_with_heap("fun f() { 42; }");
+    let fn_handle = chunk.constants[0];
+    let fn_chunk = &heap.get(fn_handle).as_function().unwrap().chunk;
+    assert_eq!(fn_chunk.codes[0], ByteCode::Constant as u8);
+    assert_eq!(fn_chunk.codes[3], ByteCode::Pop as u8);
+    assert_eq!(fn_chunk.codes[4], ByteCode::Nil as u8);
+    assert_eq!(fn_chunk.codes[5], ByteCode::Return as u8);
 }
 
 #[test]
 fn test_function_call_expression() {
-    // `fun f() {} f();`
-    // Script should contain: Constant(fn), DefineGlobal, GetGlobal("f"), Call(0), Pop, Nil, Return
-    let (c, _obj_heap) = compile_with_heap("fun f() {} f();");
-    // First: Closure(0 upvalues) + DefineGlobal (declaration)
-    assert_eq!(c.codes[0], ByteCode::Closure as u8);
-    // codes[1..3] = const index, codes[3] = upvalue count (0)
-    assert_eq!(c.codes[3], 0u8);
-    assert_eq!(c.codes[4], ByteCode::DefineGlobal as u8);
-    // Then: GetGlobal("f")
-    assert_eq!(c.codes[7], ByteCode::GetGlobal as u8);
-    // Call(0): 1 byte opcode + 1 byte arg_count
-    assert_eq!(c.codes[10], ByteCode::Call as u8);
-    assert_eq!(c.codes[11], 0u8); // 0 arguments
-    // Pop (expression statement discards result)
-    assert_eq!(c.codes[12], ByteCode::Pop as u8);
-    // Nil; Return
-    assert_eq!(c.codes[13], ByteCode::Nil as u8);
-    assert_eq!(c.codes[14], ByteCode::Return as u8);
+    let (chunk, _heap) = compile_with_heap("fun f() {} f();");
+    assert_eq!(chunk.codes[0], ByteCode::Closure as u8);
+    assert_eq!(chunk.codes[3], 0u8);
+    assert_eq!(chunk.codes[4], ByteCode::DefineGlobal as u8);
+    assert_eq!(chunk.codes[7], ByteCode::GetGlobal as u8);
+    assert_eq!(chunk.codes[10], ByteCode::Call as u8);
+    assert_eq!(chunk.codes[11], 0u8);
+    assert_eq!(chunk.codes[12], ByteCode::Pop as u8);
+    assert_eq!(chunk.codes[13], ByteCode::Nil as u8);
+    assert_eq!(chunk.codes[14], ByteCode::Return as u8);
 }
 
 #[test]
 fn test_function_call_with_args() {
-    // `fun add(a, b) { return a + b; } add(1, 2);`
-    let (c, _obj_heap) = compile_with_heap("fun add(a, b) { return a + b; } add(1, 2);");
-    // After declaration: GetGlobal("add")
-    // Skip Closure(4 bytes) + DefineGlobal(3 bytes) = 7 bytes
+    let (chunk, _heap) = compile_with_heap("fun add(a, b) { return a + b; } add(1, 2);");
     let mut pos = 7;
-    assert_eq!(c.codes[pos], ByteCode::GetGlobal as u8);
-    pos += 3; // GetGlobal: opcode + u16
-    // Constant(1): 3 bytes
-    assert_eq!(c.codes[pos], ByteCode::Constant as u8);
+    assert_eq!(chunk.codes[pos], ByteCode::GetGlobal as u8);
     pos += 3;
-    // Constant(2): 3 bytes
-    assert_eq!(c.codes[pos], ByteCode::Constant as u8);
+    assert_eq!(chunk.codes[pos], ByteCode::Constant as u8);
     pos += 3;
-    // Call(2): opcode + arg_count
-    assert_eq!(c.codes[pos], ByteCode::Call as u8);
-    assert_eq!(c.codes[pos + 1], 2u8); // 2 arguments
-    // Pop (discard result)
-    assert_eq!(c.codes[pos + 2], ByteCode::Pop as u8);
+    assert_eq!(chunk.codes[pos], ByteCode::Constant as u8);
+    pos += 3;
+    assert_eq!(chunk.codes[pos], ByteCode::Call as u8);
+    assert_eq!(chunk.codes[pos + 1], 2u8);
+    assert_eq!(chunk.codes[pos + 2], ByteCode::Pop as u8);
 }
 
 #[test]
 fn test_nested_function_call() {
-    // `fun f() { return 1; } fun g() { return f(); }`
-    let (c, obj_heap) = compile_with_heap("fun f() { return 1; } fun g() { return f(); }");
-    // g's body should contain: GetGlobal("f"), Call(0), Return
-    // Find g: second constant
-    let g_val = &c.constants[1]; // f is at index 0, g at index 1
-    if let Value::Object(h) = g_val {
-        let g_chunk = &obj_heap.get(*h).as_function().unwrap().chunk;
-        // GetGlobal("f")
-        assert_eq!(g_chunk.codes[0], ByteCode::GetGlobal as u8);
-        // Call(0)
-        assert_eq!(g_chunk.codes[3], ByteCode::Call as u8);
-        assert_eq!(g_chunk.codes[4], 0u8);
-        // Return
-        assert_eq!(g_chunk.codes[5], ByteCode::Return as u8);
+    let (chunk, heap) = compile_with_heap("fun f() { return 1; } fun g() { return f(); }");
+    // Find g's function: it's the second function in constants
+    let mut g_handle = None;
+    for &h in &chunk.constants {
+        if let Ok(f) = heap.get(h).as_function() {
+            if f.name.as_str() == "g" {
+                g_handle = Some(h);
+                break;
+            }
+        }
     }
+    let g_handle = g_handle.expect("g function not found");
+    let g_chunk = &heap.get(g_handle).as_function().unwrap().chunk;
+    assert_eq!(g_chunk.codes[0], ByteCode::GetGlobal as u8);
+    assert_eq!(g_chunk.codes[3], ByteCode::Call as u8);
+    assert_eq!(g_chunk.codes[4], 0u8);
+    assert_eq!(g_chunk.codes[5], ByteCode::Return as u8);
 }
 
 #[test]
 fn test_return_in_top_level_is_error() {
-    // `return 5;` at top level should fail
     let mut obj_heap = ObjectHeap::new();
     match compile("return 5;", &mut obj_heap) {
         Err(CompileError::Parse(errors)) => {
@@ -977,456 +763,249 @@ fn test_return_in_top_level_is_error() {
 }
 
 // ------------------------------------------------------------------------
-//  Closures & Upvalues — bytecode verification
+//  Closures & Upvalues
 // ------------------------------------------------------------------------
-
-/// Decode every instruction from a chunk into a `Vec` for easy inspection.
-fn instructions(chunk: &Chunk) -> Vec<Instruction> {
-    let mut ip = 0;
-    let mut insts = Vec::new();
-    while ip < chunk.codes.len() {
-        insts.push(chunk.read_instruction(&mut ip).unwrap());
-    }
-    insts
-}
 
 #[test]
 fn test_closure_single_upvalue_capture() {
-    // fun outer() { var x = 1; fun inner() { return x; } return inner; }
-    //
-    // Script chunk:  Closure{outer_fn, []}  DefineGlobal("outer")  Nil  Return
-    // outer chunk:   Constant(1)  Closure{inner_fn, [(is_local=true,index=1)]}
-    //                GetLocal(2)  Return  Nil  Return
-    // inner chunk:   GetUpvalue(0)  Return
-    let (script_chunk, obj_heap) = compile_with_heap(
+    let (script_chunk, heap) = compile_with_heap(
         "fun outer() { var x = 1; fun inner() { return x; } return inner; }"
     );
-    let script_insts = instructions(&script_chunk);
-
-    // First instruction: Closure{outer_fn, upvalues: []}
-    let outer_fn_val = match &script_insts[0] {
+    let script_insts = instructions(&script_chunk, &heap);
+    let outer_fn_handle = match &script_insts[0] {
         Instruction::Closure { function, upvalues } => {
-            assert!(upvalues.is_empty(), "outer has no upvalues");
-            function.clone()
+            assert!(upvalues.is_empty());
+            *function
         }
-        _ => panic!("expected Closure as first instruction"),
+        _ => panic!("expected Closure"),
     };
+    let outer_fn = heap.get(outer_fn_handle).as_function().unwrap();
+    let outer_insts = instructions(&outer_fn.chunk, &heap);
 
-    // Decode outer function's chunk
-    let outer_fn = obj_heap
-        .get(outer_fn_val.as_object().unwrap())
-        .as_function()
-        .unwrap();
-    let outer_insts = instructions(&outer_fn.chunk);
-
-    // Find the Closure instruction in outer (for inner function)
-    let (inner_fn_val, upvalues) = outer_insts
-        .iter()
+    let (inner_fn_handle, upvalues) = outer_insts.iter()
         .find_map(|inst| {
             if let Instruction::Closure { function, upvalues } = inst {
-                Some((function.clone(), upvalues.clone()))
-            } else {
-                None
-            }
+                Some((*function, upvalues.clone()))
+            } else { None }
         })
         .expect("outer should contain a Closure for inner");
 
-    assert_eq!(upvalues.len(), 1, "inner should capture exactly 1 upvalue");
-    assert!(
-        upvalues[0].is_local,
-        "x should be captured directly from enclosing stack"
-    );
-    assert_eq!(
-        upvalues[0].index, 1,
-        "x should be at slot 1 (slot 0 is outer fn itself)"
-    );
+    assert_eq!(upvalues.len(), 1);
+    assert!(upvalues[0].is_local);
+    assert_eq!(upvalues[0].index, 1);
 
-    // Verify inner function's bytecode reads the upvalue
-    let inner_fn = obj_heap
-        .get(inner_fn_val.as_object().unwrap())
-        .as_function()
-        .unwrap();
-    let inner_insts = instructions(&inner_fn.chunk);
-    assert!(
-        inner_insts
-            .iter()
-            .any(|i| matches!(i, Instruction::GetUpvalue(0))),
-        "inner should read upvalue slot 0"
-    );
+    let inner_fn = heap.get(inner_fn_handle).as_function().unwrap();
+    let inner_insts = instructions(&inner_fn.chunk, &heap);
+    assert!(inner_insts.iter().any(|i| matches!(i, Instruction::GetUpvalue(0))));
     assert!(matches!(inner_insts.last().unwrap(), Instruction::Return));
 }
 
 #[test]
 fn test_closure_set_upvalue_bytecode() {
-    // fun outer() { var i = 0; fun inc() { i = i + 1; } }
-    //
-    // inner chunk should contain: GetUpvalue(0) Constant(1) Add SetUpvalue(0)
-    let (script_chunk, obj_heap) = compile_with_heap(
+    let (script_chunk, heap) = compile_with_heap(
         "fun outer() { var i = 0; fun inc() { i = i + 1; } }"
     );
-    let script_insts = instructions(&script_chunk);
-    let outer_fn_val = match &script_insts[0] {
-        Instruction::Closure { function, .. } => function.clone(),
+    let script_insts = instructions(&script_chunk, &heap);
+    let outer_fn_handle = match &script_insts[0] {
+        Instruction::Closure { function, .. } => *function,
         _ => panic!("expected Closure"),
     };
-    let outer_fn = obj_heap
-        .get(outer_fn_val.as_object().unwrap())
-        .as_function()
-        .unwrap();
-    let outer_insts = instructions(&outer_fn.chunk);
-    let inner_fn_val = outer_insts
-        .iter()
+    let outer_fn = heap.get(outer_fn_handle).as_function().unwrap();
+    let outer_insts = instructions(&outer_fn.chunk, &heap);
+    let inner_fn_handle = outer_insts.iter()
         .find_map(|inst| {
-            if let Instruction::Closure { function, .. } = inst {
-                Some(function.clone())
-            } else {
-                None
-            }
+            if let Instruction::Closure { function, .. } = inst { Some(*function) } else { None }
         })
         .expect("outer should contain a Closure for inc");
 
-    let inner_fn = obj_heap
-        .get(inner_fn_val.as_object().unwrap())
-        .as_function()
-        .unwrap();
-    let inner_insts = instructions(&inner_fn.chunk);
-
-    // Should contain GetUpvalue, SetUpvalue
-    let has_get = inner_insts
-        .iter()
-        .any(|i| matches!(i, Instruction::GetUpvalue(_)));
-    let has_set = inner_insts
-        .iter()
-        .any(|i| matches!(i, Instruction::SetUpvalue(_)));
-    assert!(has_get, "inner should read upvalue");
-    assert!(has_set, "inner should write upvalue");
+    let inner_fn = heap.get(inner_fn_handle).as_function().unwrap();
+    let inner_insts = instructions(&inner_fn.chunk, &heap);
+    assert!(inner_insts.iter().any(|i| matches!(i, Instruction::GetUpvalue(_))));
+    assert!(inner_insts.iter().any(|i| matches!(i, Instruction::SetUpvalue(_))));
 }
 
 #[test]
 fn test_close_upvalue_in_block_scope() {
-    // fun outer() { var x = 1; { var y = 2; fun f() { return y; } } return x; }
-    //
-    // outer's chunk should contain CloseUpvalue when y goes out of scope,
-    // because y is captured by f.
-    let (script_chunk, obj_heap) = compile_with_heap(
+    let (script_chunk, heap) = compile_with_heap(
         "fun outer() { var x = 1; { var y = 2; fun f() { return y; } } return x; }"
     );
-    let script_insts = instructions(&script_chunk);
-    let outer_fn_val = match &script_insts[0] {
-        Instruction::Closure { function, .. } => function.clone(),
+    let script_insts = instructions(&script_chunk, &heap);
+    let outer_fn_handle = match &script_insts[0] {
+        Instruction::Closure { function, .. } => *function,
         _ => panic!("expected Closure"),
     };
-    let outer_fn = obj_heap
-        .get(outer_fn_val.as_object().unwrap())
-        .as_function()
-        .unwrap();
-    let outer_insts = instructions(&outer_fn.chunk);
-
-    // y is captured → CloseUpvalue should appear before Pop for x
-    assert!(
-        outer_insts
-            .iter()
-            .any(|i| matches!(i, Instruction::CloseUpvalue)),
-        "outer should emit CloseUpvalue for captured y"
-    );
-
-    // y is NOT at function scope — it's in a nested block. So when the block
-    // ends, CloseUpvalue fires. x is at function scope and is captured at
-    // OP_RETURN time (not via CloseUpvalue instruction).
+    let outer_fn = heap.get(outer_fn_handle).as_function().unwrap();
+    let outer_insts = instructions(&outer_fn.chunk, &heap);
+    assert!(outer_insts.iter().any(|i| matches!(i, Instruction::CloseUpvalue)));
 }
 
 #[test]
 fn test_closure_captures_parameter() {
-    // fun makeAdder(x) { fun adder(y) { return x + y; } return adder; }
-    //
-    // Parameters are locals too — the upvalue should reference slot 1 (x).
-    let (script_chunk, obj_heap) = compile_with_heap(
+    let (script_chunk, heap) = compile_with_heap(
         "fun makeAdder(x) { fun adder(y) { return x + y; } return adder; }"
     );
-    let script_insts = instructions(&script_chunk);
-    let outer_fn_val = match &script_insts[0] {
-        Instruction::Closure { function, .. } => function.clone(),
+    let script_insts = instructions(&script_chunk, &heap);
+    let outer_fn_handle = match &script_insts[0] {
+        Instruction::Closure { function, .. } => *function,
         _ => panic!("expected Closure"),
     };
-    let outer_fn = obj_heap
-        .get(outer_fn_val.as_object().unwrap())
-        .as_function()
-        .unwrap();
-    let outer_insts = instructions(&outer_fn.chunk);
-
-    let (_, upvalues) = outer_insts
-        .iter()
+    let outer_fn = heap.get(outer_fn_handle).as_function().unwrap();
+    let outer_insts = instructions(&outer_fn.chunk, &heap);
+    let (_, upvalues) = outer_insts.iter()
         .find_map(|inst| {
             if let Instruction::Closure { function, upvalues } = inst {
-                Some((function.clone(), upvalues.clone()))
-            } else {
-                None
-            }
+                Some((*function, upvalues.clone()))
+            } else { None }
         })
         .expect("makeAdder should contain a Closure for adder");
 
-    assert_eq!(upvalues.len(), 1, "adder should capture 1 upvalue (x)");
-    assert!(upvalues[0].is_local, "x is captured from the enclosing stack");
-    assert_eq!(upvalues[0].index, 1, "parameter x should be at slot 1");
+    assert_eq!(upvalues.len(), 1);
+    assert!(upvalues[0].is_local);
+    assert_eq!(upvalues[0].index, 1);
 }
 
 #[test]
 fn test_nested_closure_upvalue_chain() {
-    // fun outer() { var a = 10; fun middle() { fun inner() { return a; } return inner; } return middle; }
-    //
-    // inner captures a via middle's upvalue → outer's local.
-    // middle's upvalue: is_local=true, index=<a's slot in outer> (slot 1)
-    // inner's upvalue:  is_local=false, index=0 (middle's upvalue[0])
-    let (script_chunk, obj_heap) = compile_with_heap(
+    let (script_chunk, heap) = compile_with_heap(
         "fun outer() { var a = 10; fun middle() { fun inner() { return a; } return inner; } return middle; }"
     );
-    let script_insts = instructions(&script_chunk);
-    let outer_fn_val = match &script_insts[0] {
-        Instruction::Closure { function, .. } => function.clone(),
+    let script_insts = instructions(&script_chunk, &heap);
+    let outer_fn_handle = match &script_insts[0] {
+        Instruction::Closure { function, .. } => *function,
         _ => panic!("expected Closure"),
     };
+    let outer_fn = heap.get(outer_fn_handle).as_function().unwrap();
+    let outer_insts = instructions(&outer_fn.chunk, &heap);
 
-    // Walk outer → middle
-    let outer_fn = obj_heap
-        .get(outer_fn_val.as_object().unwrap())
-        .as_function()
-        .unwrap();
-    let outer_insts = instructions(&outer_fn.chunk);
-
-    // middle's Closure in outer: should capture a as local
-    let middle_fn_val = outer_insts
-        .iter()
+    let middle_fn_handle = outer_insts.iter()
         .find_map(|inst| {
             if let Instruction::Closure { function, upvalues } = inst {
-                assert_eq!(upvalues.len(), 1, "middle should capture 1 upvalue (a)");
-                assert!(upvalues[0].is_local, "middle should capture a from outer's stack");
-                assert_eq!(upvalues[0].index, 1, "a should be at slot 1 in outer");
-                Some(function.clone())
-            } else {
-                None
-            }
+                assert_eq!(upvalues.len(), 1);
+                assert!(upvalues[0].is_local);
+                assert_eq!(upvalues[0].index, 1);
+                Some(*function)
+            } else { None }
         })
         .expect("outer should contain a Closure for middle");
 
-    // Walk middle → inner
-    let middle_fn = obj_heap
-        .get(middle_fn_val.as_object().unwrap())
-        .as_function()
-        .unwrap();
-    let middle_insts = instructions(&middle_fn.chunk);
-
-    // inner's Closure in middle: should capture a as upvalue (not local)
-    let (inner_fn_val, inner_upvalues) = middle_insts
-        .iter()
+    let middle_fn = heap.get(middle_fn_handle).as_function().unwrap();
+    let middle_insts = instructions(&middle_fn.chunk, &heap);
+    let (inner_fn_handle, inner_upvalues) = middle_insts.iter()
         .find_map(|inst| {
             if let Instruction::Closure { function, upvalues } = inst {
-                Some((function.clone(), upvalues.clone()))
-            } else {
-                None
-            }
+                Some((*function, upvalues.clone()))
+            } else { None }
         })
         .expect("middle should contain a Closure for inner");
 
-    assert_eq!(
-        inner_upvalues.len(), 1,
-        "inner should capture 1 upvalue"
-    );
-    assert!(
-        !inner_upvalues[0].is_local,
-        "inner should capture a via middle's upvalue (is_local=false), not from stack"
-    );
-    assert_eq!(
-        inner_upvalues[0].index, 0,
-        "inner should reference middle's upvalue[0]"
-    );
+    assert_eq!(inner_upvalues.len(), 1);
+    assert!(!inner_upvalues[0].is_local);
+    assert_eq!(inner_upvalues[0].index, 0);
 
-    // inner's body: GetUpvalue(0), Return
-    let inner_fn = obj_heap
-        .get(inner_fn_val.as_object().unwrap())
-        .as_function()
-        .unwrap();
-    let inner_insts = instructions(&inner_fn.chunk);
-    assert!(
-        inner_insts
-            .iter()
-            .any(|i| matches!(i, Instruction::GetUpvalue(0))),
-        "inner should read upvalue"
-    );
+    let inner_fn = heap.get(inner_fn_handle).as_function().unwrap();
+    let inner_insts = instructions(&inner_fn.chunk, &heap);
+    assert!(inner_insts.iter().any(|i| matches!(i, Instruction::GetUpvalue(0))));
 }
 
 #[test]
 fn test_closure_multiple_upvalues() {
-    // fun outer() { var a = 1; var b = 2; fun sum() { return a + b; } return sum; }
-    //
-    // sum should capture TWO upvalues: a (slot 1) and b (slot 2)
-    let (script_chunk, obj_heap) = compile_with_heap(
+    let (script_chunk, heap) = compile_with_heap(
         "fun outer() { var a = 1; var b = 2; fun sum() { return a + b; } return sum; }"
     );
-    let script_insts = instructions(&script_chunk);
-    let outer_fn_val = match &script_insts[0] {
-        Instruction::Closure { function, .. } => function.clone(),
+    let script_insts = instructions(&script_chunk, &heap);
+    let outer_fn_handle = match &script_insts[0] {
+        Instruction::Closure { function, .. } => *function,
         _ => panic!("expected Closure"),
     };
-    let outer_fn = obj_heap
-        .get(outer_fn_val.as_object().unwrap())
-        .as_function()
-        .unwrap();
-    let outer_insts = instructions(&outer_fn.chunk);
-
-    let (sum_fn_val, upvalues) = outer_insts
-        .iter()
+    let outer_fn = heap.get(outer_fn_handle).as_function().unwrap();
+    let outer_insts = instructions(&outer_fn.chunk, &heap);
+    let (sum_fn_handle, upvalues) = outer_insts.iter()
         .find_map(|inst| {
             if let Instruction::Closure { function, upvalues } = inst {
-                Some((function.clone(), upvalues.clone()))
-            } else {
-                None
-            }
+                Some((*function, upvalues.clone()))
+            } else { None }
         })
         .expect("outer should contain Closure for sum");
 
-    assert_eq!(upvalues.len(), 2, "sum should capture 2 upvalues (a and b)");
-    assert!(upvalues[0].is_local, "a should be captured from stack");
-    assert!(upvalues[1].is_local, "b should be captured from stack");
-    // a is declared first → slot 1, b → slot 2
-    assert_eq!(upvalues[0].index, 1, "a should be at slot 1");
-    assert_eq!(upvalues[1].index, 2, "b should be at slot 2");
+    assert_eq!(upvalues.len(), 2);
+    assert!(upvalues[0].is_local);
+    assert!(upvalues[1].is_local);
+    assert_eq!(upvalues[0].index, 1);
+    assert_eq!(upvalues[1].index, 2);
 
-    // sum's chunk: GetUpvalue(0), GetUpvalue(1), Add, Return
-    let sum_fn = obj_heap
-        .get(sum_fn_val.as_object().unwrap())
-        .as_function()
-        .unwrap();
-    let sum_insts = instructions(&sum_fn.chunk);
-    assert!(
-        sum_insts
-            .iter()
-            .any(|i| matches!(i, Instruction::GetUpvalue(0))),
-        "should read upvalue 0 (a)"
-    );
-    assert!(
-        sum_insts
-            .iter()
-            .any(|i| matches!(i, Instruction::GetUpvalue(1))),
-        "should read upvalue 1 (b)"
-    );
+    let sum_fn = heap.get(sum_fn_handle).as_function().unwrap();
+    let sum_insts = instructions(&sum_fn.chunk, &heap);
+    assert!(sum_insts.iter().any(|i| matches!(i, Instruction::GetUpvalue(0))));
+    assert!(sum_insts.iter().any(|i| matches!(i, Instruction::GetUpvalue(1))));
 }
 
 // ------------------------------------------------------------------------
-//  Classes & Instances — bytecode verification
+//  Classes & Instances
 // ------------------------------------------------------------------------
 
 #[test]
 fn test_class_declaration_bytecode() {
-    // class Toast {}
-    //   Class("Toast")           3 bytes  (opcode + u16 const idx)
-    //   DefineGlobal("Toast")    3 bytes  (opcode + u16 const idx)
-    //   GetGlobal("Toast")       3 bytes  (opcode + u16 const idx)
-    //   Pop                      1 byte
-    //   Nil                      1 byte
-    //   Return                   1 byte
     let c = codes("class Toast {}");
     assert_eq!(c[0], ByteCode::Class as u8);
     assert_eq!(c[3], ByteCode::DefineGlobal as u8);
     assert_eq!(c[6], ByteCode::GetGlobal as u8);
-    assert_eq!(c[9], ByteCode::Pop as u8, "should pop class after body");
+    assert_eq!(c[9], ByteCode::Pop as u8);
 }
 
 #[test]
 fn test_class_with_method_bytecode() {
-    // class Scone { fun topping() {} }
-    // Script:  Class("Scone")  Closure{topping_fn, []}  DefineGlobal("Scone")
-    //          GetGlobal("Scone")  Method("topping")  Pop  Nil  Return
     let c = codes("class Scone { fun topping() {} }");
-    assert!(
-        c.iter().any(|&b| b == ByteCode::Class as u8),
-        "should contain Class"
-    );
-    assert!(
-        c.iter().any(|&b| b == ByteCode::Method as u8),
-        "should contain Method"
-    );
+    assert!(c.iter().any(|&b| b == ByteCode::Class as u8));
+    assert!(c.iter().any(|&b| b == ByteCode::Method as u8));
 }
 
 #[test]
 fn test_property_get_and_set_bytecode() {
-    // { var p = Pair(); p.first = 1; print(p.first); }
     let c = codes("{ var p = Pair(); p.first = 1; print(p.first); }");
-    assert!(
-        c.iter().any(|&b| b == ByteCode::GetProperty as u8),
-        "should contain GetProperty"
-    );
-    assert!(
-        c.iter().any(|&b| b == ByteCode::SetProperty as u8),
-        "should contain SetProperty"
-    );
+    assert!(c.iter().any(|&b| b == ByteCode::GetProperty as u8));
+    assert!(c.iter().any(|&b| b == ByteCode::SetProperty as u8));
 }
 
 #[test]
 fn test_invoke_bytecode() {
-    // obj.method(args) should emit Invoke, not GetProperty + Call
     let c = codes("{ var s = Scone(); s.topping(\"berries\", \"cream\"); }");
-    assert!(
-        c.iter().any(|&b| b == ByteCode::Invoke as u8),
-        "method call should emit Invoke"
-    );
+    assert!(c.iter().any(|&b| b == ByteCode::Invoke as u8));
 }
 
 #[test]
 fn test_init_method_returns_self() {
-    // class Foo { fun __init__(self, x) { self.x = x; } }
-    // The __init__ method should end with GetLocal(0); Return (return self),
-    // not Nil; Return.
-    let (c, obj_heap) = compile_with_heap(
+    let (chunk, heap) = compile_with_heap(
         "class Foo { fun __init__(self, x) { self.x = x; } }"
     );
-    let script_insts = instructions(&c);
+    let script_insts = instructions(&chunk, &heap);
     for inst in &script_insts {
         if let Instruction::Closure { function, .. } = inst {
-            let fn_obj = obj_heap
-                .get(function.as_object().unwrap())
-                .as_function()
-                .unwrap();
+            let fn_obj = heap.get(*function).as_function().unwrap();
             if fn_obj.name.as_str() == "__init__" {
-                let fn_insts = instructions(&fn_obj.chunk);
+                let fn_insts = instructions(&fn_obj.chunk, &heap);
                 let last = &fn_insts[fn_insts.len() - 2];
                 assert!(
                     matches!(last, Instruction::GetLocal(0)),
-                    "__init__ should end with GetLocal(0) (return self), got {:?}",
-                    last
+                    "__init__ should end with GetLocal(0)"
                 );
-                assert!(matches!(
-                    fn_insts.last().unwrap(),
-                    Instruction::Return
-                ));
-                return; // verified
+                assert!(matches!(fn_insts.last().unwrap(), Instruction::Return));
+                return;
             }
         }
     }
-    panic!("__init__ method not found in compiled output");
+    panic!("__init__ method not found");
 }
 
 #[test]
 fn test_self_parameter_is_slot_zero() {
-    // A method `fun m(self) { return self; }` should emit GetLocal(0).
-    // With explicit self, the first parameter is slot 0.
-    let (c, obj_heap) = compile_with_heap(
-        "class Foo { fun m(self) { return self; } }"
-    );
-    let script_insts = instructions(&c);
+    let (chunk, heap) = compile_with_heap("class Foo { fun m(self) { return self; } }");
+    let script_insts = instructions(&chunk, &heap);
     for inst in &script_insts {
         if let Instruction::Closure { function, .. } = inst {
-            let fn_obj = obj_heap
-                .get(function.as_object().unwrap())
-                .as_function()
-                .unwrap();
+            let fn_obj = heap.get(*function).as_function().unwrap();
             if fn_obj.name.as_str() == "m" {
-                let fn_insts = instructions(&fn_obj.chunk);
-                assert!(
-                    fn_insts
-                        .iter()
-                        .any(|i| matches!(i, Instruction::GetLocal(0))),
-                    "method reading 'self' should emit GetLocal(0)"
-                );
+                let fn_insts = instructions(&fn_obj.chunk, &heap);
+                assert!(fn_insts.iter().any(|i| matches!(i, Instruction::GetLocal(0))));
                 return;
             }
         }
@@ -1436,96 +1015,47 @@ fn test_self_parameter_is_slot_zero() {
 
 #[test]
 fn test_inheritance_bytecode() {
-    // class Derived extends Base {}
-    //   Class("Derived")         3 bytes
-    //   DefineGlobal("Derived")  3 bytes
-    //   GetGlobal("Derived")     3 bytes
-    //   GetGlobal("Base")        3 bytes
-    //   Inherit                  1 byte
-    //   Pop                      1 byte
-    //   Nil                      1 byte
-    //   Return                   1 byte
     let c = codes("class Base {} class Derived extends Base {}");
-    let bytes: Vec<u8> = c.iter().map(|&b| b).collect();
-    // Class(Derived) should be at some offset
-    assert!(
-        bytes.iter().any(|&b| b == ByteCode::Inherit as u8),
-        "should contain Inherit bytecode"
-    );
+    assert!(c.iter().any(|&b| b == ByteCode::Inherit as u8));
 }
 
 #[test]
 fn test_list_literal_bytecode() {
-    // [1, 2, 3]; should emit:
-    //   Constant(1), Constant(2), Constant(3), BuildList(3), Pop, Nil, Return
     let c = codes("[1, 2, 3];");
-    let bytes: Vec<u8> = c.iter().map(|&b| b).collect();
-    assert!(
-        bytes.iter().any(|&b| b == ByteCode::BuildList as u8),
-        "should contain BuildList bytecode"
-    );
+    assert!(c.iter().any(|&b| b == ByteCode::BuildList as u8));
 }
 
 #[test]
 fn test_empty_list_bytecode() {
     let c = codes("[];");
-    let bytes: Vec<u8> = c.iter().map(|&b| b).collect();
-    assert!(
-        bytes.iter().any(|&b| b == ByteCode::BuildList as u8),
-        "empty list should also emit BuildList"
-    );
+    assert!(c.iter().any(|&b| b == ByteCode::BuildList as u8));
 }
 
 #[test]
 fn test_index_get_bytecode() {
     let c = codes("a[0];");
-    let bytes: Vec<u8> = c.iter().map(|&b| b).collect();
-    assert!(
-        bytes.iter().any(|&b| b == ByteCode::IndexGet as u8),
-        "should contain IndexGet bytecode"
-    );
+    assert!(c.iter().any(|&b| b == ByteCode::IndexGet as u8));
 }
 
 #[test]
 fn test_index_set_bytecode() {
     let c = codes("a[0] = 1;");
-    let bytes: Vec<u8> = c.iter().map(|&b| b).collect();
-    assert!(
-        bytes.iter().any(|&b| b == ByteCode::IndexSet as u8),
-        "should contain IndexSet bytecode"
-    );
+    assert!(c.iter().any(|&b| b == ByteCode::IndexSet as u8));
 }
-
-// ------------------------------------------------------------------------
-//  Dict literals — bytecode verification
-// ------------------------------------------------------------------------
 
 #[test]
 fn test_dict_literal_bytecode() {
-    // var d = {"a": 1, "b": 2}; should emit BuildDict.
-    // Note: {} at statement level is parsed as a block, so dict literals
-    // must appear in expression context (e.g. assignment).
     let c = codes("var d = {\"a\": 1, \"b\": 2};");
-    let bytes: Vec<u8> = c.iter().map(|&b| b).collect();
-    assert!(
-        bytes.iter().any(|&b| b == ByteCode::BuildDict as u8),
-        "should contain BuildDict bytecode"
-    );
+    assert!(c.iter().any(|&b| b == ByteCode::BuildDict as u8));
 }
 
 #[test]
 fn test_empty_dict_bytecode() {
     let c = codes("var d = {};");
-    let bytes: Vec<u8> = c.iter().map(|&b| b).collect();
-    assert!(
-        bytes.iter().any(|&b| b == ByteCode::BuildDict as u8),
-        "empty dict should also emit BuildDict"
-    );
+    assert!(c.iter().any(|&b| b == ByteCode::BuildDict as u8));
 }
 
 #[test]
 fn test_dict_colon_required() {
-    // Dict literal without colon after key should be an error.
-    // Must be in expression context (assignment) to be parsed as dict.
     assert_err("var d = {\"a\" 1};");
 }

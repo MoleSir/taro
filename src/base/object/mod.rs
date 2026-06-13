@@ -10,9 +10,8 @@ pub enum Object {
     Upvalue(ObjectUpvalue),
     Class(ObjectClass),
     Instance(ObjectInstance),
+    BuiltinInstance(ObjectBuiltinInstance),
     BoundMethod(ObjectBoundMethod),
-    List(ObjectList),
-    Dict(ObjectDict),
 }
 
 macro_rules! impl_object_conversions {
@@ -87,9 +86,8 @@ impl_object_conversions! {
     Upvalue => { ty: ObjectUpvalue, method: upvalue, name: "Upvalue" },
     Class => { ty: ObjectClass, method: class, name: "Class" },
     Instance => { ty: ObjectInstance, method: instance, name: "Instance" },
+    BuiltinInstance => { ty: ObjectBuiltinInstance, method: builtin_instance, name: "BuiltinInstance" },
     BoundMethod => { ty: ObjectBoundMethod, method: bound_method, name: "BoundMethod" },
-    List => { ty: ObjectList, method: list, name: "List" },
-    Dict => { ty: ObjectDict, method: dict, name: "Dict" },
 }
 
 #[derive(Debug, thiserror::Error)]

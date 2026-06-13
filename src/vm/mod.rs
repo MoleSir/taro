@@ -6,26 +6,29 @@ mod gc;
 pub use error::*;
 #[cfg(test)]
 mod tests;
-use crate::{BuiltinFn, Instruction, Method, Object, ObjectHandle, ObjectHeap, ShrString, Value};
+use crate::{BuiltinFn, BuiltinInstance, Instruction, Method, Object, ObjectHandle, ObjectHeap, ShrString};
 use std::collections::HashMap;
 
 pub struct VirtualMachine {
     pub obj_heap: ObjectHeap,
     frames: Vec<CallFrame>,
-    stack: Vec<Value>,
-    globals: HashMap<ShrString, Value>,
+    stack: Vec<ObjectHandle>,
+    globals: HashMap<ShrString, ObjectHandle>,
     /// Sorted (by descending location) linked list of open upvalues.
     open_upvalues: Vec<ObjectHandle>,
     gc_threshold: usize,
     /// Builtin class handles — allocated once at startup.
+    pub nil_class: ObjectHandle,
+    pub int_class: ObjectHandle,
+    pub float_class: ObjectHandle,
+    pub bool_class: ObjectHandle,
+    pub string_class: ObjectHandle,
     pub list_class: ObjectHandle,
     pub dict_class: ObjectHandle,
 }
 
 /// A single function-call frame.  `slots_start` is the index into
-/// [`VirtualMachine::stack`] where this frame's locals begin — it serves the
-/// same role as the `Value* slots` pointer in the C interpreter, but without
-/// raw pointers.
+/// [`VirtualMachine::stack`] where this frame's locals begin.
 pub struct CallFrame {
     pub closure: ObjectHandle,
     pub ip: usize,
@@ -37,7 +40,7 @@ macro_rules! binary_op {
         paste::paste! {{
             let rhs = $vm.pop_stack()?;
             let lhs = $vm.pop_stack()?;
-            let res = $vm.[<__ $f __>](&lhs, &rhs)?;
+            let res = $vm.[<__ $f __>](lhs, rhs)?;
             $vm.push_stack(res);
         }}
     };
@@ -47,7 +50,7 @@ macro_rules! unary_op {
     ($vm:ident, $f:ident) => {
         paste::paste! {{
             let v = $vm.pop_stack()?;
-            let res = $vm.[<__ $f __>](&v)?;
+            let res = $vm.[<__ $f __>](v)?;
             $vm.push_stack(res);
         }}
     };
@@ -62,11 +65,21 @@ impl VirtualMachine {
             globals: HashMap::new(),
             open_upvalues: vec![],
             gc_threshold: 1024 * 1026,
-            // Allocated immediately below, then methods registered in register_builtins().
-            list_class: ObjectHandle(0),
-            dict_class: ObjectHandle(0),
+            // Placeholders — allocated below.
+            nil_class: ObjectHandle::NIL,
+            int_class: ObjectHandle::NIL,
+            float_class: ObjectHandle::NIL,
+            bool_class: ObjectHandle::NIL,
+            string_class: ObjectHandle::NIL,
+            list_class: ObjectHandle::NIL,
+            dict_class: ObjectHandle::NIL,
         };
-        // Allocate the builtin class objects first so they are valid GC roots.
+        // Allocate builtin class objects first so they are valid GC roots.
+        vm.nil_class = vm.obj_heap.alloc_class("nil");
+        vm.int_class = vm.obj_heap.alloc_class("int");
+        vm.float_class = vm.obj_heap.alloc_class("float");
+        vm.bool_class = vm.obj_heap.alloc_class("bool");
+        vm.string_class = vm.obj_heap.alloc_class("string");
         vm.list_class = vm.obj_heap.alloc_class("list");
         vm.dict_class = vm.obj_heap.alloc_class("dict");
         vm.register_builtins();
@@ -130,7 +143,7 @@ impl VirtualMachine {
     pub(crate) fn interpret_function(&mut self, function: ObjectHandle) -> Result<(), InterpretError> {
         let closure = self.obj_heap.alloc_closure(function);
         self.reset();
-        self.push_stack(Value::Object(closure));
+        self.push_stack(closure);
         self.call(closure, 0).expect("can't failed in script call");
         self.run().map_err(InterpretError::Runtime)
     }
@@ -152,11 +165,11 @@ impl VirtualMachine {
         let inst = {
             let closure = self.obj_heap.get_closure(self.frame()?.closure).expect("must closure");
             let function = self.obj_heap.get_function(closure.function).expect("must function");
-            function.chunk.read_instruction(&mut ip)?
+            function.chunk.read_instruction(&mut ip, &self.obj_heap)?
         };
 
         match inst {
-            Instruction::Constant(value) => self.push_stack(value),
+            Instruction::Constant(handle) => self.push_stack(handle),
             Instruction::DefineGlobal(name) => {
                 let value = self.pop_stack()?;
                 self.globals.insert(name, value);
@@ -164,15 +177,15 @@ impl VirtualMachine {
             Instruction::GetGlobal(name) => {
                 let value = self.globals
                     .get(&name)
-                    .ok_or_else(|| ExecuteError::VariableNotFound(name.as_str().to_string()))?
-                    .clone();
+                    .copied()
+                    .ok_or_else(|| ExecuteError::VariableNotFound(name.as_str().to_string()))?;
                 self.push_stack(value);
             }
             Instruction::SetGlobal(name) => {
                 let value = self.stack
                     .last()
-                    .ok_or(ExecuteError::StackEmpty)?
-                    .clone();
+                    .copied()
+                    .ok_or(ExecuteError::StackEmpty)?;
                 self.globals.insert(name, value);
             }
             Instruction::GetLocal(slot) => {
@@ -180,8 +193,8 @@ impl VirtualMachine {
                 let index = base + slot;
                 let value = self.stack
                     .get(index)
-                    .ok_or_else(|| ExecuteError::StackIndexOutOfRange(index))?
-                    .clone();
+                    .copied()
+                    .ok_or_else(|| ExecuteError::StackIndexOutOfRange(index))?;
                 self.push_stack(value);
             }
             Instruction::SetLocal(slot) => {
@@ -189,8 +202,8 @@ impl VirtualMachine {
                 let index = base + slot;
                 let value = self.stack
                     .last()
-                    .ok_or(ExecuteError::StackEmpty)?
-                    .clone();
+                    .copied()
+                    .ok_or(ExecuteError::StackEmpty)?;
                 if index >= self.stack.len() {
                     return Err(ExecuteError::StackIndexOutOfRange(index));
                 }
@@ -207,9 +220,9 @@ impl VirtualMachine {
                 self.push_stack(result);
                 return Ok(());
             }
-            Instruction::Nil => self.push_stack(()),
-            Instruction::True => self.push_stack(true),
-            Instruction::False => self.push_stack(false),
+            Instruction::Nil => self.push_stack(ObjectHandle::NIL),
+            Instruction::True => { let h = self.obj_heap.alloc_bool(true); self.push_stack(h); }
+            Instruction::False => { let h = self.obj_heap.alloc_bool(false); self.push_stack(h); }
             Instruction::Negate => unary_op!(self, neg),
             Instruction::Not => unary_op!(self, not),
             Instruction::Add => binary_op!(self, add),
@@ -226,8 +239,8 @@ impl VirtualMachine {
                 self.pop_stack()?;
             }
             Instruction::JumpIfFalse(offset) => {
-                let value = self.peek_stack(0)?.clone();
-                if !self.__bool__(&value)? {
+                let value = self.peek_stack(0)?;
+                if !self.__bool__(value)? {
                     ip += offset;
                 }
             }
@@ -240,14 +253,13 @@ impl VirtualMachine {
 
             Instruction::Call(arg_count) => {
                 self.frame_mut()?.ip = ip;
-                let callee = self.peek_stack(arg_count)?.clone();
+                let callee = self.peek_stack(arg_count)?;
                 self.call_value(callee, arg_count)?;
                 return Ok(());
             }
 
             Instruction::Closure { function, upvalues } => {
-                let function_handle = function.as_object().expect("must object");
-                let closure_handle = self.obj_heap.alloc_closure(function_handle);
+                let closure_handle = self.obj_heap.alloc_closure(function);
                 for uv_desc in upvalues {
                     let upvalue = if uv_desc.is_local {
                         let slot = self.frame()?.slots_start + uv_desc.index;
@@ -273,8 +285,8 @@ impl VirtualMachine {
                 let upvalue_handle = closure.upvalues[slot];
                 let upvalue = self.obj_heap.get_upvalue(upvalue_handle).expect("must upvalue");
                 let value = match upvalue.location {
-                    Some(stack_slot) => self.stack[stack_slot].clone(),
-                    None => upvalue.closed.clone(),
+                    Some(stack_slot) => self.stack[stack_slot],
+                    None => upvalue.closed,
                 };
                 self.push_stack(value);
             }
@@ -284,7 +296,7 @@ impl VirtualMachine {
                 let closure = self.obj_heap.get_closure(closure_handle).expect("must closure");
                 let upvalue_handle = closure.upvalues[slot];
                 let upvalue = self.obj_heap.get_upvalue(upvalue_handle).expect("must upvalue");
-                let value = self.peek_stack(0)?.clone();
+                let value = self.peek_stack(0)?;
                 match upvalue.location {
                     Some(stack_slot) => self.stack[stack_slot] = value,
                     None => {
@@ -307,19 +319,40 @@ impl VirtualMachine {
 
             // ---- GetProperty — unified dispatch ----
             Instruction::GetProperty(field_name) => {
-                let receiver_val = self.peek_stack(0)?.clone();
-                let receiver_handle = receiver_val.as_object()?;
+                let receiver = self.peek_stack(0)?;
 
                 // Extract the class handle (and optional field value for Instance).
                 let (class_handle, field_value) = {
-                    let obj = self.obj_heap.get(receiver_handle);
+                    let obj = self.obj_heap.get(receiver);
                     match obj {
                         Object::Instance(inst) => {
-                            let val = inst.fields.get(&field_name).cloned();
+                            let val = inst.fields.get(&field_name).copied();
                             (inst.class, val)
                         }
-                        Object::List(list) => (list.class, None),
-                        Object::Dict(dict) => (dict.class, None),
+                        Object::BuiltinInstance(bi) => {
+                            let class = match &bi.data {
+                                BuiltinInstance::Nil => self.nil_class,
+                                BuiltinInstance::Bool(_) => self.bool_class,
+                                BuiltinInstance::Integer(_) => self.int_class,
+                                BuiltinInstance::Float(_) => self.float_class,
+                                BuiltinInstance::String(_) => self.string_class,
+                                BuiltinInstance::List(_) => self.list_class,
+                                BuiltinInstance::Dict(_) => self.dict_class,
+                            };
+                            (class, None)
+                        }
+                        Object::Class(c) => {
+                            // Class objects: look up method on the class itself
+                            // (static methods or the class object's own methods)
+                            if let Some(method) = c.methods.get(&field_name).copied() {
+                                let receiver = self.pop_stack()?;
+                                let bound = self.obj_heap.alloc_bound_method(receiver, method);
+                                self.push_stack(bound);
+                                self.frame_mut()?.ip = ip;
+                                return Ok(());
+                            }
+                            return Err(ExecuteError::UndefinedProperty(field_name.to_string()));
+                        }
                         _ => Err(ExecuteError::UndefinedProperty(field_name.to_string()))?,
                     }
                 }; // immutable borrow released
@@ -330,7 +363,7 @@ impl VirtualMachine {
                 } else {
                     let method = {
                         let class = self.obj_heap.get_class(class_handle)?;
-                        class.methods.get(&field_name).cloned()
+                        class.methods.get(&field_name).copied()
                             .ok_or_else(|| ExecuteError::UndefinedProperty(field_name.to_string()))?
                     };
                     let receiver = self.pop_stack()?;
@@ -340,8 +373,8 @@ impl VirtualMachine {
             }
 
             Instruction::SetProperty(field_name) => {
-                let value = self.peek_stack(0)?.clone();
-                let instance = self.peek_stack(1)?.as_object()?;
+                let value = self.peek_stack(0)?;
+                let instance = self.peek_stack(1)?;
                 let instance = self.obj_heap.get_instance_mut(instance)?;
                 instance.fields.insert(field_name, value);
 
@@ -351,8 +384,8 @@ impl VirtualMachine {
             }
 
             Instruction::Inherit => {
-                let superclass = self.peek_stack(0)?.as_object()?;
-                let subclass = self.peek_stack(1)?.as_object()?;
+                let superclass = self.peek_stack(0)?;
+                let subclass = self.peek_stack(1)?;
                 let super_methods = {
                     let sc = self.obj_heap.get_class(superclass)?;
                     sc.methods.clone()
@@ -371,24 +404,16 @@ impl VirtualMachine {
 
             // ---- Invoke — unified dispatch ----
             Instruction::Invoke(method_name, arg_count) => {
-                let receiver = self.peek_stack(arg_count)?.clone();
-                let receiver_handle = receiver.as_object()?;
+                let receiver = self.peek_stack(arg_count)?;
 
                 // Extract the class handle.
-                let class_handle = {
-                    let obj = self.obj_heap.get(receiver_handle);
-                    match obj {
-                        Object::Instance(inst) => inst.class,
-                        Object::List(list) => list.class,
-                        Object::Dict(dict) => dict.class,
-                        _ => Err(ExecuteError::UndefinedProperty(method_name.as_str().to_string()))?,
-                    }
-                };
+                let class_handle = self.get_class_handle(receiver)
+                    .ok_or_else(|| ExecuteError::UndefinedProperty(method_name.as_str().to_string()))?;
 
                 // Look up the method in the class.
                 let method = {
                     let class = self.obj_heap.get_class(class_handle)?;
-                    class.methods.get(&method_name).cloned()
+                    class.methods.get(&method_name).copied()
                         .ok_or_else(|| ExecuteError::UndefinedProperty(method_name.as_str().to_string()))?
                 };
 
@@ -408,9 +433,8 @@ impl VirtualMachine {
 
             Instruction::SuperInvoke(method_name, arg_count) => {
                 let method = {
-                    let receiver = self.peek_stack(arg_count)?.clone();
-                    let instance_handle = receiver.as_object()?;
-                    let instance = self.obj_heap.get_instance(instance_handle)?;
+                    let receiver = self.peek_stack(arg_count)?;
+                    let instance = self.obj_heap.get_instance(receiver)?;
                     let class = self.obj_heap.get_class(instance.class)?;
                     let superclass_handle = class
                         .superclass
@@ -419,7 +443,7 @@ impl VirtualMachine {
                     superclass
                         .methods
                         .get(&method_name)
-                        .cloned()
+                        .copied()
                         .ok_or_else(|| {
                             ExecuteError::UndefinedProperty(method_name.as_str().to_string())
                         })?
@@ -445,30 +469,31 @@ impl VirtualMachine {
                     items.push(self.pop_stack()?);
                 }
                 items.reverse();
-                let list = self.obj_heap.alloc_list(self.list_class, items);
+                let list = self.obj_heap.alloc_list(items);
                 self.push_stack(list);
             }
             Instruction::BuildDict(count) => {
-                let mut items = HashMap::new();
+                let mut items = vec![];
                 for _ in 0..count {
                     let val = self.pop_stack()?;
                     let key = self.pop_stack()?;
-                    items.insert(key, val);
+                    items.push((key, val));
                 }
-                let dict = self.obj_heap.alloc_dict(self.dict_class, items);
+                items.reverse();
+                let dict = self.obj_heap.alloc_dict(items);
                 self.push_stack(dict);
             }
             Instruction::IndexGet => {
                 let index = self.pop_stack()?;
                 let collection = self.pop_stack()?;
-                let result = self.__getitem__(&collection, &index)?;
+                let result = self.__getitem__(collection, index)?;
                 self.push_stack(result);
             }
             Instruction::IndexSet => {
                 let value = self.pop_stack()?;
                 let index = self.pop_stack()?;
                 let collection = self.pop_stack()?;
-                let result = self.__setitem__(&collection, &index, &value)?;
+                let result = self.__setitem__(collection, index, value)?;
                 self.push_stack(result);
             }
         }
@@ -477,12 +502,32 @@ impl VirtualMachine {
         Ok(())
     }
 
+    /// Return the class handle for a given object, or None.
+    fn get_class_handle(&self, receiver: ObjectHandle) -> Option<ObjectHandle> {
+        let obj = self.obj_heap.get(receiver);
+        match obj {
+            Object::Instance(inst) => Some(inst.class),
+            Object::BuiltinInstance(bi) => {
+                Some(match &bi.data {
+                    BuiltinInstance::Nil => self.nil_class,
+                    BuiltinInstance::Bool(_) => self.bool_class,
+                    BuiltinInstance::Integer(_) => self.int_class,
+                    BuiltinInstance::Float(_) => self.float_class,
+                    BuiltinInstance::String(_) => self.string_class,
+                    BuiltinInstance::List(_) => self.list_class,
+                    BuiltinInstance::Dict(_) => self.dict_class,
+                })
+            }
+            _ => None,
+        }
+    }
+
     /// Invoke a method on a receiver synchronously, running its bytecode
-    /// to completion and returning the result value.
-    fn invoke_method_sync(&mut self, receiver: ObjectHandle, method: ObjectHandle, extra_args: &[Value]) -> ExecuteResult<Value> {
+    /// to completion and returning the result handle.
+    fn invoke_method_sync(&mut self, receiver: ObjectHandle, method: ObjectHandle, extra_args: &[ObjectHandle]) -> ExecuteResult<ObjectHandle> {
         self.push_stack(receiver);
-        for arg in extra_args {
-            self.push_stack(arg.clone());
+        for &arg in extra_args {
+            self.push_stack(arg);
         }
         let saved_frame_count = self.frames.len();
         let total_args = 1 + extra_args.len();
@@ -501,74 +546,70 @@ impl VirtualMachine {
     }
 
     #[inline]
-    fn push_stack(&mut self, value: impl Into<Value>) {
-        self.stack.push(value.into());
+    fn push_stack(&mut self, handle: ObjectHandle) {
+        self.stack.push(handle);
     }
 
     #[inline]
-    pub fn pop_stack(&mut self) -> ExecuteResult<Value> {
+    pub fn pop_stack(&mut self) -> ExecuteResult<ObjectHandle> {
         self.stack.pop().ok_or(ExecuteError::StackEmpty)
     }
 
     #[inline]
-    pub fn peek_stack(&self, index: usize) -> ExecuteResult<&Value> {
-        self.stack.iter().rev().nth(index).ok_or(ExecuteError::StackEmpty)
+    pub fn peek_stack(&self, index: usize) -> ExecuteResult<ObjectHandle> {
+        self.stack.iter().rev().nth(index).copied().ok_or(ExecuteError::StackEmpty)
     }
 
-    fn call_value(&mut self, callee: Value, arg_count: usize) -> ExecuteResult<()> {
-        if let Value::Object(handle) = callee {
-            let obj = self.obj_heap.get(handle);
-            match obj {
-                Object::Closure(_) => self.call(handle, arg_count),
-                Object::Class(_) => {
-                    let init_method = {
-                        let class = self.obj_heap.get_class(handle)?;
-                        class.methods.get("__init__").cloned()
-                    };
-                    let instance = self.obj_heap.alloc_instance(handle);
-                    let index = self.stack.len() - arg_count - 1;
-                    self.stack[index] = Value::Object(instance);
-                    if let Some(method) = init_method {
-                        match method {
-                            Method::User(closure_handle) => {
-                                self.call_method(closure_handle, arg_count + 1)
-                            }
-                            Method::Builtin(_) => {
-                                unreachable!("__init__ on builtin classes is not supported")
-                            }
+    fn call_value(&mut self, callee: ObjectHandle, arg_count: usize) -> ExecuteResult<()> {
+        let obj = self.obj_heap.get(callee);
+        match obj {
+            Object::Closure(_) => self.call(callee, arg_count),
+            Object::Class(_) => {
+                let init_method = {
+                    let class = self.obj_heap.get_class(callee)?;
+                    class.methods.get("__init__").copied()
+                };
+                let instance = self.obj_heap.alloc_instance(callee);
+                let index = self.stack.len() - arg_count - 1;
+                self.stack[index] = instance;
+                if let Some(method) = init_method {
+                    match method {
+                        Method::User(closure_handle) => {
+                            self.call_method(closure_handle, arg_count + 1)
                         }
-                    } else if arg_count != 0 {
-                        Err(ExecuteError::ArgmentCountUnmatch { expcted: 0, got: arg_count })?;
-                        unreachable!()
-                    } else {
+                        Method::Builtin(_) => {
+                            unreachable!("__init__ on builtin classes is not supported")
+                        }
+                    }
+                } else if arg_count != 0 {
+                    Err(ExecuteError::ArgmentCountUnmatch { expcted: 0, got: arg_count })?;
+                    unreachable!()
+                } else {
+                    Ok(())
+                }
+            }
+            Object::BoundMethod(bound_method) => {
+                let index = self.stack.len() - arg_count - 1;
+                self.stack[index] = bound_method.receiver;
+                match &bound_method.method {
+                    Method::User(closure_handle) => {
+                        self.call_method(*closure_handle, arg_count + 1)
+                    }
+                    Method::Builtin(builtin_fn) => {
+                        let result = (*builtin_fn)(self, arg_count + 1)?;
+                        self.stack.truncate(self.stack.len() - arg_count - 1);
+                        self.push_stack(result);
                         Ok(())
                     }
                 }
-                Object::BoundMethod(bound_method) => {
-                    let index = self.stack.len() - arg_count - 1;
-                    self.stack[index] = bound_method.receiver.clone();
-                    match &bound_method.method {
-                        Method::User(closure_handle) => {
-                            self.call_method(*closure_handle, arg_count + 1)
-                        }
-                        Method::Builtin(builtin_fn) => {
-                            let result = (*builtin_fn)(self, arg_count + 1)?;
-                            self.stack.truncate(self.stack.len() - arg_count - 1);
-                            self.push_stack(result);
-                            Ok(())
-                        }
-                    }
-                }
-                Object::BuiltinFn(builtin_fn) => {
-                    let result = (builtin_fn.function)(self, arg_count)?;
-                    self.stack.truncate(self.stack.len() - arg_count - 1);
-                    self.push_stack(result);
-                    Ok(())
-                }
-                _ => Err(ExecuteError::CanNotCall(callee.type_name()))
             }
-        } else {
-            Err(ExecuteError::CanNotCall(callee.type_name()))
+            Object::BuiltinFn(builtin_fn) => {
+                let result = (builtin_fn.function)(self, arg_count)?;
+                self.stack.truncate(self.stack.len() - arg_count - 1);
+                self.push_stack(result);
+                Ok(())
+            }
+            _ => Err(ExecuteError::CanNotCall(self.value_type_name(callee)))
         }
     }
 
@@ -600,12 +641,12 @@ impl VirtualMachine {
 
     fn define_builtin_fn(&mut self, name: &'static str, function: BuiltinFn) {
         let function = self.obj_heap.alloc_builtin_fn(name, function);
-        self.globals.insert(name.into(), Value::Object(function));
+        self.globals.insert(name.into(), function);
     }
 
     fn define_method(&mut self, name: ShrString) -> ExecuteResult<()> {
-        let method_handle = self.peek_stack(0)?.as_object()?;
-        let class_handle = self.peek_stack(1)?.as_object()?;
+        let method_handle = self.peek_stack(0)?;
+        let class_handle = self.peek_stack(1)?;
         let class = self.obj_heap.get_class_mut(class_handle)?;
         class.methods.insert(name, Method::User(method_handle));
         self.pop_stack()?;
@@ -645,7 +686,7 @@ impl VirtualMachine {
                 break;
             }
             let location = uv.location.expect("open upvalue must have location");
-            let value = self.stack[location].clone();
+            let value = self.stack[location];
             let uv_mut = self.obj_heap.get_upvalue_mut(handle).expect("must upvalue");
             uv_mut.closed = value;
             uv_mut.location = None;

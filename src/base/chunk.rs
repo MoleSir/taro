@@ -1,4 +1,4 @@
-use super::{ByteCode, Instruction, ShrString, Value};
+use super::{ByteCode, BuiltinInstance, Instruction, Object, ObjectHandle, ObjectHeap, ShrString};
 
 // ========================================================================== //
 //  ChunkError
@@ -11,10 +11,10 @@ pub enum ChunkError {
 
     #[error("constant index {0} out of range {1}")]
     ConstantOutOfRange(usize, usize),
-    
+
     #[error("invalid bytecode {0}")]
     InvalidByteCode(u8),
-    
+
     #[error("expected string constant")]
     ExpectedStringConstant,
 }
@@ -31,7 +31,7 @@ pub enum ChunkError {
 /// worry about encoding / decoding.
 pub struct Chunk {
     pub codes: Vec<u8>,
-    pub constants: Vec<Value>,
+    pub constants: Vec<ObjectHandle>,
 }
 
 impl Chunk {
@@ -51,7 +51,8 @@ impl Default for Chunk {
 
 impl Chunk {
     /// Encode and append a single instruction to this chunk.
-    pub fn write_instruction(&mut self, inst: Instruction) {
+    /// `heap` is needed to allocate string constants into the constant pool.
+    pub fn write_instruction(&mut self, inst: Instruction, heap: &mut ObjectHeap) {
         match inst {
             // simple opcodes
             Instruction::Return => self.write_op(ByteCode::Return),
@@ -73,20 +74,23 @@ impl Chunk {
             Instruction::LessEqual => self.write_op(ByteCode::LessEqual),
             Instruction::Inherit => self.write_op(ByteCode::Inherit),
 
-            // constant 
-            Instruction::Constant(value) => {
-                self.write_const_op(ByteCode::Constant, value);
+            // constant
+            Instruction::Constant(handle) => {
+                self.write_const_op(ByteCode::Constant, handle);
             }
 
-            // globals
+            // globals — store string handle in constant pool
             Instruction::DefineGlobal(name) => {
-                self.write_const_op(ByteCode::DefineGlobal, Value::String(name));
+                let handle = heap.alloc_string(name);
+                self.write_const_op(ByteCode::DefineGlobal, handle);
             }
             Instruction::GetGlobal(name) => {
-                self.write_const_op(ByteCode::GetGlobal, Value::String(name));
+                let handle = heap.alloc_string(name);
+                self.write_const_op(ByteCode::GetGlobal, handle);
             }
             Instruction::SetGlobal(name) => {
-                self.write_const_op(ByteCode::SetGlobal, Value::String(name));
+                let handle = heap.alloc_string(name);
+                self.write_const_op(ByteCode::SetGlobal, handle);
             }
 
             // locals — 1-byte stack-slot index
@@ -100,7 +104,7 @@ impl Chunk {
                 self.write_op(ByteCode::SetLocal);
                 self.write_u16(index as u16);
             }
-        
+
             Instruction::JumpIfFalse(offset) => {
                 assert!(offset <= u16::MAX as usize, "Too much code to jump over.");
                 self.write_op(ByteCode::JumpIfFalse);
@@ -116,7 +120,7 @@ impl Chunk {
                 self.write_op(ByteCode::Loop);
                 self.write_u16(offset as u16);
             }
-        
+
             Instruction::Call(arg_count) => {
                 assert!(arg_count <= 256, "Too much args.");
                 self.write_op(ByteCode::Call);
@@ -147,23 +151,29 @@ impl Chunk {
             }
 
             Instruction::Class(class_name) => {
-                self.write_const_op(ByteCode::Class, Value::String(class_name));
+                let handle = heap.alloc_string(class_name);
+                self.write_const_op(ByteCode::Class, handle);
             }
             Instruction::SetProperty(class_name) => {
-                self.write_const_op(ByteCode::SetProperty, Value::String(class_name));
+                let handle = heap.alloc_string(class_name);
+                self.write_const_op(ByteCode::SetProperty, handle);
             }
             Instruction::GetProperty(class_name) => {
-                self.write_const_op(ByteCode::GetProperty, Value::String(class_name));
+                let handle = heap.alloc_string(class_name);
+                self.write_const_op(ByteCode::GetProperty, handle);
             }
             Instruction::Method(method_name) => {
-                self.write_const_op(ByteCode::Method, Value::String(method_name));
+                let handle = heap.alloc_string(method_name);
+                self.write_const_op(ByteCode::Method, handle);
             }
             Instruction::Invoke(method_name, arg_count) => {
-                self.write_const_op(ByteCode::Invoke, Value::String(method_name));
+                let handle = heap.alloc_string(method_name);
+                self.write_const_op(ByteCode::Invoke, handle);
                 self.write_byte(arg_count as u8);
             }
             Instruction::SuperInvoke(method_name, arg_count) => {
-                self.write_const_op(ByteCode::SuperInvoke, Value::String(method_name));
+                let handle = heap.alloc_string(method_name);
+                self.write_const_op(ByteCode::SuperInvoke, handle);
                 self.write_byte(arg_count as u8);
             }
 
@@ -187,7 +197,8 @@ impl Chunk {
     }
 
     /// Decode the instruction at the given bytecode pointer, advancing `ip`.
-    pub fn read_instruction(&self, ip: &mut usize) -> Result<Instruction, ChunkError> {
+    /// `heap` is needed to dereference string constants.
+    pub fn read_instruction(&self, ip: &mut usize, heap: &ObjectHeap) -> Result<Instruction, ChunkError> {
         let byte = self.read_byte(ip)?;
         let opcode = ByteCode::try_from(byte)
             .map_err(|_| ChunkError::InvalidByteCode(byte))?;
@@ -217,15 +228,15 @@ impl Chunk {
                 Ok(Instruction::Constant(value))
             }
             ByteCode::DefineGlobal => {
-                let name = self.read_string_constant(ip)?;
+                let name = self.read_string_constant(ip, heap)?;
                 Ok(Instruction::DefineGlobal(name))
             }
             ByteCode::GetGlobal => {
-                let name = self.read_string_constant(ip)?;
+                let name = self.read_string_constant(ip, heap)?;
                 Ok(Instruction::GetGlobal(name))
             }
             ByteCode::SetGlobal => {
-                let name = self.read_string_constant(ip)?;
+                let name = self.read_string_constant(ip, heap)?;
                 Ok(Instruction::SetGlobal(name))
             }
 
@@ -250,7 +261,7 @@ impl Chunk {
                 let index = self.read_u16(ip)?;
                 Ok(Instruction::Loop(index as usize))
             }
-            
+
             ByteCode::Call => {
                 let arg_count = self.read_byte(ip)?;
                 Ok(Instruction::Call(arg_count as usize))
@@ -281,28 +292,28 @@ impl Chunk {
             }
 
             ByteCode::Class => {
-                let name = self.read_string_constant(ip)?;
+                let name = self.read_string_constant(ip, heap)?;
                 Ok(Instruction::Class(name))
             }
             ByteCode::GetProperty => {
-                let field_name = self.read_string_constant(ip)?;
+                let field_name = self.read_string_constant(ip, heap)?;
                 Ok(Instruction::GetProperty(field_name))
             }
             ByteCode::SetProperty => {
-                let field_name = self.read_string_constant(ip)?;
+                let field_name = self.read_string_constant(ip, heap)?;
                 Ok(Instruction::SetProperty(field_name))
             }
             ByteCode::Method => {
-                let method_name = self.read_string_constant(ip)?;
+                let method_name = self.read_string_constant(ip, heap)?;
                 Ok(Instruction::Method(method_name))
             }
             ByteCode::Invoke => {
-                let method_name = self.read_string_constant(ip)?;
+                let method_name = self.read_string_constant(ip, heap)?;
                 let arg_count = self.read_byte(ip)? as usize;
                 Ok(Instruction::Invoke(method_name, arg_count))
             }
             ByteCode::SuperInvoke => {
-                let method_name = self.read_string_constant(ip)?;
+                let method_name = self.read_string_constant(ip, heap)?;
                 let arg_count = self.read_byte(ip)? as usize;
                 Ok(Instruction::SuperInvoke(method_name, arg_count))
             }
@@ -325,8 +336,8 @@ impl Chunk {
     }
 
     /// Write an opcode followed by a 2-byte LE constant-pool index.
-    fn write_const_op(&mut self, opcode: ByteCode, value: Value) {
-        let index = self.add_constant(value);
+    fn write_const_op(&mut self, opcode: ByteCode, handle: ObjectHandle) {
+        let index = self.add_constant(handle);
         assert!(index <= u16::MAX as usize, "Too many constants in one chunk!");
         self.write_op(opcode);
         self.write_u16(index as u16);
@@ -342,8 +353,8 @@ impl Chunk {
         self.codes.push(value);
     }
 
-    fn add_constant(&mut self, value: Value) -> usize {
-        self.constants.push(value);
+    fn add_constant(&mut self, handle: ObjectHandle) -> usize {
+        self.constants.push(handle);
         self.constants.len() - 1
     }
 
@@ -363,17 +374,21 @@ impl Chunk {
         Ok(u16::from_le_bytes([b1, b2]))
     }
 
-    fn read_constant(&self, ip: &mut usize) -> Result<Value, ChunkError> {
+    fn read_constant(&self, ip: &mut usize) -> Result<ObjectHandle, ChunkError> {
         let index = self.read_u16(ip)? as usize;
         self.constants
             .get(index)
-            .cloned()
+            .copied()
             .ok_or(ChunkError::ConstantOutOfRange(index, self.constants.len()))
     }
 
-    fn read_string_constant(&self, ip: &mut usize) -> Result<ShrString, ChunkError> {
-        match self.read_constant(ip)? {
-            Value::String(s) => Ok(s),
+    fn read_string_constant(&self, ip: &mut usize, heap: &ObjectHeap) -> Result<ShrString, ChunkError> {
+        let handle = self.read_constant(ip)?;
+        match heap.get(handle) {
+            Object::BuiltinInstance(bi) => match &bi.data {
+                BuiltinInstance::String(s) => Ok(s.clone()),
+                _ => Err(ChunkError::ExpectedStringConstant),
+            },
             _ => Err(ChunkError::ExpectedStringConstant),
         }
     }

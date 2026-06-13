@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::{vm::{ExecuteResult, VirtualMachine}, Chunk, ShrString, Value};
+use crate::{vm::{ExecuteResult, VirtualMachine}, ShrString};
 use super::ObjectHandle;
 
 // ========================================================================== //
@@ -16,6 +16,37 @@ pub enum Method {
     Builtin(BuiltinFn),
 }
 
+// ========================================================================== //
+//                    BuiltinInstance
+// ========================================================================== //
+
+/// Inline data for all builtin / primitive types.
+#[derive(Debug, Clone)]
+pub enum BuiltinInstance {
+    Nil,
+    Bool(bool),
+    Integer(i64),
+    Float(f64),
+    String(ShrString),
+    List(Vec<ObjectHandle>),
+    /// Dict uses linear search (identity handles differ for equal values).
+    Dict(Vec<(ObjectHandle, ObjectHandle)>),
+}
+
+pub struct ObjectBuiltinInstance {
+    pub data: BuiltinInstance,
+}
+
+impl ObjectBuiltinInstance {
+    pub fn new(data: BuiltinInstance) -> Self {
+        Self { data }
+    }
+}
+
+// ========================================================================== //
+//                    Function, BuiltinFn, Upvalue
+// ========================================================================== //
+
 pub struct ObjectFunction {
     pub arity: usize,
     pub chunk: Chunk,
@@ -28,7 +59,7 @@ impl ObjectFunction {
     }
 }
 
-pub type BuiltinFn = fn (&mut VirtualMachine, arg_count: usize) -> ExecuteResult<Value>;
+pub type BuiltinFn = fn (&mut VirtualMachine, arg_count: usize) -> ExecuteResult<ObjectHandle>;
 
 pub struct ObjectBuiltinFn {
     pub name: &'static str,
@@ -47,12 +78,16 @@ pub struct ObjectUpvalue {
     /// scope and the upvalue is "closed" — the value has been moved into
     /// `closed`.
     pub location: Option<usize>,
-    pub closed: Value,
+    pub closed: ObjectHandle,
     /// Intrusive linked list: the next open upvalue that refers to the same
     /// stack slot (or to a slot below this one).  Used by the VM to find all
     /// upvalues that need to be closed when a local goes out of scope.
     pub next: Option<ObjectHandle>,
 }
+
+// ========================================================================== //
+//                    Class, Instance
+// ========================================================================== //
 
 pub struct ObjectClass {
     pub name: ShrString,
@@ -72,7 +107,7 @@ impl ObjectClass {
 
 pub struct ObjectInstance {
     pub class: ObjectHandle,
-    pub fields: HashMap<ShrString, Value>,
+    pub fields: HashMap<ShrString, ObjectHandle>,
 }
 
 impl ObjectInstance {
@@ -83,6 +118,10 @@ impl ObjectInstance {
         }
     }
 }
+
+// ========================================================================== //
+//                    Closure
+// ========================================================================== //
 
 pub struct ObjectClosure {
     pub function: ObjectHandle,
@@ -98,37 +137,20 @@ impl ObjectClosure {
     }
 }
 
+// ========================================================================== //
+//                    BoundMethod
+// ========================================================================== //
+
 pub struct ObjectBoundMethod {
-    pub receiver: Value,
+    pub receiver: ObjectHandle,
     pub method: Method,
 }
 
 impl ObjectBoundMethod {
-    pub fn new(receiver: Value, method: Method) -> Self {
+    pub fn new(receiver: ObjectHandle, method: Method) -> Self {
         Self { receiver, method }
     }
 }
 
-pub struct ObjectList {
-    /// The builtin `list` class (for method dispatch).
-    pub class: ObjectHandle,
-    pub items: Vec<Value>,
-}
-
-impl ObjectList {
-    pub fn new(class: ObjectHandle, items: Vec<Value>) -> Self {
-        Self { class, items }
-    }
-}
-
-pub struct ObjectDict {
-    /// The builtin `dict` class (for method dispatch).
-    pub class: ObjectHandle,
-    pub items: HashMap<Value, Value>,
-}
-
-impl ObjectDict {
-    pub fn new(class: ObjectHandle, items: HashMap<Value, Value>) -> Self {
-        Self { class, items }
-    }
-}
+// Re-export Chunk for use in ObjectFunction.
+use crate::Chunk;
