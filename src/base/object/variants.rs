@@ -17,33 +17,6 @@ pub enum Method {
 }
 
 // ========================================================================== //
-//                    BuiltinInstance
-// ========================================================================== //
-
-/// Inline data for all builtin / primitive types.
-#[derive(Debug, Clone)]
-pub enum BuiltinInstance {
-    Nil,
-    Bool(bool),
-    Integer(i64),
-    Float(f64),
-    String(ShrString),
-    List(Vec<ObjectHandle>),
-    /// Dict uses linear search (identity handles differ for equal values).
-    Dict(Vec<(ObjectHandle, ObjectHandle)>),
-}
-
-pub struct ObjectBuiltinInstance {
-    pub data: BuiltinInstance,
-}
-
-impl ObjectBuiltinInstance {
-    pub fn new(data: BuiltinInstance) -> Self {
-        Self { data }
-    }
-}
-
-// ========================================================================== //
 //                    Function, BuiltinFn, Upvalue
 // ========================================================================== //
 
@@ -105,16 +78,27 @@ impl ObjectClass {
     }
 }
 
+pub enum ObjectInstanceData {
+    Nil,
+    Bool(bool),
+    Integer(i64),
+    Float(f64),
+    String(ShrString),
+    List(Vec<ObjectHandle>),
+    Dict(Vec<(ObjectHandle, ObjectHandle)>),
+    Fields(HashMap<ShrString, ObjectHandle>),
+}
+
 pub struct ObjectInstance {
     pub class: ObjectHandle,
-    pub fields: HashMap<ShrString, ObjectHandle>,
+    pub data: ObjectInstanceData,
 }
 
 impl ObjectInstance {
-    pub fn new(class: ObjectHandle) -> Self {
+    pub fn new(class: ObjectHandle, data: ObjectInstanceData) -> Self {
         Self {
             class,
-            fields: HashMap::new(),
+            data,
         }
     }
 }

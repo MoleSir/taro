@@ -1,4 +1,4 @@
-use super::{ByteCode, BuiltinInstance, Instruction, Object, ObjectHandle, ObjectHeap, ShrString};
+use super::{ByteCode, Instruction, Object, ObjectHandle, ObjectHeap, ObjectInstanceData, ShrString};
 
 // ========================================================================== //
 //  ChunkError
@@ -384,12 +384,11 @@ impl Chunk {
 
     fn read_string_constant(&self, ip: &mut usize, heap: &ObjectHeap) -> Result<ShrString, ChunkError> {
         let handle = self.read_constant(ip)?;
-        match heap.get(handle) {
-            Object::BuiltinInstance(bi) => match &bi.data {
-                BuiltinInstance::String(s) => Ok(s.clone()),
-                _ => Err(ChunkError::ExpectedStringConstant),
-            },
-            _ => Err(ChunkError::ExpectedStringConstant),
-        }
+        if let Object::Instance(instance) = heap.get(handle) {
+            if let ObjectInstanceData::String(s) = &instance.data {
+                return Ok(s.clone());
+            }
+        } 
+        Err(ChunkError::ExpectedStringConstant)
     }
 }

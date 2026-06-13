@@ -1,4 +1,4 @@
-use crate::{BuiltinInstance, Chunk, Instruction, ObjectHeap};
+use crate::{Chunk, Instruction, ObjectHandle, ObjectHeap};
 use super::VirtualMachine;
 
 /// Build a chunk and run it: creates VM first, then calls `build` with VM's heap.
@@ -12,32 +12,23 @@ fn run_chunk(build: impl FnOnce(&mut Chunk, &mut ObjectHeap)) -> VirtualMachine 
     vm
 }
 
-/// Helper: get integer value from a BuiltinInstance handle.
-fn get_int(vm: &VirtualMachine, handle: crate::ObjectHandle) -> i64 {
-    match &vm.obj_heap.get_builtin_instance(handle).unwrap().data {
-        BuiltinInstance::Integer(v) => *v,
-        _ => panic!("expected integer"),
-    }
+/// Helper: get integer value from an instance handle.
+fn get_int(vm: &VirtualMachine, handle: ObjectHandle) -> i64 {
+    *vm.obj_heap.get_integer_instance(handle)
 }
 
 /// Helper: get float value.
-fn get_float(vm: &VirtualMachine, handle: crate::ObjectHandle) -> f64 {
-    match &vm.obj_heap.get_builtin_instance(handle).unwrap().data {
-        BuiltinInstance::Float(v) => *v,
-        _ => panic!("expected float"),
-    }
+fn get_float(vm: &VirtualMachine, handle: ObjectHandle) -> f64 {
+    *vm.obj_heap.get_float_instance(handle)
 }
 
 /// Helper: get bool value.
-fn get_bool(vm: &VirtualMachine, handle: crate::ObjectHandle) -> bool {
-    match &vm.obj_heap.get_builtin_instance(handle).unwrap().data {
-        BuiltinInstance::Bool(v) => *v,
-        _ => panic!("expected bool"),
-    }
+fn get_bool(vm: &VirtualMachine, handle: ObjectHandle) -> bool {
+    *vm.obj_heap.get_bool_instance(handle)
 }
 
 /// Helper: check nil.
-fn is_nil(handle: crate::ObjectHandle) -> bool { handle.is_nil() }
+fn is_nil(handle: ObjectHandle) -> bool { handle.is_nil() }
 
 #[test]
 pub fn test_base_arith() {
@@ -163,10 +154,7 @@ pub fn test_string_concat() {
         c.write_instruction(Instruction::Return, h);
     });
     let r = vm.pop_stack().unwrap();
-    match &vm.obj_heap.get_builtin_instance(r).unwrap().data {
-        BuiltinInstance::String(s) => assert_eq!(s.as_str(), "hello world"),
-        _ => panic!(),
-    }
+    assert_eq!(vm.obj_heap.get_string_instance(r).as_str(), "hello world");
 }
 
 #[test]
@@ -243,10 +231,8 @@ pub fn test_build_list() {
         c.write_instruction(Instruction::BuildList(3), h);
         c.write_instruction(Instruction::Return, h);
     });
-    match &{let r=vm.pop_stack().unwrap(); vm.obj_heap.get_builtin_instance(r)}.unwrap().data {
-        BuiltinInstance::List(items) => assert_eq!(items.len(), 3),
-        _ => panic!(),
-    }
+    let r = vm.pop_stack().unwrap();
+    assert_eq!(vm.obj_heap.get_list_instance(r).len(), 3);
 }
 
 #[test]
@@ -297,10 +283,8 @@ pub fn test_build_dict() {
         c.write_instruction(Instruction::BuildDict(2), h);
         c.write_instruction(Instruction::Return, h);
     });
-    match &{let r=vm.pop_stack().unwrap(); vm.obj_heap.get_builtin_instance(r)}.unwrap().data {
-        BuiltinInstance::Dict(e) => assert_eq!(e.len(), 2),
-        _ => panic!(),
-    }
+    let r = vm.pop_stack().unwrap();
+    assert_eq!(vm.obj_heap.get_dict_instance(r).len(), 2);
 }
 
 #[test]
@@ -355,10 +339,8 @@ pub fn test_dict_keys_method() {
         c.write_instruction(Instruction::Invoke("keys".into(), 0), h);
         c.write_instruction(Instruction::Return, h);
     });
-    match &{let r=vm.pop_stack().unwrap(); vm.obj_heap.get_builtin_instance(r)}.unwrap().data {
-        BuiltinInstance::List(items) => assert_eq!(items.len(), 1),
-        _ => panic!(),
-    }
+    let r = vm.pop_stack().unwrap();
+    assert_eq!(vm.obj_heap.get_list_instance(r).len(), 1);
 }
 
 #[test]

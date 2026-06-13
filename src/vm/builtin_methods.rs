@@ -1,4 +1,4 @@
-use crate::{BuiltinInstance, ObjectHandle};
+use crate::{ObjectInstanceData, ObjectHandle};
 use super::{ExecuteError, ExecuteResult, VirtualMachine};
 
 // ========================================================================== //
@@ -28,9 +28,9 @@ impl VirtualMachine {
         let args = top_args(self, arg_count);
         let receiver = args[0];
         let value = args[1];
-        let bi = self.obj_heap.get_builtin_instance_mut(receiver)?;
+        let bi = self.obj_heap.get_instance_mut(receiver)?;
         match &mut bi.data {
-            BuiltinInstance::List(items) => {
+            ObjectInstanceData::List(items) => {
                 items.push(value);
                 Ok(value)
             }
@@ -46,9 +46,9 @@ impl VirtualMachine {
         }
         let args = top_args(self, arg_count);
         let receiver = args[0];
-        let bi = self.obj_heap.get_builtin_instance_mut(receiver)?;
+        let bi = self.obj_heap.get_instance_mut(receiver)?;
         match &mut bi.data {
-            BuiltinInstance::List(items) => {
+            ObjectInstanceData::List(items) => {
                 items.pop().ok_or(ExecuteError::EmptyPop)
             }
             _ => Err(ExecuteError::UnexpectType("list", self.value_type_name(receiver))),
@@ -64,15 +64,15 @@ impl VirtualMachine {
         let receiver = args[0];
         let other = args[1];
         let other_items = {
-            let other_bi = self.obj_heap.get_builtin_instance(other)?;
+            let other_bi = self.obj_heap.get_instance_mut(other)?;
             match &other_bi.data {
-                BuiltinInstance::List(items) => items.clone(),
+                ObjectInstanceData::List(items) => items.clone(),
                 _ => return Err(ExecuteError::UnexpectType("list", self.value_type_name(other))),
             }
         };
-        let bi = self.obj_heap.get_builtin_instance_mut(receiver)?;
+        let bi = self.obj_heap.get_instance_mut(receiver)?;
         match &mut bi.data {
-            BuiltinInstance::List(items) => {
+            ObjectInstanceData::List(items) => {
                 items.extend(other_items);
                 Ok(ObjectHandle::NIL)
             }
@@ -95,9 +95,9 @@ impl VirtualMachine {
         let receiver = args[0];
         let key = args[1];
         let entries = {
-            let bi = self.obj_heap.get_builtin_instance(receiver)?;
+            let bi = self.obj_heap.get_instance_mut(receiver)?;
             match &bi.data {
-                BuiltinInstance::Dict(entries) => entries.clone(),
+                ObjectInstanceData::Dict(entries) => entries.clone(),
                 _ => return Err(ExecuteError::UnexpectType("dict", self.value_type_name(receiver))),
             }
         };
@@ -118,9 +118,9 @@ impl VirtualMachine {
         let args = top_args(self, arg_count);
         let receiver = args[0];
         let keys: Vec<ObjectHandle> = {
-            let bi = self.obj_heap.get_builtin_instance(receiver)?;
+            let bi = self.obj_heap.get_instance_mut(receiver)?;
             match &bi.data {
-                BuiltinInstance::Dict(entries) => entries.iter().map(|&(k, _)| k).collect(),
+                ObjectInstanceData::Dict(entries) => entries.iter().map(|&(k, _)| k).collect(),
                 _ => return Err(ExecuteError::UnexpectType("dict", self.value_type_name(receiver))),
             }
         };
@@ -135,9 +135,9 @@ impl VirtualMachine {
         let args = top_args(self, arg_count);
         let receiver = args[0];
         let values: Vec<ObjectHandle> = {
-            let bi = self.obj_heap.get_builtin_instance(receiver)?;
+            let bi = self.obj_heap.get_instance_mut(receiver)?;
             match &bi.data {
-                BuiltinInstance::Dict(entries) => entries.iter().map(|&(_, v)| v).collect(),
+                ObjectInstanceData::Dict(entries) => entries.iter().map(|&(_, v)| v).collect(),
                 _ => return Err(ExecuteError::UnexpectType("dict", self.value_type_name(receiver))),
             }
         };
@@ -155,9 +155,9 @@ impl VirtualMachine {
 
         // Clone entries, find key, remove, write back.
         let entries = {
-            let bi = self.obj_heap.get_builtin_instance(receiver)?;
+            let bi = self.obj_heap.get_instance_mut(receiver)?;
             match &bi.data {
-                BuiltinInstance::Dict(entries) => entries.clone(),
+                ObjectInstanceData::Dict(entries) => entries.clone(),
                 _ => return Err(ExecuteError::UnexpectType("dict", self.value_type_name(receiver))),
             }
         };
@@ -172,9 +172,9 @@ impl VirtualMachine {
         match pos {
             Some(idx) => {
                 let removed = entries[idx].1;
-                let bi_mut = self.obj_heap.get_builtin_instance_mut(receiver)?;
+                let bi_mut = self.obj_heap.get_instance_mut(receiver)?;
                 match &mut bi_mut.data {
-                    BuiltinInstance::Dict(e) => {
+                    ObjectInstanceData::Dict(e) => {
                         e.remove(idx);
                     }
                     _ => unreachable!(),

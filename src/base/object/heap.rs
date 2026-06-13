@@ -1,12 +1,11 @@
-use std::collections::HashMap;
-use std::sync::LazyLock;
+use std::{collections::HashMap, sync::LazyLock};
 
 use crate::{Chunk, ShrString};
-use super::{BuiltinFn, BuiltinInstance, Method, Object, ObjectBoundMethod, ObjectBuiltinFn, ObjectBuiltinInstance, ObjectClass, ObjectClosure, ObjectError, ObjectFunction, ObjectInstance, ObjectUpvalue};
+use super::{BuiltinFn, Method, Object, ObjectBoundMethod, ObjectBuiltinFn, ObjectClass, ObjectClosure, ObjectError, ObjectFunction, ObjectInstance, ObjectInstanceData, ObjectUpvalue};
 
 /// Static nil object — backing for `ObjectHandle::NIL`.
 static NIL_OBJECT: LazyLock<Object> = LazyLock::new(|| {
-    Object::BuiltinInstance(ObjectBuiltinInstance::new(BuiltinInstance::Nil))
+    Object::Instance(ObjectInstance::new(ObjectHandle::NIL, ObjectInstanceData::Nil))
 });
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
@@ -30,6 +29,15 @@ pub struct ObjectHeap {
     int_cache: HashMap<i64, ObjectHandle>,
     /// String-object handle cache keyed by ShrString.
     string_cache: HashMap<ShrString, ObjectHandle>,
+
+    /// builtin class
+    pub nil_class: ObjectHandle,
+    pub int_class: ObjectHandle,
+    pub float_class: ObjectHandle,
+    pub bool_class: ObjectHandle,
+    pub string_class: ObjectHandle,
+    pub list_class: ObjectHandle,
+    pub dict_class: ObjectHandle,
 }
 
 impl ObjectHeap {
@@ -37,7 +45,8 @@ impl ObjectHeap {
         // Slot 0 is reserved for nil sentinel.
         let objects = vec![None];
         let marked = vec![false];
-        Self {
+        
+        let mut heap = Self {
             objects,
             marked,
             free_slots: Vec::new(),
@@ -45,7 +54,24 @@ impl ObjectHeap {
             bytes_allocated: 0,
             int_cache: HashMap::new(),
             string_cache: HashMap::new(),
-        }
+            nil_class: ObjectHandle::NIL,
+            int_class: ObjectHandle::NIL,
+            float_class: ObjectHandle::NIL,
+            bool_class: ObjectHandle::NIL,
+            string_class: ObjectHandle::NIL,
+            list_class: ObjectHandle::NIL,
+            dict_class: ObjectHandle::NIL,
+        };
+
+        heap.nil_class = heap.alloc_class("nil");
+        heap.int_class = heap.alloc_class("int");
+        heap.float_class = heap.alloc_class("float");
+        heap.bool_class = heap.alloc_class("bool");
+        heap.string_class = heap.alloc_class("string");
+        heap.list_class = heap.alloc_class("list");
+        heap.dict_class = heap.alloc_class("dict");
+
+        heap
     }
 }
 
@@ -79,8 +105,8 @@ impl ObjectHeap {
         self.alloc(obj)
     }
 
-    pub fn alloc_instance(&mut self, class: ObjectHandle) -> ObjectHandle {
-        let obj = ObjectInstance::new(class);
+    pub fn alloc_instance(&mut self, class: ObjectHandle, data: ObjectInstanceData) -> ObjectHandle {
+        let obj = ObjectInstance::new(class, data);
         self.alloc(obj)
     }
 
@@ -89,16 +115,14 @@ impl ObjectHeap {
         self.alloc(obj)
     }
 
-    // ---- BuiltinInstance allocators ----
-
-    /// Allocate a builtin instance with the given data.
-    pub fn alloc_builtin_instance(&mut self, data: BuiltinInstance) -> ObjectHandle {
-        let obj = ObjectBuiltinInstance::new(data);
-        self.alloc(obj)
+    #[inline]
+    pub fn alloc_fields_instance(&mut self, class: ObjectHandle) -> ObjectHandle {
+        self.alloc_instance(class, ObjectInstanceData::Fields(Default::default()))
     }
 
+    #[inline]
     pub fn alloc_bool(&mut self, v: bool) -> ObjectHandle {
-        self.alloc_builtin_instance(BuiltinInstance::Bool(v))
+        self.alloc_instance(self.bool_class, ObjectInstanceData::Bool(v))
     }
 
     pub fn alloc_integer(&mut self, v: i64) -> ObjectHandle {
@@ -107,33 +131,35 @@ impl ObjectHeap {
             if let Some(&handle) = self.int_cache.get(&v) {
                 return handle;
             }
-            let handle = self.alloc_builtin_instance(BuiltinInstance::Integer(v));
+            let handle = self.alloc_instance(self.int_class, ObjectInstanceData::Integer(v));
             self.int_cache.insert(v, handle);
             return handle;
         }
-        self.alloc_builtin_instance(BuiltinInstance::Integer(v))
+        self.alloc_instance(self.int_class, ObjectInstanceData::Integer(v))
     }
 
+    #[inline]
     pub fn alloc_float(&mut self, v: f64) -> ObjectHandle {
-        self.alloc_builtin_instance(BuiltinInstance::Float(v))
+        self.alloc_instance(self.float_class, ObjectInstanceData::Float(v))
     }
 
     pub fn alloc_string(&mut self, s: ShrString) -> ObjectHandle {
-        // Interning: same ShrString → same handle
         if let Some(&handle) = self.string_cache.get(&s) {
             return handle;
         }
-        let handle = self.alloc_builtin_instance(BuiltinInstance::String(s.clone()));
+        let handle = self.alloc_instance(self.string_class, ObjectInstanceData::String(s.clone()));
         self.string_cache.insert(s, handle);
         handle
     }
 
+    #[inline]
     pub fn alloc_list(&mut self, items: Vec<ObjectHandle>) -> ObjectHandle {
-        self.alloc_builtin_instance(BuiltinInstance::List(items))
+        self.alloc_instance(self.list_class, ObjectInstanceData::List(items))
     }
 
+    #[inline]
     pub fn alloc_dict(&mut self, items: Vec<(ObjectHandle, ObjectHandle)>) -> ObjectHandle {
-        self.alloc_builtin_instance(BuiltinInstance::Dict(items))
+        self.alloc_instance(self.dict_class, ObjectInstanceData::Dict(items))
     }
 
     fn alloc(&mut self, obj: impl Into<Object>) -> ObjectHandle {
@@ -154,6 +180,11 @@ impl ObjectHeap {
         println!("Allocated {} at {:?}", self.bytes_allocated, handle);
 
         handle
+    }
+
+    pub fn alloc_nil(&mut self) -> ObjectHandle {
+        // Nil is a singleton — always handle 0, backed by the static NIL_OBJECT.
+        ObjectHandle::NIL
     }
 }
 
@@ -192,11 +223,6 @@ impl ObjectHeap {
         self.objects[handle.0].as_mut().expect("Dangling handle accessed!")
     }
 
-    pub fn alloc_nil(&mut self) -> ObjectHandle {
-        // Nil is a singleton — always handle 0, backed by the static NIL_OBJECT.
-        ObjectHandle::NIL
-    }
-
     impl_getters!(function, ObjectFunction);
     impl_getters!(builtin_fn, ObjectBuiltinFn);
     impl_getters!(closure, ObjectClosure);
@@ -204,7 +230,43 @@ impl ObjectHeap {
     impl_getters!(instance, ObjectInstance);
     impl_getters!(class, ObjectClass);
     impl_getters!(bound_method, ObjectBoundMethod);
-    impl_getters!(builtin_instance, ObjectBuiltinInstance);
+}
+
+macro_rules! impl_instance_data_getter {
+    ($name:ident, $variant:ident, $ty:ty, $label:literal) => {
+        paste::paste! {
+            /// Return a reference to the inner data — panics on type mismatch
+            /// (intended for use in tests and internal code that has already
+            /// verified the type).
+            #[doc = "Return a reference to the inner `" $label "` data."]
+            pub fn [<get_ $name _instance>](&self, handle: ObjectHandle) -> &$ty {
+                let inst = self.get_instance(handle).expect("must be Instance");
+                match &inst.data {
+                    ObjectInstanceData::$variant(v) => v,
+                    _ => panic!("expected {}", $label),
+                }
+            }
+
+            #[doc = "Return a mutable reference to the inner `" $label "` data."]
+            pub fn [<get_ $name _instance_mut>](&mut self, handle: ObjectHandle) -> &mut $ty {
+                let inst = self.get_instance_mut(handle).expect("must be Instance");
+                match &mut inst.data {
+                    ObjectInstanceData::$variant(v) => v,
+                    _ => panic!("expected {}", $label),
+                }
+            }
+        }
+    };
+}
+
+impl ObjectHeap {
+    impl_instance_data_getter!(integer, Integer, i64, "integer");
+    impl_instance_data_getter!(float, Float, f64, "float");
+    impl_instance_data_getter!(bool, Bool, bool, "bool");
+    impl_instance_data_getter!(string, String, ShrString, "string");
+    impl_instance_data_getter!(list, List, Vec<ObjectHandle>, "list");
+    impl_instance_data_getter!(dict, Dict, Vec<(ObjectHandle, ObjectHandle)>, "dict");
+    impl_instance_data_getter!(fields, Fields, std::collections::HashMap<ShrString, ObjectHandle>, "fields");
 }
 
 impl ObjectHeap {
@@ -274,8 +336,29 @@ impl ObjectHeap {
                 }
                 Object::Instance(instance) => {
                     self.mark_object(instance.class);
-                    for &field_handle in instance.fields.values() {
-                        self.mark_object(field_handle);
+                    match &instance.data {
+                        ObjectInstanceData::Nil | ObjectInstanceData::Bool(_) | ObjectInstanceData::Integer(_) | ObjectInstanceData::Float(_) => {
+                            // leaf types — no heap references
+                        }
+                        ObjectInstanceData::String(_s) => {
+                            // ShrString is internally Arc'd — no ObjectHandle refs
+                        }
+                        ObjectInstanceData::List(items) => {
+                            for &item in items {
+                                self.mark_object(item);
+                            }
+                        }
+                        ObjectInstanceData::Dict(entries) => {
+                            for &(k, v) in entries {
+                                self.mark_object(k);
+                                self.mark_object(v);
+                            }
+                        }
+                        ObjectInstanceData::Fields(fields) => {
+                            for &field_handle in fields.values() {
+                                self.mark_object(field_handle);
+                            }
+                        }
                     }
                 }
                 Object::BoundMethod(bound) => {
@@ -291,27 +374,6 @@ impl ObjectHeap {
                     for method in class.methods.values() {
                         if let Method::User(method_handle) = method {
                             self.mark_object(*method_handle);
-                        }
-                    }
-                }
-                Object::BuiltinInstance(bi) => {
-                    match &bi.data {
-                        BuiltinInstance::Nil | BuiltinInstance::Bool(_) | BuiltinInstance::Integer(_) | BuiltinInstance::Float(_) => {
-                            // leaf types — no heap references
-                        }
-                        BuiltinInstance::String(_s) => {
-                            // ShrString is internally Arc'd — no ObjectHandle refs
-                        }
-                        BuiltinInstance::List(items) => {
-                            for &item in items {
-                                self.mark_object(item);
-                            }
-                        }
-                        BuiltinInstance::Dict(entries) => {
-                            for &(k, v) in entries {
-                                self.mark_object(k);
-                                self.mark_object(v);
-                            }
                         }
                     }
                 }

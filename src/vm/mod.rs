@@ -6,7 +6,7 @@ mod gc;
 pub use error::*;
 #[cfg(test)]
 mod tests;
-use crate::{BuiltinFn, BuiltinInstance, Instruction, Method, Object, ObjectHandle, ObjectHeap, ShrString};
+use crate::{BuiltinFn, Instruction, Method, Object, ObjectHandle, ObjectHeap, ObjectInstanceData, ShrString};
 use std::collections::HashMap;
 
 pub struct VirtualMachine {
@@ -75,13 +75,13 @@ impl VirtualMachine {
             dict_class: ObjectHandle::NIL,
         };
         // Allocate builtin class objects first so they are valid GC roots.
-        vm.nil_class = vm.obj_heap.alloc_class("nil");
-        vm.int_class = vm.obj_heap.alloc_class("int");
-        vm.float_class = vm.obj_heap.alloc_class("float");
-        vm.bool_class = vm.obj_heap.alloc_class("bool");
-        vm.string_class = vm.obj_heap.alloc_class("string");
-        vm.list_class = vm.obj_heap.alloc_class("list");
-        vm.dict_class = vm.obj_heap.alloc_class("dict");
+        vm.nil_class = vm.obj_heap.nil_class;
+        vm.int_class = vm.obj_heap.int_class;
+        vm.float_class = vm.obj_heap.float_class;
+        vm.bool_class = vm.obj_heap.bool_class;
+        vm.string_class = vm.obj_heap.string_class;
+        vm.list_class = vm.obj_heap.list_class;
+        vm.dict_class = vm.obj_heap.dict_class;
         vm.register_builtins();
         vm
     }
@@ -321,54 +321,35 @@ impl VirtualMachine {
             Instruction::GetProperty(field_name) => {
                 let receiver = self.peek_stack(0)?;
 
-                // Extract the class handle (and optional field value for Instance).
-                let (class_handle, field_value) = {
-                    let obj = self.obj_heap.get(receiver);
-                    match obj {
-                        Object::Instance(inst) => {
-                            let val = inst.fields.get(&field_name).copied();
-                            (inst.class, val)
-                        }
-                        Object::BuiltinInstance(bi) => {
-                            let class = match &bi.data {
-                                BuiltinInstance::Nil => self.nil_class,
-                                BuiltinInstance::Bool(_) => self.bool_class,
-                                BuiltinInstance::Integer(_) => self.int_class,
-                                BuiltinInstance::Float(_) => self.float_class,
-                                BuiltinInstance::String(_) => self.string_class,
-                                BuiltinInstance::List(_) => self.list_class,
-                                BuiltinInstance::Dict(_) => self.dict_class,
+                let obj = self.obj_heap.get(receiver); 
+                match obj {
+                    Object::Instance(instance) => {
+                        if let ObjectInstanceData::Fields(fields) = &instance.data && let Some(value) = fields.get(&field_name).cloned() {
+                            self.pop_stack()?;
+                            self.push_stack(value);
+                        } else {
+                            let method = {
+                                let class = self.obj_heap.get_class(instance.class)?;
+                                class.methods
+                                    .get(&field_name).copied()
+                                    .ok_or_else(|| ExecuteError::UndefinedProperty(field_name.to_string()))?
                             };
-                            (class, None)
+                            let receiver = self.pop_stack()?;
+                            let bound = self.obj_heap.alloc_bound_method(receiver, method);
+                            self.push_stack(bound);
                         }
-                        Object::Class(c) => {
-                            // Class objects: look up method on the class itself
-                            // (static methods or the class object's own methods)
-                            if let Some(method) = c.methods.get(&field_name).copied() {
-                                let receiver = self.pop_stack()?;
-                                let bound = self.obj_heap.alloc_bound_method(receiver, method);
-                                self.push_stack(bound);
-                                self.frame_mut()?.ip = ip;
-                                return Ok(());
-                            }
-                            return Err(ExecuteError::UndefinedProperty(field_name.to_string()));
-                        }
-                        _ => Err(ExecuteError::UndefinedProperty(field_name.to_string()))?,
                     }
-                }; // immutable borrow released
-
-                if let Some(value) = field_value {
-                    self.pop_stack()?;
-                    self.push_stack(value);
-                } else {
-                    let method = {
-                        let class = self.obj_heap.get_class(class_handle)?;
-                        class.methods.get(&field_name).copied()
-                            .ok_or_else(|| ExecuteError::UndefinedProperty(field_name.to_string()))?
-                    };
-                    let receiver = self.pop_stack()?;
-                    let bound = self.obj_heap.alloc_bound_method(receiver, method);
-                    self.push_stack(bound);
+                    Object::Class(class) => {
+                        if let Some(method) = class.methods.get(&field_name).copied() {
+                            let receiver = self.pop_stack()?;
+                            let bound = self.obj_heap.alloc_bound_method(receiver, method);
+                            self.push_stack(bound);
+                            self.frame_mut()?.ip = ip;
+                            return Ok(());
+                        }
+                        return Err(ExecuteError::UndefinedProperty(field_name.to_string()));
+                    }
+                    _ => Err(ExecuteError::UndefinedProperty(field_name.to_string()))?,
                 }
             }
 
@@ -376,7 +357,10 @@ impl VirtualMachine {
                 let value = self.peek_stack(0)?;
                 let instance = self.peek_stack(1)?;
                 let instance = self.obj_heap.get_instance_mut(instance)?;
-                instance.fields.insert(field_name, value);
+                match &mut instance.data {
+                    ObjectInstanceData::Fields(fields) => fields.insert(field_name, value),
+                    _ => Err(ExecuteError::SetPropertyForBuilinInstance(self.value_type_name(value)))?,
+                };
 
                 let value = self.pop_stack()?;
                 self.pop_stack()?;
@@ -412,8 +396,8 @@ impl VirtualMachine {
 
                 // Look up the method in the class.
                 let method = {
-                    let class = self.obj_heap.get_class(class_handle)?;
-                    class.methods.get(&method_name).copied()
+                    let class_ = self.obj_heap.get_class(class_handle)?;
+                    class_.methods.get(&method_name).copied()
                         .ok_or_else(|| ExecuteError::UndefinedProperty(method_name.as_str().to_string()))?
                 };
 
@@ -507,17 +491,6 @@ impl VirtualMachine {
         let obj = self.obj_heap.get(receiver);
         match obj {
             Object::Instance(inst) => Some(inst.class),
-            Object::BuiltinInstance(bi) => {
-                Some(match &bi.data {
-                    BuiltinInstance::Nil => self.nil_class,
-                    BuiltinInstance::Bool(_) => self.bool_class,
-                    BuiltinInstance::Integer(_) => self.int_class,
-                    BuiltinInstance::Float(_) => self.float_class,
-                    BuiltinInstance::String(_) => self.string_class,
-                    BuiltinInstance::List(_) => self.list_class,
-                    BuiltinInstance::Dict(_) => self.dict_class,
-                })
-            }
             _ => None,
         }
     }
@@ -569,7 +542,7 @@ impl VirtualMachine {
                     let class = self.obj_heap.get_class(callee)?;
                     class.methods.get("__init__").copied()
                 };
-                let instance = self.obj_heap.alloc_instance(callee);
+                let instance = self.obj_heap.alloc_fields_instance(callee);
                 let index = self.stack.len() - arg_count - 1;
                 self.stack[index] = instance;
                 if let Some(method) = init_method {

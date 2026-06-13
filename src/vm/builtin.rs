@@ -1,4 +1,4 @@
-use crate::{BuiltinInstance, Object, ObjectHandle};
+use crate::{Object, ObjectHandle, ObjectInstanceData};
 use super::{ExecuteError, ExecuteResult, VirtualMachine};
 
 macro_rules! get_args {
@@ -83,25 +83,13 @@ impl VirtualMachine {
         Ok(self.obj_heap.alloc_float(n))
     }
 
-    /// `type(value)` — for Instance or BuiltinInstance, return the class object;
+    /// `type(value)` — for Instance, return the class object;
     /// otherwise the type name string.
     pub fn typeof_val(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         let arg = get_1_arg!(self, arg_count);
         let obj = self.obj_heap.get(arg);
         match obj {
             Object::Instance(inst) => return Ok(inst.class),
-            Object::BuiltinInstance(bi) => {
-                let class = match &bi.data {
-                    BuiltinInstance::Nil => self.nil_class,
-                    BuiltinInstance::Bool(_) => self.bool_class,
-                    BuiltinInstance::Integer(_) => self.int_class,
-                    BuiltinInstance::Float(_) => self.float_class,
-                    BuiltinInstance::String(_) => self.string_class,
-                    BuiltinInstance::List(_) => self.list_class,
-                    BuiltinInstance::Dict(_) => self.dict_class,
-                };
-                return Ok(class);
-            }
             _ => {
                 let name = self.value_type_name(arg);
                 Ok(self.obj_heap.alloc_string(name.into()))
@@ -134,10 +122,10 @@ impl VirtualMachine {
     /// `abs(value)` — return the absolute value of a number.
     pub fn abs(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         let arg = get_1_arg!(self, arg_count);
-        let bi = self.obj_heap.get_builtin_instance(arg)?;
+        let bi = self.obj_heap.get_instance(arg)?;
         match &bi.data {
-            BuiltinInstance::Integer(v) => Ok(self.obj_heap.alloc_integer(v.wrapping_abs())),
-            BuiltinInstance::Float(v) => Ok(self.obj_heap.alloc_float(v.abs())),
+            ObjectInstanceData::Integer(v) => Ok(self.obj_heap.alloc_integer(v.wrapping_abs())),
+            ObjectInstanceData::Float(v) => Ok(self.obj_heap.alloc_float(v.abs())),
             _ => Err(ExecuteError::UnexpectType("number", self.value_type_name(arg))),
         }
     }

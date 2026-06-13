@@ -1,6 +1,6 @@
+use crate::{ByteCode, Chunk, Instruction, ObjectHandle, ObjectHeap};
 use super::*;
 use super::parse::ParseReason;
-use crate::{ByteCode, Chunk, Instruction, ObjectHandle, ObjectHeap, BuiltinInstance};
 
 // ------------------------------------------------------------------------
 //  Helpers
@@ -25,34 +25,22 @@ fn codes(source: &str) -> Vec<u8> {
 
 /// Get integer value from a constant handle.
 fn const_int(heap: &ObjectHeap, h: ObjectHandle) -> i64 {
-    match &heap.get_builtin_instance(h).unwrap().data {
-        BuiltinInstance::Integer(v) => *v,
-        _ => panic!("expected integer constant"),
-    }
+    *heap.get_integer_instance(h)
 }
 
 /// Get float value from a constant handle.
 fn const_float(heap: &ObjectHeap, h: ObjectHandle) -> f64 {
-    match &heap.get_builtin_instance(h).unwrap().data {
-        BuiltinInstance::Float(v) => *v,
-        _ => panic!("expected float constant"),
-    }
+    *heap.get_float_instance(h)
 }
 
 /// Get string value from a constant handle.
 fn const_string(heap: &ObjectHeap, h: ObjectHandle) -> String {
-    match &heap.get_builtin_instance(h).unwrap().data {
-        BuiltinInstance::String(s) => s.as_str().to_string(),
-        _ => panic!("expected string constant"),
-    }
+    heap.get_string_instance(h).as_str().to_string()
 }
 
 /// Check if a constant handle contains the given integer.
 fn is_const_int(heap: &ObjectHeap, h: ObjectHandle, expected: i64) -> bool {
-    match &heap.get_builtin_instance(h).unwrap().data {
-        BuiltinInstance::Integer(v) => *v == expected,
-        _ => false,
-    }
+    *heap.get_integer_instance(h) == expected
 }
 
 /// Assert that source fails to compile.

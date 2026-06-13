@@ -10,7 +10,6 @@ pub enum Object {
     Upvalue(ObjectUpvalue),
     Class(ObjectClass),
     Instance(ObjectInstance),
-    BuiltinInstance(ObjectBuiltinInstance),
     BoundMethod(ObjectBoundMethod),
 }
 
@@ -86,7 +85,6 @@ impl_object_conversions! {
     Upvalue => { ty: ObjectUpvalue, method: upvalue, name: "Upvalue" },
     Class => { ty: ObjectClass, method: class, name: "Class" },
     Instance => { ty: ObjectInstance, method: instance, name: "Instance" },
-    BuiltinInstance => { ty: ObjectBuiltinInstance, method: builtin_instance, name: "BuiltinInstance" },
     BoundMethod => { ty: ObjectBoundMethod, method: bound_method, name: "BoundMethod" },
 }
 
