@@ -6,7 +6,7 @@ macro_rules! string_cmp_op {
     ($name:ident, $op:expr, $op_name:literal) => {
         pub fn $name(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
             if arg_count != 2 {
-                Err(ExecuteError::ArgmentCountUnmatch { expcted: 1, got: arg_count.saturating_sub(1) })?;
+                Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: arg_count.saturating_sub(1) })?;
             }
             let args = top_args(self, arg_count);
             let lhs_s = self.get_string_instance(args[0])?.clone();
@@ -22,7 +22,7 @@ macro_rules! string_cmp_op {
 impl VirtualMachine {
     pub fn string_add(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 2 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 1, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let lhs_s = self.get_string_instance(args[0])?.clone();
@@ -43,7 +43,7 @@ impl VirtualMachine {
 
     pub fn string_not(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 1 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 0, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let s = self.get_string_instance(args[0])?;
@@ -52,7 +52,7 @@ impl VirtualMachine {
 
     pub fn string_str(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 1 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 0, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
         }
         // Return self.
         Ok(top_args(self, arg_count)[0])
@@ -60,7 +60,7 @@ impl VirtualMachine {
 
     pub fn string_bool(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 1 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 0, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let s = self.get_string_instance(args[0])?;
@@ -69,7 +69,7 @@ impl VirtualMachine {
 
     pub fn string_int(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 1 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 0, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let s = self.get_string_instance(args[0])?;
@@ -81,7 +81,7 @@ impl VirtualMachine {
 
     pub fn string_float(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 1 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 0, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let s = self.get_string_instance(args[0])?;
@@ -93,7 +93,7 @@ impl VirtualMachine {
 
     pub fn string_len(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 1 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 0, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let s = self.get_string_instance(args[0])?;
@@ -102,7 +102,7 @@ impl VirtualMachine {
 
     pub fn string_getitem(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 2 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 1, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let s = self.get_string_instance(args[0])?.clone();
@@ -114,5 +114,23 @@ impl VirtualMachine {
         }
         let ch = s.as_str()[idx as usize..idx as usize + 1].to_string();
         Ok(self.obj_heap.alloc_string_instance(ch.into()))
+    }
+
+    pub fn register_string_builtins(&mut self) {
+        let sc = self.obj_heap.string_class;
+        self.reg_native_method(sc, "__not__", VirtualMachine::string_not);
+        self.reg_native_method(sc, "__add__", VirtualMachine::string_add);
+        self.reg_native_method(sc, "__eq__", VirtualMachine::string_eq);
+        self.reg_native_method(sc, "__ne__", VirtualMachine::string_ne);
+        self.reg_native_method(sc, "__gt__", VirtualMachine::string_gt);
+        self.reg_native_method(sc, "__ge__", VirtualMachine::string_ge);
+        self.reg_native_method(sc, "__lt__", VirtualMachine::string_lt);
+        self.reg_native_method(sc, "__le__", VirtualMachine::string_le);
+        self.reg_native_method(sc, "__str__", VirtualMachine::string_str);
+        self.reg_native_method(sc, "__bool__", VirtualMachine::string_bool);
+        self.reg_native_method(sc, "__int__", VirtualMachine::string_int);
+        self.reg_native_method(sc, "__float__", VirtualMachine::string_float);
+        self.reg_native_method(sc, "__len__", VirtualMachine::string_len);
+        self.reg_native_method(sc, "__getitem__", VirtualMachine::string_getitem);
     }
 }

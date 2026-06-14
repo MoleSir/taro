@@ -4,20 +4,20 @@ use crate::{vm::{ExecuteResult, VirtualMachine}, ShrString};
 use super::ObjectHandle;
 
 // ========================================================================== //
-//                    Method (unified user + builtin)
+//                    Method (unified user + native)
 // ========================================================================== //
 
-/// A callable method — either a user-defined closure or a Rust builtin.
+/// A callable method — either a user-defined closure or a Rust native function.
 #[derive(Copy, Clone)]
 pub enum Method {
     /// User-defined method (closure handle, compiled from Taro source).
     User(ObjectHandle),
-    /// Builtin method (handle to an `ObjectBuiltinFn`).
-    Builtin(ObjectHandle),
+    /// Native method (handle to an `ObjectNativeFn`).
+    Native(ObjectHandle),
 }
 
 // ========================================================================== //
-//                    Function, BuiltinFn, Upvalue
+//                    Function, NativeFn, Upvalue
 // ========================================================================== //
 
 pub struct ObjectFunction {
@@ -32,16 +32,16 @@ impl ObjectFunction {
     }
 }
 
-pub type BuiltinFn = fn (&mut VirtualMachine, arg_count: usize) -> ExecuteResult<ObjectHandle>;
+pub type NativeFn = fn (&mut VirtualMachine, arg_count: usize) -> ExecuteResult<ObjectHandle>;
 
-pub struct ObjectBuiltinFn {
-    pub name: &'static str,
-    pub function: BuiltinFn,
+pub struct ObjectNativeFn {
+    pub name: ShrString,
+    pub function: NativeFn,
 }
 
-impl ObjectBuiltinFn {
-    pub fn new(name: &'static str, function: BuiltinFn) -> Self {
-        Self { name, function }
+impl ObjectNativeFn {
+    pub fn new(name: impl Into<ShrString>, function: NativeFn) -> Self {
+        Self { name: name.into(), function }
     }
 }
 

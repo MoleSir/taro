@@ -9,8 +9,8 @@ pub struct Scanner<'a> {
 
 #[thiserrorctx::context_error]
 pub enum ScanError {
-    #[error("unexpect end of source")]
-    UnexpectEnd,
+    #[error("unexpected end of source")]
+    UnexpectedEnd,
 
     #[error("unterminated string")]
     UnterminatedString,
@@ -212,7 +212,7 @@ impl<'a> Scanner<'a> {
         let ch = rest
             .chars()
             .next()
-            .ok_or(ScanError::UnexpectEnd)?;
+            .ok_or(ScanError::UnexpectedEnd)?;
         self.current += ch.len_utf8();
         Ok(ch)
     }
@@ -221,7 +221,7 @@ impl<'a> Scanner<'a> {
         self.source[self.current..]
             .chars()
             .next()
-            .ok_or(ScanError::UnexpectEnd)
+            .ok_or(ScanError::UnexpectedEnd)
     }
 
     fn match_then_advance(&mut self, expected: char) -> ScanResult<bool> {
@@ -231,7 +231,7 @@ impl<'a> Scanner<'a> {
         let nxt = self.source[self.current..]
             .chars()
             .next()
-            .ok_or(ScanError::UnexpectEnd)?;
+            .ok_or(ScanError::UnexpectedEnd)?;
 
         if nxt != expected {
             Ok(false)
@@ -243,8 +243,8 @@ impl<'a> Scanner<'a> {
 
     fn peek_next(&self) -> ScanResult<char> {
         let mut chars = self.source[self.current..].chars();
-        chars.next().ok_or(ScanError::UnexpectEnd)?;
-        chars.next().ok_or(ScanError::UnexpectEnd)
+        chars.next().ok_or(ScanError::UnexpectedEnd)?;
+        chars.next().ok_or(ScanError::UnexpectedEnd)
     }
 
     fn make_token(&self, kind: TokenKind) -> Token<'a> {

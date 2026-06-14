@@ -41,7 +41,7 @@ fn repl() -> anyhow::Result<()> {
         }
 
         if let Err(e) = vm.interpret(&buffer) {
-            resport_error(&e);
+            report_error(&e);
         }
 
         buffer.clear();
@@ -54,7 +54,7 @@ fn run_file(path: &str) -> anyhow::Result<()> {
 
     let mut vm = VirtualMachine::new();
     if let Err(e) = vm.interpret(&source) {
-        resport_error(&e);
+        report_error(&e);
         anyhow::bail!("interpret failed");
     }
 
@@ -102,7 +102,7 @@ fn is_incomplete(source: &str) -> bool {
     in_string || parens > 0 || braces > 0
 }
 
-fn resport_error(e: &InterpretError) {
+fn report_error(e: &InterpretError) {
     match e {
         InterpretError::Compile(e) => match e {
             CompileError::Scan(e) => eprintln!("Scan error: {e}"),

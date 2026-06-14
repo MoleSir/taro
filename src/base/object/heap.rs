@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::LazyLock};
 
 use crate::{Chunk, ShrString};
-use super::{BuiltinFn, Method, Object, ObjectBoundMethod, ObjectBuiltinFn, ObjectClass, ObjectClosure, ObjectFunction, ObjectInstance, ObjectInstanceData, ObjectUpvalue};
+use super::{NativeFn, Method, Object, ObjectBoundMethod, ObjectNativeFn, ObjectClass, ObjectClosure, ObjectFunction, ObjectInstance, ObjectInstanceData, ObjectUpvalue};
 
 /// Static nil object — backing for `ObjectHandle::NIL`.
 static NIL_OBJECT: LazyLock<Object> = LazyLock::new(|| {
@@ -38,6 +38,11 @@ pub struct ObjectHeap {
     pub string_class: ObjectHandle,
     pub list_class: ObjectHandle,
     pub dict_class: ObjectHandle,
+
+    /// Singleton instances for `true` and `false` so repeated use of
+    /// boolean literals doesn't allocate.
+    pub true_instance: ObjectHandle,
+    pub false_instance: ObjectHandle,
 }
 
 impl ObjectHeap {
@@ -61,6 +66,8 @@ impl ObjectHeap {
             string_class: ObjectHandle::NIL,
             list_class: ObjectHandle::NIL,
             dict_class: ObjectHandle::NIL,
+            true_instance: ObjectHandle::NIL,
+            false_instance: ObjectHandle::NIL,
         };
 
         heap.nil_class = heap.alloc_class("Nil");
@@ -70,6 +77,10 @@ impl ObjectHeap {
         heap.string_class = heap.alloc_class("String");
         heap.list_class = heap.alloc_class("List");
         heap.dict_class = heap.alloc_class("Dict");
+
+        // Allocate singleton bool instances (after bool_class exists).
+        heap.true_instance = heap.alloc_instance(heap.bool_class, ObjectInstanceData::Bool(true));
+        heap.false_instance = heap.alloc_instance(heap.bool_class, ObjectInstanceData::Bool(false));
 
         heap
     }
@@ -95,8 +106,8 @@ impl ObjectHeap {
         self.alloc(obj)
     }
 
-    pub fn alloc_builtin_fn(&mut self, name: &'static str, function: BuiltinFn) -> ObjectHandle {
-        let obj = ObjectBuiltinFn::new(name, function);
+    pub fn alloc_native_fn(&mut self, name: impl Into<ShrString>, function: NativeFn) -> ObjectHandle {
+        let obj = ObjectNativeFn::new(name, function);
         self.alloc(obj)
     }
 
@@ -122,7 +133,7 @@ impl ObjectHeap {
 
     #[inline]
     pub fn alloc_bool_instance(&mut self, v: bool) -> ObjectHandle {
-        self.alloc_instance(self.bool_class, ObjectInstanceData::Bool(v))
+        if v { self.true_instance } else { self.false_instance }
     }
 
     pub fn alloc_integer_instance(&mut self, v: i64) -> ObjectHandle {
@@ -224,7 +235,7 @@ impl ObjectHeap {
     }
 
     impl_getters!(function, ObjectFunction);
-    impl_getters!(builtin_fn, ObjectBuiltinFn);
+    impl_getters!(native_fn, ObjectNativeFn);
     impl_getters!(closure, ObjectClosure);
     impl_getters!(upvalue, ObjectUpvalue);
     impl_getters!(instance, ObjectInstance);
@@ -364,7 +375,7 @@ impl ObjectHeap {
                 Object::BoundMethod(bound) => {
                     match bound.method {
                         Method::User(method_handle) => self.mark_object(method_handle),
-                        Method::Builtin(handle) => self.mark_object(handle),
+                        Method::Native(handle) => self.mark_object(handle),
                     }
                     self.mark_object(bound.receiver);
                 }
@@ -375,12 +386,12 @@ impl ObjectHeap {
                     for method in class.methods.values() {
                         match method {
                             Method::User(method_handle) => self.mark_object(*method_handle),
-                            Method::Builtin(handle) => self.mark_object(*handle),
+                            Method::Native(handle) => self.mark_object(*handle),
                         }
                     }
                 }
-                Object::BuiltinFn(_) => {
-                    // Builtin functions own no heap references.
+                Object::NativeFn(_) => {
+                    // Native functions own no heap references.
                 }
             }
         }

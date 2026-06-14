@@ -1,0 +1,123 @@
+// Regression tests — covers bugs that were previously fixed.
+// Bug 1: BuiltinFn call stack corruption (callee left on stack)
+// Bug 2: Non-Instance comparison crash (type() returns Class)
+// Bug 3: nil operation checks (nil shouldn't have methods)
+
+print("=== Bug 1: BuiltinFn call stack ===");
+
+// Chained builtin call: len() result passed to print().
+// Was broken: len function handle stayed on stack, print read it instead of 5.
+print(len("hello"));             // 5
+
+// Multiple builtin calls as arguments.
+print(len("a"), len("bc"), len("def"));  // 1 2 3
+
+// Deeply nested: bool(len("hi")) → bool(2) → true.
+print(bool(len("hi")));          // true
+
+// Sequential builtin calls in block — no cross-call pollution.
+{
+    var a = len("hello");        // 5
+    var b = str(a);              // "5"
+    print(b);                    // 5 (as string)
+}
+
+// Builtin result used in arithmetic.
+{
+    var n = len("ab") + len("cde");  // 2 + 3 = 5
+    print(n);                         // 5
+}
+
+// Builtin call result used in another builtin call.
+print(str(len("world")));        // "5"
+
+// Builtin with expression args.
+print(1, 2, len("xyz"));         // 1 2 3
+
+print("=== Bug 2: Non-Instance comparison ===");
+
+// type() returns a Class object for instances.
+// Comparing Class == Class used to crash because dispatch_magic
+// tried to look up methods on a non-Instance.
+class Foo {}
+class Bar {}
+var f = Foo();
+var b = Bar();
+
+print(type(f) == Foo);   // true  — same class
+print(type(f) == Bar);   // false — different class
+print(type(b) == Bar);   // true
+print(type(f) != Foo);   // false
+print(type(f) != Bar);   // true
+
+// Class object comparison: different classes are not equal.
+print(Foo == Foo);       // true  — same class handle
+print(Foo == Bar);       // false — different class handles
+print(Foo != Bar);       // true
+
+// BuiltinFn comparison: same builtin → same handle → equal.
+print(print == print);   // true
+print(print != len);     // true  — different builtins
+
+// Closure/function objects: different instances → not equal.
+fun myFunc() { return 1; }
+fun anotherFunc() { return 2; }
+print(myFunc == myFunc);       // true  — same closure handle
+print(myFunc == anotherFunc);  // false
+
+// Create new instance from type().
+var t = type(f);
+var f2 = t();
+print(type(f2) == Foo);   // true
+print(type(f2) == type(f));  // true
+
+print("=== Bug 3: nil handling ===");
+
+// nil is handled directly, not dispatched to methods.
+print(nil == nil);    // true
+print(nil != nil);    // false
+print(nil != 42);     // true
+print(42 != nil);     // true
+print(!nil);          // true  — nil is falsy
+print(bool(nil));     // false — nil is falsy
+print(str(nil));      // nil   — string representation
+print(nil == true);   // false
+print(nil == false);  // false
+print(nil != true);   // true
+
+// type(nil) — should not crash.
+print(type(nil));
+
+// Using nil in logical expressions.
+print(nil or 42);     // 42 — nil is falsy
+print(nil and 42);    // nil — short-circuit
+
+print("=== Additional edge cases ===");
+
+// abs() on valid and invalid types.
+print(abs(-5));       // 5
+print(abs(0));        // 0
+print(abs(-3.14));    // 3.14
+
+// min/max with mixed types that have been exercised.
+print(min(3, 1, 2));  // 1
+print(max(3, 1, 2));  // 3
+
+// Bool interning: creating many true/false values.
+// All should work identically; interning ensures only one instance exists.
+var t1 = 1 == 1;
+var t2 = 2 == 2;
+var t3 = true;
+print(t1 and t2 and t3);    // true — all are true
+print((1 == 1) == (2 == 2)); // true — true == true
+
+// Stringification of various builtin types.
+print(str(print));   // <built-in function print>
+print(str(len));     // <built-in function len>
+print(str(type));    // <built-in function type>
+
+// Stringification of closures.
+fun ff() {}
+print(str(ff));      // <closure>
+
+print("regression done");

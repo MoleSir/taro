@@ -5,7 +5,7 @@ use super::utils::top_args;
 impl VirtualMachine {
     pub fn dict_not(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 1 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 0, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let entries = self.get_dict_instance(args[0])?;
@@ -14,7 +14,7 @@ impl VirtualMachine {
 
     pub fn dict_str(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 1 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 0, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let entries = self.get_dict_instance(args[0])?.clone();
@@ -33,7 +33,7 @@ impl VirtualMachine {
 
     pub fn dict_bool(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 1 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 0, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let entries = self.get_dict_instance(args[0])?;
@@ -42,7 +42,7 @@ impl VirtualMachine {
 
     pub fn dict_len(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 1 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 0, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let entries = self.get_dict_instance(args[0])?;
@@ -51,7 +51,7 @@ impl VirtualMachine {
 
     pub fn dict_getitem(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 2 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 1, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let entries = self.get_dict_instance(args[0]).cloned()?;
@@ -67,7 +67,7 @@ impl VirtualMachine {
 
     pub fn dict_setitem(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 3 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 2, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 2, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let receiver = args[0];
@@ -99,7 +99,7 @@ impl VirtualMachine {
     /// `dict.get(key)` — get a value by key, returning nil if not found.
     pub fn dict_get(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 2 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 1, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let receiver = args[0];
@@ -117,7 +117,7 @@ impl VirtualMachine {
     /// `dict.keys()` — return a list of all keys.
     pub fn dict_keys(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 1 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 0, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let receiver = args[0];
@@ -128,7 +128,7 @@ impl VirtualMachine {
     /// `dict.values()` — return a list of all values.
     pub fn dict_values(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 1 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 0, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let receiver = args[0];
@@ -140,7 +140,7 @@ impl VirtualMachine {
     /// `dict.pop(key)` — remove a key and return its value.
     pub fn dict_pop(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 2 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 1, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let receiver = args[0];
@@ -171,5 +171,19 @@ impl VirtualMachine {
             }
             None => Err(ExecuteError::KeyNotFound),
         }
+    }
+
+    pub fn register_dict_builtins(&mut self) {
+        let dc = self.obj_heap.dict_class;
+        self.reg_native_method(dc, "__not__", VirtualMachine::dict_not);
+        self.reg_native_method(dc, "__str__", VirtualMachine::dict_str);
+        self.reg_native_method(dc, "__bool__", VirtualMachine::dict_bool);
+        self.reg_native_method(dc, "__len__", VirtualMachine::dict_len);
+        self.reg_native_method(dc, "__getitem__", VirtualMachine::dict_getitem);
+        self.reg_native_method(dc, "__setitem__", VirtualMachine::dict_setitem);
+        self.reg_native_method(dc, "get", VirtualMachine::dict_get);
+        self.reg_native_method(dc, "keys", VirtualMachine::dict_keys);
+        self.reg_native_method(dc, "values", VirtualMachine::dict_values);
+        self.reg_native_method(dc, "pop", VirtualMachine::dict_pop);
     }
 }

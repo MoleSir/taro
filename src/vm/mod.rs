@@ -5,7 +5,7 @@ mod gc;
 pub use error::*;
 #[cfg(test)]
 mod tests;
-use crate::{BuiltinFn, Instruction, Method, Object, ObjectBoundMethod, ObjectBuiltinFn, ObjectClass, ObjectClosure, ObjectFunction, ObjectHandle, ObjectHeap, ObjectInstance, ObjectInstanceData, ObjectUpvalue, ShrString};
+use crate::{NativeFn, Instruction, Method, Object, ObjectBoundMethod, ObjectNativeFn, ObjectClass, ObjectClosure, ObjectFunction, ObjectHandle, ObjectHeap, ObjectInstance, ObjectInstanceData, ObjectUpvalue, ShrString};
 use std::collections::HashMap;
 
 pub struct VirtualMachine {
@@ -16,14 +16,6 @@ pub struct VirtualMachine {
     /// Sorted (by descending location) linked list of open upvalues.
     open_upvalues: Vec<ObjectHandle>,
     gc_threshold: usize,
-    /// Builtin class handles — allocated once at startup.
-    pub nil_class: ObjectHandle,
-    pub int_class: ObjectHandle,
-    pub float_class: ObjectHandle,
-    pub bool_class: ObjectHandle,
-    pub string_class: ObjectHandle,
-    pub list_class: ObjectHandle,
-    pub dict_class: ObjectHandle,
 }
 
 /// A single function-call frame.  `slots_start` is the index into
@@ -63,24 +55,8 @@ impl VirtualMachine {
             stack: vec![],
             globals: HashMap::new(),
             open_upvalues: vec![],
-            gc_threshold: 1024 * 1026,
-            // Placeholders — allocated below.
-            nil_class: ObjectHandle::NIL,
-            int_class: ObjectHandle::NIL,
-            float_class: ObjectHandle::NIL,
-            bool_class: ObjectHandle::NIL,
-            string_class: ObjectHandle::NIL,
-            list_class: ObjectHandle::NIL,
-            dict_class: ObjectHandle::NIL,
+            gc_threshold: 1024 * 1024,
         };
-        // Allocate builtin class objects first so they are valid GC roots.
-        vm.nil_class = vm.obj_heap.nil_class;
-        vm.int_class = vm.obj_heap.int_class;
-        vm.float_class = vm.obj_heap.float_class;
-        vm.bool_class = vm.obj_heap.bool_class;
-        vm.string_class = vm.obj_heap.string_class;
-        vm.list_class = vm.obj_heap.list_class;
-        vm.dict_class = vm.obj_heap.dict_class;
         vm.register_builtins();
         vm
     }
@@ -108,7 +84,7 @@ impl VirtualMachine {
         let closure = self.obj_heap.alloc_closure(function);
         self.reset();
         self.push_stack(closure);
-        self.call(closure, 0).expect("can't failed in script call");
+        self.call_closure(closure, 0, true).expect("can't failed in script call");
         self.run().map_err(InterpretError::Runtime)
     }
 
@@ -310,8 +286,8 @@ impl VirtualMachine {
                                 Method::User(closure_handle) => {
                                     self.push_stack(closure_handle);
                                 }
-                                Method::Builtin(handle) => {
-                                    // Unbound: push the BuiltinFn object directly.
+                                Method::Native(handle) => {
+                                    // Unbound: push the NativeFn object directly.
                                     self.push_stack(handle);
                                 }
                             }
@@ -374,14 +350,12 @@ impl VirtualMachine {
                 match method {
                     Method::User(closure_handle) => {
                         self.frame_mut()?.ip = ip;
-                        self.call_method(closure_handle, arg_count + 1)?;
+                        self.call_closure(closure_handle, arg_count + 1, false)?;
                         return Ok(());
                     }
-                    Method::Builtin(handle) => {
-                        let builtin_fn = self.get_builtin_fn(handle).expect("must fn").function;
-                        let result = builtin_fn(self, arg_count + 1)?;
-                        self.stack.truncate(self.stack.len() - arg_count - 1);
-                        self.push_stack(result);
+                    Method::Native(handle) => {
+                        let native_fn = self.get_native_fn(handle).expect("must fn").function;
+                        self.call_native_fn(native_fn, arg_count + 1, false)?;
                     }
                 }
             }
@@ -404,31 +378,15 @@ impl VirtualMachine {
                         })?
                 };
 
-                // match method {
-                //     Method::User(closure_handle) => {
-                //         self.frame_mut()?.ip = ip;
-                //         self.call_method(closure_handle, arg_count + 1)?;
-                //         return Ok(());
-                //     }
-                //     Method::Builtin(handle) => {
-                //         let builtin_fn = self.get_builtin_fn(handle).expect("must fn").function;
-                //         let result = builtin_fn(self, arg_count + 1)?;
-                //         self.stack.truncate(self.stack.len() - arg_count - 1);
-                //         self.push_stack(result);
-                //     }
-                // }
-
                 match method {
                     Method::User(closure_handle) => {
                         self.frame_mut()?.ip = ip;
-                        self.call_method(closure_handle, arg_count + 1)?;
+                        self.call_closure(closure_handle, arg_count + 1, false)?;
                         return Ok(());
                     }
-                    Method::Builtin(handle) => {
-                        let builtin_fn = self.get_builtin_fn(handle).expect("must fn").function;
-                        let result = builtin_fn(self, arg_count + 1)?;
-                        self.stack.truncate(self.stack.len() - arg_count - 1);
-                        self.push_stack(result);
+                    Method::Native(handle) => {
+                        let native_fn = self.get_native_fn(handle).expect("must fn").function;
+                        self.call_native_fn(native_fn, arg_count + 1, false)?;
                     }
                 }
             }
@@ -472,15 +430,6 @@ impl VirtualMachine {
         Ok(())
     }
 
-    // /// Dereference a `Method::Builtin` handle and return the raw function pointer.
-    // #[inline]
-    // fn resolve_builtin(&self, handle: ObjectHandle) -> BuiltinFn {
-    //     self.obj_heap.get(handle)
-    //         .as_builtin_fn()
-    //         .expect("Builtin method handle must point to BuiltinFn object")
-    //         .function
-    // }
-
     /// Invoke a method on a receiver synchronously, running its bytecode
     /// to completion and returning the result handle.
     fn invoke_method_sync(&mut self, receiver: ObjectHandle, method: ObjectHandle, extra_args: &[ObjectHandle]) -> ExecuteResult<ObjectHandle> {
@@ -490,7 +439,7 @@ impl VirtualMachine {
         }
         let saved_frame_count = self.frames.len();
         let total_args = 1 + extra_args.len();
-        self.call_method(method, total_args)?;
+        self.call_closure(method, total_args, false)?;
 
         while self.frames.len() > saved_frame_count {
             self.step()?;
@@ -519,83 +468,106 @@ impl VirtualMachine {
         self.stack.iter().rev().nth(index).copied().ok_or(ExecuteError::StackEmpty)
     }
 
+    /// Return the absolute stack index of the callee slot for a pending call
+    /// with `arg_count` arguments already pushed above it.
+    #[inline]
+    fn callee_slot(&self, arg_count: usize) -> usize {
+        self.stack.len() - arg_count - 1
+    }
+
     fn call_value(&mut self, callee: ObjectHandle, arg_count: usize) -> ExecuteResult<()> {
         let obj = self.obj_heap.get(callee);
         match obj {
-            Object::Closure(_) => self.call(callee, arg_count),
+            Object::Closure(_) => self.call_closure(callee, arg_count, true),
             Object::Class(_) => {
                 let init_method = {
                     let class = self.get_class(callee)?;
                     class.methods.get("__init__").copied()
                 };
                 let instance = self.obj_heap.alloc_fields_instance(callee);
-                let index = self.stack.len() - arg_count - 1;
+                let index = self.callee_slot(arg_count);
                 self.stack[index] = instance;
                 if let Some(method) = init_method {
                     match method {
                         Method::User(closure_handle) => {
-                            self.call_method(closure_handle, arg_count + 1)
+                            self.call_closure(closure_handle, arg_count + 1, false)
                         }
-                        Method::Builtin(_) => {
-                            unreachable!("__init__ on builtin classes is not supported")
+                        Method::Native(handle) => {
+                            let native_fn = self.get_native_fn(handle)?.function;
+                            self.call_native_fn(native_fn, arg_count + 1, false)
                         }
                     }
                 } else if arg_count != 0 {
-                    Err(ExecuteError::ArgmentCountUnmatch { expcted: 0, got: arg_count })?;
+                    Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count })?;
                     unreachable!()
                 } else {
                     Ok(())
                 }
             }
+            Object::Instance(_) => self.__call__(callee, arg_count)
+                .map_err(|e| match e {
+                    ExecuteError::NoImplementMethod(_, _) => ExecuteError::CanNotCall(self.value_type_name(callee)),
+                    other => other,
+                }),
             Object::BoundMethod(bound_method) => {
-                let index = self.stack.len() - arg_count - 1;
+                let index = self.callee_slot(arg_count);
                 self.stack[index] = bound_method.receiver;
                 match &bound_method.method {
                     Method::User(closure_handle) => {
-                        self.call_method(*closure_handle, arg_count + 1)
+                        self.call_closure(*closure_handle, arg_count + 1, false)
                     }
-                    Method::Builtin(handle) => {
-                        let builtin_fn = self.get_builtin_fn(*handle)?.function;
-                        self.call_builtin_fn(builtin_fn, arg_count + 1)
+                    Method::Native(handle) => {
+                        let native_fn = self.get_native_fn(*handle)?.function;
+                        self.call_native_fn(native_fn, arg_count + 1, false)
                     }
                 }
             }
-            Object::BuiltinFn(builtin_fn) => self.call_builtin_fn(builtin_fn.function, arg_count),
+            Object::NativeFn(native_fn) => {
+                self.call_native_fn(native_fn.function, arg_count, true)
+            }
             _ => Err(ExecuteError::CanNotCall(self.value_type_name(callee)))
         }
     }
 
-    /// Push a call frame for a regular function call.
-    fn call(&mut self, closure_handle: ObjectHandle, arg_count: usize) -> ExecuteResult<()> {
-        let closure = self.obj_heap.get_closure(closure_handle).expect("must closure");
-        let function = self.obj_heap.get_function(closure.function).expect("must function");
+    /// Push a call frame for a user-defined closure.
+    ///
+    /// `callee_on_stack` distinguishes two stack layouts:
+    /// - `true`:  the callee (closure) sits on the stack at slot 0 of the new
+    ///   frame.  `arg_count` is the number of *explicit* arguments (does not
+    ///   include the callee itself).
+    /// - `false`: the callee slot has been replaced by a receiver (e.g. via
+    ///   BoundMethod or Invoke).  Slot 0 is the receiver.  `arg_count` already
+    ///   includes the receiver.
+    fn call_closure(&mut self, closure: ObjectHandle, arg_count: usize, callee_on_stack: bool) -> ExecuteResult<()> {
+        let closure_obj = self.obj_heap.get_closure(closure).expect("must closure");
+        let function = self.obj_heap.get_function(closure_obj.function).expect("must function");
         if arg_count != function.arity {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: function.arity, got: arg_count })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: function.arity, got: arg_count })?;
         }
-
-        let frame = CallFrame { closure: closure_handle, ip: 0, slots_start: self.stack.len() - arg_count - 1 };
-        self.frames.push(frame);
+        let slots_start = if callee_on_stack {
+            self.stack.len() - arg_count - 1
+        } else {
+            self.stack.len() - arg_count
+        };
+        self.frames.push(CallFrame { closure, ip: 0, slots_start });
         Ok(())
     }
 
-    /// Push args before call 
-    fn call_builtin_fn(&mut self, builtin_fn: BuiltinFn, arg_count: usize) -> ExecuteResult<()> {
-        let result = builtin_fn(self, arg_count)?;
-        self.stack.truncate(self.stack.len() - arg_count);
+    /// Call a native function.
+    ///
+    /// When `callee_on_stack` is true the callee is popped before the native
+    /// function reads its arguments (see [`call_closure`] for the two stack layouts).
+    fn call_native_fn(&mut self, native_fn: NativeFn, arg_count: usize, callee_on_stack: bool) -> ExecuteResult<()> {
+        let actual_args = if callee_on_stack {
+            let callee_idx = self.stack.len() - arg_count - 1;
+            self.stack.remove(callee_idx);
+            arg_count
+        } else {
+            arg_count
+        };
+        let result = native_fn(self, actual_args)?;
+        self.stack.truncate(self.stack.len() - actual_args);
         self.push_stack(result);
-        Ok(())
-    }
-
-    /// Push a call frame for a method call (user-defined closure only).
-    fn call_method(&mut self, closure_handle: ObjectHandle, arg_count: usize) -> ExecuteResult<()> {
-        let closure = self.obj_heap.get_closure(closure_handle).expect("must closure");
-        let function = self.obj_heap.get_function(closure.function).expect("must function");
-        if arg_count != function.arity {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: function.arity, got: arg_count })?;
-        }
-
-        let frame = CallFrame { closure: closure_handle, ip: 0, slots_start: self.stack.len() - arg_count };
-        self.frames.push(frame);
         Ok(())
     }
 
@@ -674,7 +646,7 @@ macro_rules! impl_getters {
 
 impl VirtualMachine {
     impl_getters!(function, ObjectFunction);
-    impl_getters!(builtin_fn, ObjectBuiltinFn);
+    impl_getters!(native_fn, ObjectNativeFn);
     impl_getters!(closure, ObjectClosure);
     impl_getters!(upvalue, ObjectUpvalue);
     impl_getters!(instance, ObjectInstance);

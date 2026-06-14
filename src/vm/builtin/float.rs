@@ -10,7 +10,7 @@ macro_rules! float_binary_arith {
     ($name:ident, $float_op:expr, $op_name:literal) => {
         pub fn $name(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
             if arg_count != 2 {
-                Err(ExecuteError::ArgmentCountUnmatch { expcted: 1, got: arg_count.saturating_sub(1) })?;
+                Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: arg_count.saturating_sub(1) })?;
             }
             let args = top_args(self, arg_count);
             let lhs_val = *self.get_float_instance(args[0])?;
@@ -30,7 +30,7 @@ macro_rules! float_cmp_op {
     ($name:ident, $float_cmp:expr, $op_name:literal) => {
         pub fn $name(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
             if arg_count != 2 {
-                Err(ExecuteError::ArgmentCountUnmatch { expcted: 1, got: arg_count.saturating_sub(1) })?;
+                Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: arg_count.saturating_sub(1) })?;
             }
             let args = top_args(self, arg_count);
             let lhs_val = *self.get_float_instance(args[0])?;
@@ -61,7 +61,7 @@ impl VirtualMachine {
 
     pub fn float_div(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 2 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 1, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let lhs_val = *self.get_float_instance(args[0])?;
@@ -79,7 +79,7 @@ impl VirtualMachine {
 
     pub fn float_neg(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 1 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 0, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let val = *self.get_float_instance(args[0])?;
@@ -88,7 +88,7 @@ impl VirtualMachine {
 
     pub fn float_not(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 1 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 0, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let val = *self.get_float_instance(args[0])?;
@@ -97,7 +97,7 @@ impl VirtualMachine {
 
     pub fn float_str(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 1 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 0, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let val = *self.get_float_instance(args[0])?;
@@ -106,7 +106,7 @@ impl VirtualMachine {
 
     pub fn float_bool(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 1 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 0, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let val = *self.get_float_instance(args[0])?;
@@ -115,7 +115,7 @@ impl VirtualMachine {
 
     pub fn float_int(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 1 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 0, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let val = *self.get_float_instance(args[0])?;
@@ -124,9 +124,29 @@ impl VirtualMachine {
 
     pub fn float_float(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 1 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 0, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
         }
         // Return self.
         Ok(top_args(self, arg_count)[0])
+    }
+
+    pub fn register_float_builtins(&mut self) {
+        let fc = self.obj_heap.float_class;
+        self.reg_native_method(fc, "__neg__", VirtualMachine::float_neg);
+        self.reg_native_method(fc, "__not__", VirtualMachine::float_not);
+        self.reg_native_method(fc, "__add__", VirtualMachine::float_add);
+        self.reg_native_method(fc, "__sub__", VirtualMachine::float_sub);
+        self.reg_native_method(fc, "__mul__", VirtualMachine::float_mul);
+        self.reg_native_method(fc, "__div__", VirtualMachine::float_div);
+        self.reg_native_method(fc, "__eq__", VirtualMachine::float_eq);
+        self.reg_native_method(fc, "__ne__", VirtualMachine::float_ne);
+        self.reg_native_method(fc, "__gt__", VirtualMachine::float_gt);
+        self.reg_native_method(fc, "__ge__", VirtualMachine::float_ge);
+        self.reg_native_method(fc, "__lt__", VirtualMachine::float_lt);
+        self.reg_native_method(fc, "__le__", VirtualMachine::float_le);
+        self.reg_native_method(fc, "__str__", VirtualMachine::float_str);
+        self.reg_native_method(fc, "__bool__", VirtualMachine::float_bool);
+        self.reg_native_method(fc, "__int__", VirtualMachine::float_int);
+        self.reg_native_method(fc, "__float__", VirtualMachine::float_float);
     }
 }

@@ -6,6 +6,15 @@ pub enum InterpretError {
     Runtime(ExecuteError),
 }
 
+impl std::fmt::Display for InterpretError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            InterpretError::Compile(e) => write!(f, "{e:?}"),
+            InterpretError::Runtime(e) => write!(f, "{e}"),
+        }
+    }
+}
+
 #[thiserrorctx::context_error]
 pub enum ExecuteError {
     #[error(transparent)]
@@ -14,23 +23,23 @@ pub enum ExecuteError {
     #[error("Divide by zero")]
     DivideByZero,
 
-    #[error("Unexpect empty stack")]
+    #[error("Unexpected empty stack")]
     StackEmpty,
 
-    #[error("Unexpect empty frame")]
+    #[error("Unexpected empty frame")]
     CallFrameEmpty,
 
     #[error("Stack index {0} out of range")]
     StackIndexOutOfRange(usize),
 
-    #[error("Type mismatch in unary op {0} for {1}")]
+    #[error("bad operand type for unary {0}: '{1}'")]
     UnaryOpTypeMismatch(&'static str, &'static str),
 
-    #[error("Type mismatch in binary op {0} with {1} and {2}")]
+    #[error("unsupported operand type(s) for {0}: '{1}' and '{2}'")]
     BinaryOpTypeMismatch(&'static str, &'static str, &'static str),
 
-    #[error("expect type {0}, not got {1}")]
-    UnexpectType(&'static str, &'static str),
+    #[error("'{1}' is not {0}")]
+    UnexpectedType(&'static str, &'static str),
 
     #[error("Variable '{0}' not found")]
     VariableNotFound(String),
@@ -38,8 +47,8 @@ pub enum ExecuteError {
     #[error("Can't call {0}")]
     CanNotCall(&'static str),
 
-    #[error("Expected {expcted} arguments but got {got}")]
-    ArgmentCountUnmatch { expcted: usize, got: usize },
+    #[error("Expected {expected} arguments but got {got}")]
+    ArgumentCountMismatch { expected: usize, got: usize },
 
     #[error("no superclass to call super method on")]
     NoSuperclass,
@@ -84,5 +93,5 @@ pub enum ExecuteError {
     NoImplementMethod(String, &'static str),
 
     #[error("unsupport method call '{0}' for {1}")]
-    UnsupportMethodCall(&'static str, &'static str),
+    UnsupportedMethodCall(&'static str, &'static str),
 }   

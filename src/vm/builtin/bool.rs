@@ -5,7 +5,7 @@ use super::utils::top_args;
 impl VirtualMachine {
     pub fn bool_neg(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 1 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 0, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let val = *self.get_bool_instance(args[0])?;
@@ -14,7 +14,7 @@ impl VirtualMachine {
 
     pub fn bool_not(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 1 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 0, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let val = *self.get_bool_instance(args[0])?;
@@ -29,7 +29,7 @@ impl VirtualMachine {
 
     pub fn bool_add(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 2 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 1, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let lhs_val = self.bool_as_int(args[0])?;
@@ -49,7 +49,7 @@ impl VirtualMachine {
 
     pub fn bool_sub(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 2 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 1, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let lhs_val = self.bool_as_int(args[0])?;
@@ -69,7 +69,7 @@ impl VirtualMachine {
 
     pub fn bool_mul(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 2 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 1, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let lhs_val = self.bool_as_int(args[0])?;
@@ -89,7 +89,7 @@ impl VirtualMachine {
 
     pub fn bool_div(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 2 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 1, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let lhs_val = self.bool_as_int(args[0])? as f64;
@@ -112,7 +112,7 @@ impl VirtualMachine {
 
     pub fn bool_eq(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 2 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 1, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let lhs_val = *self.get_bool_instance(args[0])?;
@@ -133,7 +133,7 @@ impl VirtualMachine {
 
     pub fn bool_ne(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 2 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 1, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: arg_count.saturating_sub(1) })?;
         }
         let eq = self.bool_eq(arg_count)?;
         let b = *self.get_bool_instance(eq)?;
@@ -142,7 +142,7 @@ impl VirtualMachine {
 
     pub fn bool_gt(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 2 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 1, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let lhs_val = *self.get_bool_instance(args[0])?;
@@ -162,7 +162,7 @@ impl VirtualMachine {
 
     pub fn bool_ge(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 2 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 1, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let lhs_val = *self.get_bool_instance(args[0])?;
@@ -182,7 +182,7 @@ impl VirtualMachine {
 
     pub fn bool_lt(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 2 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 1, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let lhs_val = *self.get_bool_instance(args[0])?;
@@ -202,7 +202,7 @@ impl VirtualMachine {
 
     pub fn bool_le(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 2 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 1, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let lhs_val = *self.get_bool_instance(args[0])?;
@@ -222,7 +222,7 @@ impl VirtualMachine {
 
     pub fn bool_str(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 1 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 0, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let val = *self.get_bool_instance(args[0])?;
@@ -233,7 +233,7 @@ impl VirtualMachine {
 
     pub fn bool_bool(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 1 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 0, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
         }
         // Return self.
         Ok(top_args(self, arg_count)[0])
@@ -241,7 +241,7 @@ impl VirtualMachine {
 
     pub fn bool_int(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 1 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 0, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let val = *self.get_bool_instance(args[0])?;
@@ -250,10 +250,30 @@ impl VirtualMachine {
 
     pub fn bool_float(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 1 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 0, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let val = *self.get_bool_instance(args[0])?;
         Ok(self.obj_heap.alloc_float_instance(if val { 1.0 } else { 0.0 }))
+    }
+
+    pub fn register_bool_builtins(&mut self) {
+        let bc = self.obj_heap.bool_class;
+        self.reg_native_method(bc, "__neg__", VirtualMachine::bool_neg);
+        self.reg_native_method(bc, "__not__", VirtualMachine::bool_not);
+        self.reg_native_method(bc, "__add__", VirtualMachine::bool_add);
+        self.reg_native_method(bc, "__sub__", VirtualMachine::bool_sub);
+        self.reg_native_method(bc, "__mul__", VirtualMachine::bool_mul);
+        self.reg_native_method(bc, "__div__", VirtualMachine::bool_div);
+        self.reg_native_method(bc, "__eq__", VirtualMachine::bool_eq);
+        self.reg_native_method(bc, "__ne__", VirtualMachine::bool_ne);
+        self.reg_native_method(bc, "__gt__", VirtualMachine::bool_gt);
+        self.reg_native_method(bc, "__ge__", VirtualMachine::bool_ge);
+        self.reg_native_method(bc, "__lt__", VirtualMachine::bool_lt);
+        self.reg_native_method(bc, "__le__", VirtualMachine::bool_le);
+        self.reg_native_method(bc, "__str__", VirtualMachine::bool_str);
+        self.reg_native_method(bc, "__bool__", VirtualMachine::bool_bool);
+        self.reg_native_method(bc, "__int__", VirtualMachine::bool_int);
+        self.reg_native_method(bc, "__float__", VirtualMachine::bool_float);
     }
 }

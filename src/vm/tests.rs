@@ -4,6 +4,10 @@ use super::VirtualMachine;
 /// Build a chunk and run it: creates VM first, then calls `build` with VM's heap.
 fn run_chunk(build: impl FnOnce(&mut Chunk, &mut ObjectHeap)) -> VirtualMachine {
     let mut vm = VirtualMachine::new();
+    // SAFETY: `vm.obj_heap` and the local `chunk` are separate allocations.
+    // `build` only uses the heap for pushing constants; it never reads or
+    // modifies vm internals.  The raw pointer is valid for the duration of
+    // the call because `vm` is pinned on the stack.
     let heap_ptr = &mut vm.obj_heap as *mut ObjectHeap;
     let mut chunk = Chunk::new();
     unsafe { build(&mut chunk, &mut *heap_ptr); }
@@ -455,4 +459,903 @@ pub fn test_super_invoke() {
         c.write_instruction(Instruction::Return, h);
     });
     assert_eq!({let r=vm.pop_stack().unwrap(); get_int(&vm, r)}, 1);
+}
+
+// ===========================================================================
+// Regression tests for previously-fixed bugs
+// ===========================================================================
+
+/// Bug 1: NativeFn call stack corruption.
+/// `call_native_fn` removed only args from stack, leaving the callee behind.
+/// A subsequent call would read the wrong value.  This test exercises chained
+/// and nested native calls that would have crashed or printed garbage.
+#[test]
+pub fn test_regression_chained_builtin_no_crash() {
+    let mut vm = VirtualMachine::new();
+    // len("hello") returns 5; print(5) should succeed.
+    vm.interpret("print(len(\"hello\"));").unwrap();
+}
+
+#[test]
+pub fn test_regression_multiple_builtin_calls_as_args() {
+    let mut vm = VirtualMachine::new();
+    // Multiple native calls whose results become arguments to print.
+    vm.interpret("print(len(\"a\"), len(\"bc\"), len(\"def\"));").unwrap();
+}
+
+#[test]
+pub fn test_regression_deeply_nested_builtin_calls() {
+    let mut vm = VirtualMachine::new();
+    // bool(len("hi")) — len returns 2, bool(2) returns true.
+    vm.interpret("print(bool(len(\"hi\")));").unwrap();
+}
+
+#[test]
+pub fn test_regression_builtin_call_chain_in_block() {
+    let mut vm = VirtualMachine::new();
+    // Sequential native calls should not interfere with each other.
+    vm.interpret("{ var a = len(\"hello\"); var b = str(a); print(b); }").unwrap();
+}
+
+#[test]
+pub fn test_regression_builtin_in_expression_context() {
+    let mut vm = VirtualMachine::new();
+    // Native result used in arithmetic expression.
+    vm.interpret("{ var n = len(\"ab\") + len(\"cde\"); print(n); }").unwrap(); // 2 + 3 = 5
+}
+
+/// Bug 2: Non-Instance comparison crash.
+/// `type(f) == Bar` crashed because type() returns a Class object, and
+/// `dispatch_magic` calls `get_instance()` which rejects non-Instance objects.
+#[test]
+pub fn test_regression_type_equality_class() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(
+        "class Foo {} class Bar {} var f = Foo(); var b = Bar(); \
+         print(type(f) == Foo); print(type(f) == Bar); print(type(b) == Bar);"
+    ).unwrap();
+}
+
+#[test]
+pub fn test_regression_native_fn_equality() {
+    let mut vm = VirtualMachine::new();
+    // NativeFn == NativeFn: same handle → true (fast path).
+    vm.interpret("print(print == print);").unwrap();
+}
+
+#[test]
+pub fn test_regression_native_fn_not_equal() {
+    let mut vm = VirtualMachine::new();
+    // NativeFn != NativeFn: different handles → true.
+    vm.interpret("print(print != len);").unwrap();
+}
+
+#[test]
+pub fn test_regression_class_not_equal() {
+    let mut vm = VirtualMachine::new();
+    // Different classes should not be equal.
+    vm.interpret("class A {} class B {} print(A == B); print(A != B);").unwrap();
+}
+
+/// Bug 3 (nil): nil should not have method implementations.  Operations on nil
+/// must check and reject directly rather than dispatching to a nil class.
+#[test]
+pub fn test_regression_nil_negate_error() {
+    let mut vm = VirtualMachine::new();
+    assert!(vm.interpret("-nil;").is_err());
+}
+
+#[test]
+pub fn test_regression_nil_add_error() {
+    let mut vm = VirtualMachine::new();
+    assert!(vm.interpret("nil + 1;").is_err());
+}
+
+#[test]
+pub fn test_regression_nil_sub_error() {
+    let mut vm = VirtualMachine::new();
+    assert!(vm.interpret("nil - 1;").is_err());
+}
+
+#[test]
+pub fn test_regression_nil_mul_error() {
+    let mut vm = VirtualMachine::new();
+    assert!(vm.interpret("nil * 2;").is_err());
+}
+
+#[test]
+pub fn test_regression_nil_div_error() {
+    let mut vm = VirtualMachine::new();
+    assert!(vm.interpret("nil / 2;").is_err());
+}
+
+#[test]
+pub fn test_regression_nil_lt_error() {
+    let mut vm = VirtualMachine::new();
+    assert!(vm.interpret("nil < 1;").is_err());
+}
+
+#[test]
+pub fn test_regression_nil_le_error() {
+    let mut vm = VirtualMachine::new();
+    assert!(vm.interpret("nil <= 1;").is_err());
+}
+
+#[test]
+pub fn test_regression_nil_gt_error() {
+    let mut vm = VirtualMachine::new();
+    assert!(vm.interpret("nil > 1;").is_err());
+}
+
+#[test]
+pub fn test_regression_nil_ge_error() {
+    let mut vm = VirtualMachine::new();
+    assert!(vm.interpret("nil >= 1;").is_err());
+}
+
+#[test]
+pub fn test_regression_nil_len_error() {
+    let mut vm = VirtualMachine::new();
+    assert!(vm.interpret("len(nil);").is_err());
+}
+
+#[test]
+pub fn test_regression_nil_int_error() {
+    let mut vm = VirtualMachine::new();
+    assert!(vm.interpret("int(nil);").is_err());
+}
+
+#[test]
+pub fn test_regression_nil_float_error() {
+    let mut vm = VirtualMachine::new();
+    assert!(vm.interpret("float(nil);").is_err());
+}
+
+#[test]
+pub fn test_regression_nil_index_get_error() {
+    let mut vm = VirtualMachine::new();
+    assert!(vm.interpret("nil[0];").is_err());
+}
+
+#[test]
+pub fn test_regression_nil_eq_nil_true() {
+    // nil == nil should always be true.
+    let mut vm = run_chunk(|c, h| {
+        c.write_instruction(Instruction::Nil, h);
+        c.write_instruction(Instruction::Nil, h);
+        c.write_instruction(Instruction::Equal, h);
+        c.write_instruction(Instruction::Return, h);
+    });
+    assert!({let r=vm.pop_stack().unwrap(); get_bool(&vm, r)});
+}
+
+#[test]
+pub fn test_regression_nil_ne_nil_false() {
+    // nil != nil should be false.
+    let mut vm = run_chunk(|c, h| {
+        c.write_instruction(Instruction::Nil, h);
+        c.write_instruction(Instruction::Nil, h);
+        c.write_instruction(Instruction::NotEqual, h);
+        c.write_instruction(Instruction::Return, h);
+    });
+    assert!(!{let r=vm.pop_stack().unwrap(); get_bool(&vm, r)});
+}
+
+#[test]
+pub fn test_regression_nil_eq_int_false() {
+    // nil == 42 should be false.
+    let mut vm = run_chunk(|c, h| {
+        c.write_instruction(Instruction::Nil, h);
+        c.write_instruction(Instruction::Constant(h.alloc_integer_instance(42)), h);
+        c.write_instruction(Instruction::Equal, h);
+        c.write_instruction(Instruction::Return, h);
+    });
+    assert!(!{let r=vm.pop_stack().unwrap(); get_bool(&vm, r)});
+}
+
+#[test]
+pub fn test_regression_not_nil_is_true() {
+    // !nil should be true (nil is falsy).
+    let mut vm = run_chunk(|c, h| {
+        c.write_instruction(Instruction::Nil, h);
+        c.write_instruction(Instruction::Not, h);
+        c.write_instruction(Instruction::Return, h);
+    });
+    assert!({let r=vm.pop_stack().unwrap(); get_bool(&vm, r)});
+}
+
+#[test]
+pub fn test_regression_str_nil() {
+    // str(nil) should return "nil" without crashing.
+    let mut vm = run_chunk(|c, h| {
+        c.write_instruction(Instruction::GetGlobal("str".into()), h);
+        c.write_instruction(Instruction::Nil, h);
+        c.write_instruction(Instruction::Call(1), h);
+        c.write_instruction(Instruction::Return, h);
+    });
+    let r = vm.pop_stack().unwrap();
+    assert_eq!(vm.obj_heap.get_string_instance(r).unwrap().as_str(), "nil");
+}
+
+#[test]
+pub fn test_regression_bool_nil_is_false() {
+    // bool(nil) should be false.
+    let mut vm = run_chunk(|c, h| {
+        c.write_instruction(Instruction::GetGlobal("bool".into()), h);
+        c.write_instruction(Instruction::Nil, h);
+        c.write_instruction(Instruction::Call(1), h);
+        c.write_instruction(Instruction::Return, h);
+    });
+    assert!(!{let r=vm.pop_stack().unwrap(); get_bool(&vm, r)});
+}
+
+/// `type(nil)` internally: nil is stored as an Instance with NIL class,
+/// so type(nil) returns a handle.  Verify it doesn't crash.
+#[test]
+pub fn test_regression_type_nil_no_crash() {
+    let mut vm = VirtualMachine::new();
+    // Just verify this compiles and runs without crashing.
+    vm.interpret("print(type(nil));").unwrap();
+}
+
+/// Bool interning: `true` always returns the same ObjectHandle.
+#[test]
+pub fn test_regression_bool_intern_same_vm() {
+    let mut vm = run_chunk(|c, h| {
+        // Push two `true` values; they should be the same handle.
+        c.write_instruction(Instruction::True, h);
+        c.write_instruction(Instruction::True, h);
+        // They are the same handle, so equality fast-path catches it.
+        c.write_instruction(Instruction::Equal, h);
+        c.write_instruction(Instruction::Return, h);
+    });
+    assert!({let r=vm.pop_stack().unwrap(); get_bool(&vm, r)});
+}
+
+/// Bool interning: `false` always returns the same ObjectHandle.
+#[test]
+pub fn test_regression_bool_intern_false() {
+    let mut vm = run_chunk(|c, h| {
+        c.write_instruction(Instruction::False, h);
+        c.write_instruction(Instruction::False, h);
+        c.write_instruction(Instruction::Equal, h);
+        c.write_instruction(Instruction::Return, h);
+    });
+    assert!({let r=vm.pop_stack().unwrap(); get_bool(&vm, r)});
+}
+
+/// `abs()` on non-number types should error gracefully.
+#[test]
+pub fn test_regression_abs_on_string_error() {
+    let mut vm = VirtualMachine::new();
+    assert!(vm.interpret("abs(\"hello\");").is_err());
+}
+
+// ===========================================================================
+// __call__ magic method — Python-style callable instances
+// ===========================================================================
+
+#[test]
+pub fn test_call_magic_user_method() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        class Adder {
+            fun __init__(self, n) { self.n = n; }
+            fun __call__(self, x) { return self.n + x; }
+        }
+        var add5 = Adder(5);
+        print(add5(3));    // 8
+        print(add5(10));   // 15
+    ").unwrap();
+}
+
+#[test]
+pub fn test_call_magic_no_args() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        class Logger {
+            fun __call__(self) { print(\"called!\"); }
+        }
+        var log = Logger();
+        log();
+    ").unwrap();
+}
+
+#[test]
+pub fn test_call_magic_multiple_args() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        class Multiplier {
+            fun __init__(self, factor) { self.factor = factor; }
+            fun __call__(self, a, b) { return self.factor * a * b; }
+        }
+        var double = Multiplier(2);
+        print(double(3, 4));  // 24
+    ").unwrap();
+}
+
+#[test]
+pub fn test_call_magic_on_non_callable_instance_error() {
+    let mut vm = VirtualMachine::new();
+    // Plain instance without __call__ should error when called.
+    assert!(vm.interpret("class Foo {} var f = Foo(); f();").is_err());
+}
+
+#[test]
+pub fn test_call_magic_chained() {
+    let mut vm = VirtualMachine::new();
+    // A callable that returns a callable.
+    vm.interpret("
+        class Factory {
+            fun __init__(self, n) { self.n = n; }
+            fun __call__(self, x) { return self.n + x; }
+        }
+        print(Factory(10)(5));  // 15
+    ").unwrap();
+}
+
+#[test]
+pub fn test_call_magic_with_method() {
+    let mut vm = VirtualMachine::new();
+    // Instance with both regular methods and __call__.
+    vm.interpret("
+        class Counter {
+            fun __init__(self) { self.count = 0; }
+            fun __call__(self) {
+                self.count = self.count + 1;
+                return self.count;
+            }
+            fun reset(self) { self.count = 0; }
+        }
+        var c = Counter();
+        print(c());  // 1
+        print(c());  // 2
+        c.reset();
+        print(c());  // 1
+    ").unwrap();
+}
+
+// ===========================================================================
+// Non-Instance type error messages — friendly errors for all operations
+// ===========================================================================
+
+/// Unary `-` on a non-Instance (class, native fn, closure) should give
+/// a friendly error with the actual type name.
+#[test]
+pub fn test_type_error_negate_on_class() {
+    let mut vm = VirtualMachine::new();
+    let err = vm.interpret("class Foo {} -Foo;").unwrap_err();
+    assert!(err.to_string().contains("bad operand type for unary neg"), "got: {err}");
+    assert!(err.to_string().contains("class"), "got: {err}");
+}
+
+#[test]
+pub fn test_type_error_negate_on_native_fn() {
+    let mut vm = VirtualMachine::new();
+    let err = vm.interpret("-print;").unwrap_err();
+    assert!(err.to_string().contains("native function"), "got: {err}");
+}
+
+#[test]
+pub fn test_type_error_negate_on_function() {
+    let mut vm = VirtualMachine::new();
+    let err = vm.interpret("fun f() {} -f;").unwrap_err();
+    assert!(err.to_string().contains("closure"), "got: {err}");
+}
+
+/// Binary `+` on a class object should mention both types.
+#[test]
+pub fn test_type_error_add_class_and_int() {
+    let mut vm = VirtualMachine::new();
+    let err = vm.interpret("class Foo {} Foo + 1;").unwrap_err();
+    assert!(err.to_string().contains("unsupported operand type(s) for add"), "got: {err}");
+    assert!(err.to_string().contains("class"), "got: {err}");
+}
+
+#[test]
+pub fn test_type_error_add_native_fn_and_int() {
+    let mut vm = VirtualMachine::new();
+    let err = vm.interpret("print + 1;").unwrap_err();
+    assert!(err.to_string().contains("native function"), "got: {err}");
+}
+
+#[test]
+pub fn test_type_error_sub_class() {
+    let mut vm = VirtualMachine::new();
+    let err = vm.interpret("class Foo {} Foo - 1;").unwrap_err();
+    assert!(err.to_string().contains("unsupported operand type(s) for sub"), "got: {err}");
+}
+
+#[test]
+pub fn test_type_error_mul_class() {
+    let mut vm = VirtualMachine::new();
+    let err = vm.interpret("class Foo {} Foo * 2;").unwrap_err();
+    assert!(err.to_string().contains("unsupported operand type(s) for mul"), "got: {err}");
+}
+
+#[test]
+pub fn test_type_error_div_class() {
+    let mut vm = VirtualMachine::new();
+    let err = vm.interpret("class Foo {} Foo / 2;").unwrap_err();
+    assert!(err.to_string().contains("unsupported operand type(s) for div"), "got: {err}");
+}
+
+/// Comparison on a non-Instance should error with the type name.
+#[test]
+pub fn test_type_error_lt_class() {
+    let mut vm = VirtualMachine::new();
+    let err = vm.interpret("class Foo {} Foo < 1;").unwrap_err();
+    assert!(err.to_string().contains("unsupported operand type(s) for lt"), "got: {err}");
+}
+
+#[test]
+pub fn test_type_error_gt_class() {
+    let mut vm = VirtualMachine::new();
+    let err = vm.interpret("class Foo {} Foo > 1;").unwrap_err();
+    assert!(err.to_string().contains("unsupported operand type(s) for gt"), "got: {err}");
+}
+
+#[test]
+pub fn test_type_error_le_class() {
+    let mut vm = VirtualMachine::new();
+    let err = vm.interpret("class Foo {} Foo <= 1;").unwrap_err();
+    assert!(err.to_string().contains("unsupported operand type(s) for le"), "got: {err}");
+}
+
+#[test]
+pub fn test_type_error_ge_class() {
+    let mut vm = VirtualMachine::new();
+    let err = vm.interpret("class Foo {} Foo >= 1;").unwrap_err();
+    assert!(err.to_string().contains("unsupported operand type(s) for ge"), "got: {err}");
+}
+
+/// rhs non-Instance should also be caught.
+#[test]
+pub fn test_type_error_lt_int_and_native_fn() {
+    let mut vm = VirtualMachine::new();
+    let err = vm.interpret("1 < print;").unwrap_err();
+    assert!(err.to_string().contains("unsupported operand type(s) for lt"), "got: {err}");
+}
+
+/// `len()` on non-Instance gives friendly error.
+#[test]
+pub fn test_type_error_len_on_class() {
+    let mut vm = VirtualMachine::new();
+    let err = vm.interpret("class Foo {} len(Foo);").unwrap_err();
+    assert!(err.to_string().contains("is not object with __len__"), "got: {err}");
+}
+
+#[test]
+pub fn test_type_error_len_on_native_fn() {
+    let mut vm = VirtualMachine::new();
+    let err = vm.interpret("len(print);").unwrap_err();
+    assert!(err.to_string().contains("native function"), "got: {err}");
+}
+
+/// `int()` / `float()` on non-Instance.
+#[test]
+pub fn test_type_error_int_on_class() {
+    let mut vm = VirtualMachine::new();
+    let err = vm.interpret("class Foo {} int(Foo);").unwrap_err();
+    assert!(err.to_string().contains("is not object with __int__"), "got: {err}");
+}
+
+#[test]
+pub fn test_type_error_float_on_class() {
+    let mut vm = VirtualMachine::new();
+    let err = vm.interpret("class Foo {} float(Foo);").unwrap_err();
+    assert!(err.to_string().contains("is not object with __float__"), "got: {err}");
+}
+
+/// `[]` index on non-Instance.
+#[test]
+pub fn test_type_error_getitem_on_class() {
+    let mut vm = VirtualMachine::new();
+    let err = vm.interpret("class Foo {} Foo[0];").unwrap_err();
+    assert!(err.to_string().contains("is not object with __getitem__"), "got: {err}");
+}
+
+#[test]
+pub fn test_type_error_setitem_on_class() {
+    let mut vm = VirtualMachine::new();
+    let err = vm.interpret("class Foo {} Foo[0] = 1;").unwrap_err();
+    assert!(err.to_string().contains("is not object with __setitem__"), "got: {err}");
+}
+
+/// `()` call on a non-callable (e.g. string literal).
+#[test]
+pub fn test_type_error_call_on_non_callable() {
+    let mut vm = VirtualMachine::new();
+    // "hello" is a string instance (not callable).
+    let err = vm.interpret("\"hello\"();").unwrap_err();
+    assert!(err.to_string().contains("Can't call"), "got: {err}");
+}
+
+// ===========================================================================
+// __call__ magic method — additional edge cases
+// ===========================================================================
+
+/// Instance with inherited __call__ should work.
+#[test]
+pub fn test_call_magic_inherited() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        class Base {
+            fun __call__(self, x) { return x * 2; }
+        }
+        class Child extends Base {}
+        var c = Child();
+        print(c(21));  // 42
+    ").unwrap();
+}
+
+/// __call__ with super invocation.
+#[test]
+pub fn test_call_magic_with_super() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        class Base {
+            fun __call__(self, x) { return x + 1; }
+        }
+        class Derived extends Base {
+            fun __call__(self, x) { return super.__call__(x) * 10; }
+        }
+        var d = Derived();
+        print(d(5));  // (5 + 1) * 10 = 60
+    ").unwrap();
+}
+
+/// Callable that mutates self and returns accumulated state.
+#[test]
+pub fn test_call_magic_accumulator() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        class Accum {
+            fun __init__(self) { self.total = 0; }
+            fun __call__(self, n) {
+                self.total = self.total + n;
+                return self.total;
+            }
+        }
+        var a = Accum();
+        print(a(5));   // 5
+        print(a(3));   // 8
+        print(a(2));   // 10
+    ").unwrap();
+}
+
+/// Callable stored in a list and invoked.
+#[test]
+pub fn test_call_magic_in_list() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        class Greet {
+            fun __init__(self, name) { self.name = name; }
+            fun __call__(self) { print(\"Hi \" + self.name); }
+        }
+        var gs = [Greet(\"A\"), Greet(\"B\")];
+        gs[0]();
+        gs[1]();
+    ").unwrap();
+}
+
+/// __call__ returning a value used in an expression.
+#[test]
+pub fn test_call_magic_in_expression() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        class Doubler {
+            fun __call__(self, n) { return n * 2; }
+        }
+        var d = Doubler();
+        print(d(3) + d(4));  // 6 + 8 = 14
+    ").unwrap();
+}
+
+// ===========================================================================
+// value_type_name — friendly type names in error messages
+// ===========================================================================
+
+#[test]
+pub fn test_value_type_name_nil() {
+    let vm = VirtualMachine::new();
+    assert_eq!(vm.value_type_name(ObjectHandle::NIL), "nil");
+}
+
+#[test]
+pub fn test_value_type_name_instance_fields() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("class Foo {} var f = Foo();").unwrap();
+    // The instance 'f' should report as "instance" (Fields variant).
+    // We verify by getting an error message that includes the type name.
+    let err = vm.interpret("class Bar {} var b = Bar(); -b;").unwrap_err();
+    // User-defined instances with no __neg__ get UnaryOpTypeMismatch
+    assert!(err.to_string().contains("instance"), "got: {err}");
+}
+
+#[test]
+pub fn test_value_type_name_builtin_types() {
+    let mut vm = VirtualMachine::new();
+    // Integer handle
+    let int_handle = vm.obj_heap.alloc_integer_instance(42);
+    assert_eq!(vm.value_type_name(int_handle), "integer");
+    // Float handle
+    let float_handle = vm.obj_heap.alloc_float_instance(3.14);
+    assert_eq!(vm.value_type_name(float_handle), "float");
+    // Bool handle
+    assert_eq!(vm.value_type_name(vm.obj_heap.true_instance), "boolean");
+    assert_eq!(vm.value_type_name(vm.obj_heap.false_instance), "boolean");
+    // String handle
+    let str_handle = vm.obj_heap.alloc_string_instance("hello".into());
+    assert_eq!(vm.value_type_name(str_handle), "string");
+}
+
+// ===========================================================================
+// More magic method edge cases
+// ===========================================================================
+
+/// Custom __bool__ returning false should make the instance falsy.
+#[test]
+pub fn test_custom_bool_falsy() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        class AlwaysFalse {
+            fun __bool__(self) { return false; }
+        }
+        var af = AlwaysFalse();
+        print(!af);              // true  — !false == true
+        print(af or 42);         // 42   — false is falsy
+        print(af and 42);        // <instance> — short-circuit
+        print(bool(af));         // false
+    ").unwrap();
+}
+
+/// Custom __len__ on a user class.
+#[test]
+pub fn test_custom_len_method() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        class MyCollection {
+            fun __init__(self) { self.items = [10, 20, 30]; }
+            fun __len__(self) { return len(self.items); }
+        }
+        var mc = MyCollection();
+        print(len(mc));  // 3
+    ").unwrap();
+}
+
+/// Custom __getitem__ on a user class.
+#[test]
+pub fn test_custom_getitem_method() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        class MySeq {
+            fun __init__(self) { self.data = [1, 2, 4, 8]; }
+            fun __getitem__(self, i) { return self.data[i]; }
+        }
+        var ms = MySeq();
+        print(ms[0]);  // 1
+        print(ms[3]);  // 8
+    ").unwrap();
+}
+
+/// Custom __setitem__ on a user class.
+#[test]
+pub fn test_custom_setitem_method() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        class MyMutable {
+            fun __init__(self) { self.data = [0, 0, 0]; }
+            fun __getitem__(self, i) { return self.data[i]; }
+            fun __setitem__(self, i, v) { self.data[i] = v; return v; }
+        }
+        var mm = MyMutable();
+        mm[1] = 99;
+        print(mm[1]);  // 99
+    ").unwrap();
+}
+
+/// Custom __int__ / __float__ on a user class.
+#[test]
+pub fn test_custom_int_float_methods() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        class Number {
+            fun __init__(self, n) { self.n = n; }
+            fun __int__(self) { return self.n; }
+            fun __float__(self) { return self.n + 0.5; }
+        }
+        var n = Number(7);
+        print(int(n));    // 7
+        print(float(n));  // 7.5
+    ").unwrap();
+}
+
+/// __not__ on a custom class (explicit override).
+#[test]
+pub fn test_custom_not_method() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        class Inverter {
+            fun __init__(self, val) { self.val = val; }
+            fun __not__(self) { return !self.val; }
+        }
+        var inv = Inverter(true);
+        print(!inv);  // false
+    ").unwrap();
+}
+
+/// __eq__ on a custom class.
+#[test]
+pub fn test_custom_eq_method() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        class Pair {
+            fun __init__(self, a, b) { self.a = a; self.b = b; }
+            fun __eq__(self, other) { return self.a == other.a and self.b == other.b; }
+        }
+        var p1 = Pair(1, 2);
+        var p2 = Pair(1, 2);
+        var p3 = Pair(3, 4);
+        print(p1 == p2);  // true
+        print(p1 == p3);  // false
+        print(p1 != p3);  // true
+    ").unwrap();
+}
+
+/// __neg__ on a custom class.
+#[test]
+pub fn test_custom_neg_method() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        class Vec {
+            fun __init__(self, x, y) { self.x = x; self.y = y; }
+            fun __neg__(self) {
+                return Vec(-self.x, -self.y);
+            }
+            fun __str__(self) { return \"Vec(\" + str(self.x) + \",\" + str(self.y) + \")\"; }
+        }
+        var v = Vec(3, -5);
+        print(str(-v));  // Vec(-3,5)
+    ").unwrap();
+}
+
+/// __add__ / __mul__ on a custom class.
+#[test]
+pub fn test_custom_add_mul_methods() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        class Vec {
+            fun __init__(self, x, y) { self.x = x; self.y = y; }
+            fun __add__(self, other) { return Vec(self.x + other.x, self.y + other.y); }
+            fun __mul__(self, s) { return Vec(self.x * s, self.y * s); }
+            fun __str__(self) { return \"(\" + str(self.x) + \",\" + str(self.y) + \")\"; }
+        }
+        var a = Vec(1, 2);
+        var b = Vec(3, 4);
+        print(str(a + b));    // (4,6)
+        print(str(a * 3));    // (3,6)
+    ").unwrap();
+}
+
+/// Chained magic method operations.
+#[test]
+pub fn test_custom_magic_chained() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        class Num {
+            fun __init__(self, v) { self.v = v; }
+            fun __add__(self, o) { return Num(self.v + o.v); }
+            fun __eq__(self, o) { return self.v == o.v; }
+            fun __bool__(self) { return self.v > 0; }
+        }
+        var a = Num(1);
+        var b = Num(2);
+        var c = Num(3);
+        print((a + b) == c);   // true
+        print(bool(a + b));    // true
+    ").unwrap();
+}
+
+// ===========================================================================
+// List / Dict edge cases
+// ===========================================================================
+
+/// List nested operations.
+#[test]
+pub fn test_list_nested() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        var matrix = [[1, 2], [3, 4]];
+        print(matrix[0][0]);  // 1
+        print(matrix[1][1]);  // 4
+        matrix[0][1] = 99;
+        print(matrix[0][1]);  // 99
+    ").unwrap();
+}
+
+/// Dict with mixed key types (string only — cross-type eq not yet supported).
+#[test]
+pub fn test_dict_mixed_values() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        var d = {\"int\": 1, \"str\": \"two\", \"bool\": true};
+        print(d[\"int\"]);   // 1
+        print(d[\"str\"]);   // two
+        print(d[\"bool\"]);  // true
+        print(len(d));       // 3
+    ").unwrap();
+}
+
+/// Dict builtin methods: keys(), get(), values().
+#[test]
+pub fn test_dict_keys_values() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        var d = {\"a\": 1, \"b\": 2, \"c\": 3};
+        var keys = d.keys();
+        print(len(keys));  // 3
+        var val = d.get(\"b\");
+        print(val);        // 2
+        var missing = d.get(\"z\");
+        print(missing);    // nil
+        d[\"d\"] = 4;
+        print(d.get(\"d\"));  // 4
+    ").unwrap();
+}
+
+/// Basic string operations: concatenation, length, equality.
+#[test]
+pub fn test_string_operations() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        var s = \"Hello\";
+        print(s + \" World\");    // Hello World
+        print(len(s));           // 5
+        print(s == \"Hello\");    // true
+        print(s != \"Bye\");      // true
+        print(str(s));           // Hello
+    ").unwrap();
+}
+
+/// Bool conversion via `int()` and `float()` builtins.
+#[test]
+pub fn test_bool_int_float_conversion() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        // int() and float() on bool via builtin functions
+        print(int(true));    // 1
+        print(int(false));   // 0
+        print(float(true));  // 1
+        print(float(false)); // 0
+    ").unwrap();
+}
+
+/// ! on non-Instance should not error — it falls back to __bool__ + invert.
+#[test]
+pub fn test_not_on_non_instance() {
+    let mut vm = VirtualMachine::new();
+    // !class should work: class is truthy (non-nil), so !class == false.
+    // This should NOT dispatch to __not__ magic, but fall back to __bool__.
+    vm.interpret("class Foo {} print(!Foo);").unwrap();      // false
+    vm.interpret("fun f() {} print(!f);").unwrap();          // false (closure is truthy)
+}
+
+/// eq/ne on non-Instance should return false/true without error.
+#[test]
+pub fn test_eq_on_non_instance() {
+    let mut vm = VirtualMachine::new();
+    // Class == int → false (different Object variants)
+    vm.interpret("class Foo {} print(Foo == 1);").unwrap();   // false
+    vm.interpret("class Foo {} print(Foo != 1);").unwrap();   // true
+    // native fn == class → false
+    vm.interpret("class Foo {} print(print == Foo);").unwrap();  // false
+}
+
+/// Calling a non-callable Instance (no __call__) should error.
+#[test]
+pub fn test_call_on_plain_instance_error() {
+    let mut vm = VirtualMachine::new();
+    let err = vm.interpret("class Foo {} var f = Foo(); f(1, 2);").unwrap_err();
+    assert!(err.to_string().contains("Can't call"), "got: {err}");
 }

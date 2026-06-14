@@ -325,7 +325,7 @@ impl<'a> Parser<'a> {
 
     pub(crate) fn parse(mut self) -> Result<ObjectHandle, Vec<ParseError>> {
         while !self.at_end() {
-            if let Err(e) = self.declaration() {
+            if let Err(e) = self.parse_declaration() {
                 self.synchronize(e);
             }
         }
@@ -333,13 +333,13 @@ impl<'a> Parser<'a> {
         if !self.errors.is_empty() {
             Err(self.errors)
         } else {
-            Ok(self.end_parse())
+            Ok(self.finish_compilation_unit())
         }
     }
 
     /// Finish the current compilation unit: emit an implicit `return nil`,
     /// pop the unit from the stack, and restore the enclosing unit.
-    fn end_parse(&mut self) -> ObjectHandle {
+    fn finish_compilation_unit(&mut self) -> ObjectHandle {
         let is_init = self.cur_unit().name.as_str() == "__init__";
         if is_init {
             // __init__() should return the receiver (self), not nil.
@@ -355,40 +355,40 @@ impl<'a> Parser<'a> {
         function
     }
 
-    fn declaration(&mut self) -> ParseResult<()> {
+    fn parse_declaration(&mut self) -> ParseResult<()> {
         if self.match_token(TokenKind::Var) {
-            self.var_declaration()
+            self.parse_var_declaration()
         } else if self.match_token(TokenKind::Fun) {
-            self.fun_declaration()
+            self.parse_fun_declaration()
         } else if self.match_token(TokenKind::Class) {
-            self.class_declaration()
+            self.parse_class_declaration()
         } else {
-            self.statement()
+            self.parse_statement()
         }
     }
 
-    fn class_declaration(&mut self) -> ParseResult<()> {
+    fn parse_class_declaration(&mut self) -> ParseResult<()> {
         self.consume(TokenKind::Identifier, "Expect class name.")?;
         let class_name = ShrString::new_string(self.previous().lexeme);
-        self.declare_variable(class_name.clone())?;
+        self.add_variable_to_scope(class_name.clone())?;
 
         self.emit(Instruction::Class(class_name.clone()));
-        self.define_variable(Some(class_name.clone()))?;
+        self.finalize_variable(Some(class_name.clone()))?;
 
-        self.named_variable(class_name, false)?;
+        self.resolve_and_emit_variable(class_name, false)?;
 
         // Inheritance: class Derived extends Base { ... }
         if self.match_token(TokenKind::Extends) {
             self.consume(TokenKind::Identifier, "Expect superclass name.")?;
             let super_name = ShrString::new_string(self.previous().lexeme);
-            self.named_variable(super_name, false)?; // push superclass onto stack
+            self.resolve_and_emit_variable(super_name, false)?; // push superclass onto stack
             self.emit(Instruction::Inherit);          // pop superclass, copy methods
         }
 
         self.consume(TokenKind::LeftBrace, "Expect '{' before class body.")?;
 
         while !self.check(TokenKind::RightBrace) && !self.check(TokenKind::Eof) {
-            self.method()?;
+            self.parse_method()?;
         }
 
         self.consume(TokenKind::RightBrace, "Expect '}' after class body.")?;
@@ -396,32 +396,32 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn fun_declaration(&mut self) -> ParseResult<()> {
-        let var_name = self.parse_variable("Expect variable name.")?;
-        self.mark_initialized();
-        self.function(FunctionKind::Function)?;
-        self.define_variable(var_name)?;
+    fn parse_fun_declaration(&mut self) -> ParseResult<()> {
+        let var_name = self.declare_variable_name("Expect variable name.")?;
+        self.mark_local_initialized();
+        self.parse_function_body(FunctionKind::Function)?;
+        self.finalize_variable(var_name)?;
         Ok(())
     }
 
-    fn var_declaration(&mut self) -> ParseResult<()> {
-        let var_name = self.parse_variable("Expect variable name.")?;
+    fn parse_var_declaration(&mut self) -> ParseResult<()> {
+        let var_name = self.declare_variable_name("Expect variable name.")?;
 
         if self.match_token(TokenKind::Equal) {
-            self.expression()?;
+            self.parse_expression()?;
         } else {
             self.emit(Instruction::Nil);
         }
 
         self.consume(TokenKind::Semicolon, "Expect ';' after variable declaration.")?;
-        self.define_variable(var_name)?;
+        self.finalize_variable(var_name)?;
 
         Ok(())
     }
 
-    fn define_variable(&mut self, var_name: Option<ShrString>) -> ParseResult<()> {
+    fn finalize_variable(&mut self, var_name: Option<ShrString>) -> ParseResult<()> {
         if self.cur_unit().scope_depth > 0 {
-            self.mark_initialized();
+            self.mark_local_initialized();
         } else {
             assert!(var_name.is_some());
             self.emit(Instruction::DefineGlobal(var_name.unwrap()));
@@ -429,39 +429,39 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn statement(&mut self) -> ParseResult<()> {
+    fn parse_statement(&mut self) -> ParseResult<()> {
         if self.match_token(TokenKind::If) {
-            self.if_statement()
+            self.parse_if_statement()
         } else if self.match_token(TokenKind::While) {
-            self.while_statement()
+            self.parse_while_statement()
         } else if self.match_token(TokenKind::For) {
-            self.for_statement()
+            self.parse_for_statement()
         } else if self.match_token(TokenKind::Return) {
-            self.return_statement()
+            self.parse_return_statement()
         } else if self.match_token(TokenKind::LeftBrace) {
             self.begin_scope();
-            self.block()?;
+            self.parse_block()?;
             self.end_scope();
             Ok(())
         } else {
-            self.expression_statement()
+            self.parse_expression_statement()
         }
     }
 
-    fn method(&mut self) -> ParseResult<()> {
+    fn parse_method(&mut self) -> ParseResult<()> {
         self.consume(TokenKind::Fun, "Expect fun in method")?;
         self.consume(TokenKind::Identifier, "Expect method name.")?;
 
         let method_name = ShrString::new_string(self.previous().lexeme);
 
-        self.function(FunctionKind::Method)?;
+        self.parse_function_body(FunctionKind::Method)?;
 
         self.emit(Instruction::Method(method_name));
 
         Ok(())
     }
 
-    fn function(&mut self, kind: FunctionKind) -> ParseResult<()> {
+    fn parse_function_body(&mut self, kind: FunctionKind) -> ParseResult<()> {
         let name = if kind != FunctionKind::Script {
             self.previous().lexeme.to_string()
         } else {
@@ -484,8 +484,8 @@ impl<'a> Parser<'a> {
                 if self.cur_unit().arity > 255 {
                     record_error_at_current!(self, ParseReason::TooMuchParameter);
                 }
-                let param_name = self.parse_variable("Expect parameter name.")?;
-                self.define_variable(param_name)?;
+                let param_name = self.declare_variable_name("Expect parameter name.")?;
+                self.finalize_variable(param_name)?;
 
                 if !self.match_token(TokenKind::Comma) {
                     break;
@@ -495,19 +495,19 @@ impl<'a> Parser<'a> {
 
         self.consume(TokenKind::RightParen, "Expect ')' after parameters.")?;
         self.consume(TokenKind::LeftBrace, "Expect '{' before function body.")?;
-        self.block()?;
+        self.parse_block()?;
 
         // Finish the nested function and pop its unit.
         let upvalues = self.cur_unit().upvalues.clone();
-        let inner_function = self.end_parse();
+        let inner_function = self.finish_compilation_unit();
         self.emit(Instruction::Closure { function: inner_function, upvalues });
 
         Ok(())
     }
 
-    fn block(&mut self) -> ParseResult<()> {
+    fn parse_block(&mut self) -> ParseResult<()> {
         while !self.check(TokenKind::RightBrace) && !self.check(TokenKind::Eof) {
-            self.declaration()?;
+            self.parse_declaration()?;
         }
         self.consume(TokenKind::RightBrace, "Expect '}' after block.")?;
         Ok(())
@@ -532,15 +532,15 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn return_statement(&mut self) -> ParseResult<()> {
+    fn parse_return_statement(&mut self) -> ParseResult<()> {
         if self.cur_unit().kind == FunctionKind::Script {
             record_error_at_current!(self, ParseReason::ReturnInTop);
         }
 
         if self.match_token(TokenKind::Semicolon) {
-            self.emit_return();
+            self.emit_return_nil();
         } else {
-            self.expression()?;
+            self.parse_expression()?;
             self.consume(TokenKind::Semicolon, "Expect ';' after return value.")?;
             self.emit(Instruction::Return);
 
@@ -548,7 +548,7 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn for_statement(&mut self) -> ParseResult<()> {
+    fn parse_for_statement(&mut self) -> ParseResult<()> {
         self.begin_scope();
 
         self.consume(TokenKind::LeftParen, "Expect '(' after 'for'.")?;
@@ -556,9 +556,9 @@ impl<'a> Parser<'a> {
         if self.match_token(TokenKind::Semicolon) {
             // No initializer.
         } else if self.match_token(TokenKind::Var) {
-            self.var_declaration()?;
+            self.parse_var_declaration()?;
         } else {
-            self.expression_statement()?;
+            self.parse_expression_statement()?;
         }
 
         let mut loop_start = self.cur_unit().chunk.codes.len();
@@ -566,7 +566,7 @@ impl<'a> Parser<'a> {
         // loop condition
         let mut exit_jump_opt = None;
         if !self.match_token(TokenKind::Semicolon) {
-            self.expression()?;
+            self.parse_expression()?;
             self.consume(TokenKind::Semicolon, "Expect ';' after loop condition.")?;
 
             // Jump out of the loop if the condition is false.
@@ -579,7 +579,7 @@ impl<'a> Parser<'a> {
             // exit increment clause, we must jump here, each time body done
             let body_jump = self.emit_jump(false);
             let increment_start = self.cur_unit().chunk.codes.len();
-            self.expression()?;
+            self.parse_expression()?;
             self.emit(Instruction::Pop);
             self.consume(TokenKind::RightParen, "Expect ')' after for clauses.")?;
 
@@ -589,7 +589,7 @@ impl<'a> Parser<'a> {
         }
 
         // while statement
-        self.statement()?;
+        self.parse_statement()?;
 
         self.emit_loop(loop_start)?;
 
@@ -604,16 +604,16 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn while_statement(&mut self) -> ParseResult<()> {
+    fn parse_while_statement(&mut self) -> ParseResult<()> {
         let loop_start = self.cur_unit().chunk.codes.len();
 
         self.consume(TokenKind::LeftParen, "Expect '(' after 'while'.")?;
-        self.expression()?;
+        self.parse_expression()?;
         self.consume(TokenKind::RightParen, "Expect ')' after condition.")?;
 
         let exit_jump = self.emit_jump(true);
         self.emit(Instruction::Pop);
-        self.statement()?;
+        self.parse_statement()?;
 
         self.emit_loop(loop_start)?;
 
@@ -622,9 +622,9 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn if_statement(&mut self) -> ParseResult<()> {
+    fn parse_if_statement(&mut self) -> ParseResult<()> {
         self.consume(TokenKind::LeftParen, "Expect '(' after 'if'.")?;
-        self.expression()?;
+        self.parse_expression()?;
         self.consume(TokenKind::RightParen, "Expect ')' after condition.")?;
 
         // write jump inst, but keep jump pos as 0, save the jump pos index
@@ -632,7 +632,7 @@ impl<'a> Parser<'a> {
         self.emit(Instruction::Pop);
 
         // consume if code
-        self.statement()?;
+        self.parse_statement()?;
 
         let else_jump = self.emit_jump(false);
 
@@ -641,14 +641,14 @@ impl<'a> Parser<'a> {
         self.emit(Instruction::Pop);
 
         if self.match_token(TokenKind::Else) {
-            self.statement()?;
+            self.parse_statement()?;
         }
         self.patch_jump(else_jump)?;
 
         Ok(())
     }
 
-    fn emit_return(&mut self) {
+    fn emit_return_nil(&mut self) {
         self.emit(Instruction::Nil);
         self.emit(Instruction::Return);
     }
@@ -686,14 +686,14 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn expression_statement(&mut self) -> ParseResult<()> {
-        self.expression()?;
+    fn parse_expression_statement(&mut self) -> ParseResult<()> {
+        self.parse_expression()?;
         self.consume(TokenKind::Semicolon, "expect ';' after expression.")?;
         self.emit(Instruction::Pop);
         Ok(())
     }
 
-    pub(crate) fn expression(&mut self) -> ParseResult<()> {
+    pub(crate) fn parse_expression(&mut self) -> ParseResult<()> {
         self.parse_precedence(Prec::Assignment)
     }
 
@@ -727,11 +727,11 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn parse_variable(&mut self, msg: &'static str) -> ParseResult<Option<ShrString>> {
+    fn declare_variable_name(&mut self, msg: &'static str) -> ParseResult<Option<ShrString>> {
         self.consume(TokenKind::Identifier, msg)?;
         let var_name = ShrString::new_string(self.previous().lexeme);
 
-        self.declare_variable(var_name.clone())?;
+        self.add_variable_to_scope(var_name.clone())?;
 
         if self.cur_unit().scope_depth > 0 {
             Ok(None)
@@ -740,7 +740,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn declare_variable(&mut self, var_name: ShrString) -> ParseResult<()> {
+    fn add_variable_to_scope(&mut self, var_name: ShrString) -> ParseResult<()> {
         if self.cur_unit().scope_depth == 0 {
             return Ok(());
         }
@@ -765,7 +765,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Mark the most recently declared local as ready for use.
-    fn mark_initialized(&mut self) {
+    fn mark_local_initialized(&mut self) {
         let scope_depth = self.cur_unit().scope_depth;
         if scope_depth == 0 {
             return;
@@ -849,7 +849,7 @@ impl<'a> Parser<'a> {
 
     /// `grouping` — prefix parser for `(` ... `)`.
     fn grouping(parser: &mut Parser<'_>, _can_assign: bool) -> ParseResult<()> {
-        parser.expression()?;
+        parser.parse_expression()?;
         parser.consume(TokenKind::RightParen, "expect ')' after expression.")?;
         Ok(())
     }
@@ -891,11 +891,11 @@ impl<'a> Parser<'a> {
     /// `variable` — prefix parser for identifiers.
     fn variable(parser: &mut Parser<'_>, can_assign: bool) -> ParseResult<()> {
         let name = ShrString::new_string(parser.previous().lexeme.to_string());
-        parser.named_variable(name, can_assign)
+        parser.resolve_and_emit_variable(name, can_assign)
     }
 
     fn call(parser: &mut Parser<'_>, _can_assign: bool) -> ParseResult<()> {
-        let arg_count = parser.argument_list()?;
+        let arg_count = parser.parse_argument_list()?;
         parser.emit(Instruction::Call(arg_count));
         Ok(())
     }
@@ -906,10 +906,10 @@ impl<'a> Parser<'a> {
 
         if parser.match_token(TokenKind::LeftParen) {
             // Method invocation — optimized OP_INVOKE.
-            let arg_count = parser.argument_list()?;
+            let arg_count = parser.parse_argument_list()?;
             parser.emit(Instruction::Invoke(field_name, arg_count));
         } else if can_assign && parser.match_token(TokenKind::Equal) {
-            parser.expression()?;
+            parser.parse_expression()?;
             parser.emit(Instruction::SetProperty(field_name));
         } else {
             parser.emit(Instruction::GetProperty(field_name));
@@ -931,7 +931,7 @@ impl<'a> Parser<'a> {
         parser.emit(Instruction::GetLocal(0));
 
         if parser.match_token(TokenKind::LeftParen) {
-            let arg_count = parser.argument_list()?;
+            let arg_count = parser.parse_argument_list()?;
             parser.emit(Instruction::SuperInvoke(method_name, arg_count));
         } else {
             bail_error_at_current!(parser, ParseReason::ExpectedToken("Expect '(' after super method name."));
@@ -948,9 +948,9 @@ impl<'a> Parser<'a> {
                     record_error_at_current!(parser, ParseReason::TooMuchItems);
                 }
 
-                parser.expression()?;
+                parser.parse_expression()?;
                 parser.consume(TokenKind::Colon, "Expect ':' after key")?;
-                parser.expression()?;
+                parser.parse_expression()?;
                 count += 1;
                 if !parser.match_token(TokenKind::Comma) {
                     break;
@@ -974,7 +974,7 @@ impl<'a> Parser<'a> {
                     record_error_at_current!(parser, ParseReason::TooMuchItems);
                 }
 
-                parser.expression()?;
+                parser.parse_expression()?;
                 count += 1;
                 if !parser.match_token(TokenKind::Comma) {
                     break;
@@ -991,10 +991,10 @@ impl<'a> Parser<'a> {
     }
 
     fn index(parser: &mut Parser<'_>, can_assign: bool) -> ParseResult<()> {
-        parser.expression()?;
+        parser.parse_expression()?;
         parser.consume(TokenKind::RightBracket, "Expect ']' index.")?;
         if can_assign && parser.match_token(TokenKind::Equal) {
-            parser.expression()?;
+            parser.parse_expression()?;
             parser.emit(Instruction::IndexSet);
         } else {
             parser.emit(Instruction::IndexGet);
@@ -1002,11 +1002,11 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn argument_list(&mut self) -> ParseResult<usize> {
+    fn parse_argument_list(&mut self) -> ParseResult<usize> {
         let mut arg_count = 0;
         if !self.check(TokenKind::RightParen) {
             loop {
-                self.expression()?;
+                self.parse_expression()?;
                 if arg_count >= 255 {
                     record_error_at_current!(self, ParseReason::TooMuchArgument);
                 }
@@ -1020,11 +1020,11 @@ impl<'a> Parser<'a> {
         Ok(arg_count)
     }
 
-    fn named_variable(&mut self, name: ShrString, can_assign: bool) -> ParseResult<()> {
+    fn resolve_and_emit_variable(&mut self, name: ShrString, can_assign: bool) -> ParseResult<()> {
         match self.resolve_local_or_upvalue(&name) {
             Some(LocalAccess::Local(slot)) => {
                 if can_assign && self.match_token(TokenKind::Equal) {
-                    self.expression()?;
+                    self.parse_expression()?;
                     self.emit(Instruction::SetLocal(slot));
                 } else {
                     self.emit(Instruction::GetLocal(slot));
@@ -1032,7 +1032,7 @@ impl<'a> Parser<'a> {
             }
             Some(LocalAccess::Upvalue(slot)) => {
                 if can_assign && self.match_token(TokenKind::Equal) {
-                    self.expression()?;
+                    self.parse_expression()?;
                     self.emit(Instruction::SetUpvalue(slot));
                 } else {
                     self.emit(Instruction::GetUpvalue(slot));
@@ -1040,7 +1040,7 @@ impl<'a> Parser<'a> {
             }
             None => {
                 if can_assign && self.match_token(TokenKind::Equal) {
-                    self.expression()?;
+                    self.parse_expression()?;
                     self.emit(Instruction::SetGlobal(name));
                 } else {
                     self.emit(Instruction::GetGlobal(name));
@@ -1135,8 +1135,18 @@ impl<'a> Parser<'a> {
     // ------------------------------------------------------------------------
 
     fn emit(&mut self, inst: Instruction) {
-        // SAFETY: obj_heap is separate from units (chunk lives in units).
-        // write_instruction only uses the heap for allocating new string constants.
+        // SAFETY: We need simultaneous `&mut Chunk` and `&mut ObjectHeap`, but
+        // both live behind `&mut self` (via `self.units` and `self.obj_heap`),
+        // so Rust's borrow checker can't prove they're disjoint.  We cast
+        // `obj_heap` to a raw pointer to obtain the second `&mut`.
+        //
+        // This is sound because:
+        // - `self.obj_heap` and `self.units[..].chunk` are separate allocations
+        //   (different fields, no pointer aliasing).
+        // - `write_instruction` only pushes new constant objects into the heap;
+        //   it never reads or modifies `self.units` or any chunk.
+        // - The lifetime `'a` on `Parser<'a>` guarantees the `&'a mut ObjectHeap`
+        //   outlives the parser, so the raw pointer remains valid.
         let heap = self.obj_heap as *mut ObjectHeap;
         let chunk = &mut self.units[self.current_unit].chunk;
         unsafe {

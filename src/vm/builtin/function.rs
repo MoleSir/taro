@@ -10,7 +10,7 @@ macro_rules! get_args {
 macro_rules! get_1_arg {
     ($vm:ident, $arg_count:ident) => {{
         if $arg_count != 1 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 1, got: $arg_count })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: $arg_count })?;
         }
         let args = get_args!($vm, $arg_count);
         args[0]
@@ -21,7 +21,7 @@ macro_rules! get_1_arg {
 macro_rules! get_2_arg {
     ($vm:ident, $arg_count:ident) => {{
         if $arg_count != 2 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 2, got: $arg_count })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 2, got: $arg_count })?;
         }
         let args = get_args!($vm, $arg_count);
         (args[0], args[1])
@@ -32,7 +32,7 @@ macro_rules! get_2_arg {
 macro_rules! get_3_arg {
     ($vm:ident, $arg_count:ident) => {{
         if $arg_count != 3 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 3, got: $arg_count })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 3, got: $arg_count })?;
         }
         let args = get_args!($vm, $arg_count);
         (args[0], args[1], args[2])
@@ -126,14 +126,14 @@ impl VirtualMachine {
         match &bi.data {
             ObjectInstanceData::Integer(v) => Ok(self.obj_heap.alloc_integer_instance(v.wrapping_abs())),
             ObjectInstanceData::Float(v) => Ok(self.obj_heap.alloc_float_instance(v.abs())),
-            _ => Err(ExecuteError::UnexpectType("number", self.value_type_name(arg))),
+            _ => Err(ExecuteError::UnexpectedType("number", self.value_type_name(arg))),
         }
     }
 
     /// `min(a, b, ...)` — return the smallest argument.
     pub fn min(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count == 0 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 1, got: 0 })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: 0 })?;
         }
         let args = get_args!(self, arg_count).to_vec();
         let mut min_val = args[0];
@@ -149,7 +149,7 @@ impl VirtualMachine {
     /// `max(a, b, ...)` — return the largest argument.
     pub fn max(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count == 0 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 1, got: 0 })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: 0 })?;
         }
         let args = get_args!(self, arg_count).to_vec();
         let mut max_val = args[0];

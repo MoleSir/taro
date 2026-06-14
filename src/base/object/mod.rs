@@ -5,7 +5,7 @@ pub use heap::*;
 
 pub enum Object {
     Function(ObjectFunction),
-    BuiltinFn(ObjectBuiltinFn),
+    NativeFn(ObjectNativeFn),
     Closure(ObjectClosure),
     Upvalue(ObjectUpvalue),
     Class(ObjectClass),
@@ -74,7 +74,7 @@ macro_rules! impl_object_conversions {
 
 impl_object_conversions! {
     Function => { ty: ObjectFunction, method: function, name: "Function" },
-    BuiltinFn => { ty: ObjectBuiltinFn, method: builtin_fn, name: "BuiltinFn" },
+    NativeFn => { ty: ObjectNativeFn, method: native_fn, name: "NativeFn" },
     Closure => { ty: ObjectClosure, method: closure, name: "Closure" },
     Upvalue => { ty: ObjectUpvalue, method: upvalue, name: "Upvalue" },
     Class => { ty: ObjectClass, method: class, name: "Class" },

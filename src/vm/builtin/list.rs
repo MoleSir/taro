@@ -5,7 +5,7 @@ use super::utils::top_args;
 impl VirtualMachine {
     pub fn list_not(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 1 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 0, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let items = self.get_list_instance(args[0])?;
@@ -14,7 +14,7 @@ impl VirtualMachine {
 
     pub fn list_add(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 2 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 1, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let lhs_items = self.get_list_instance(args[0])?.clone();
@@ -28,7 +28,7 @@ impl VirtualMachine {
 
     pub fn list_str(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 1 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 0, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let items = self.get_list_instance(args[0])?.clone();
@@ -43,7 +43,7 @@ impl VirtualMachine {
 
     pub fn list_bool(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 1 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 0, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let items = self.get_list_instance(args[0])?;
@@ -52,7 +52,7 @@ impl VirtualMachine {
 
     pub fn list_len(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 1 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 0, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let items = self.get_list_instance(args[0])?;
@@ -61,7 +61,7 @@ impl VirtualMachine {
 
     pub fn list_getitem(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 2 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 1, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let items = self.get_list_instance(args[0]).cloned()?;
@@ -76,7 +76,7 @@ impl VirtualMachine {
 
     pub fn list_setitem(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 3 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 2, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 2, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let receiver = args[0];
@@ -94,7 +94,7 @@ impl VirtualMachine {
 
     pub fn list_eq(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 2 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 1, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         if let Ok(rhs_items) = self.get_list_instance(args[1]) {
@@ -117,7 +117,7 @@ impl VirtualMachine {
 
     pub fn list_ne(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 2 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 1, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: arg_count.saturating_sub(1) })?;
         }
         let eq = self.list_eq(arg_count)?;
         let b = *self.get_bool_instance(eq)?;
@@ -128,7 +128,7 @@ impl VirtualMachine {
     pub fn list_append(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         // self (receiver) + 1 explicit arg
         if arg_count != 2 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 1, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let receiver = args[0];
@@ -142,7 +142,7 @@ impl VirtualMachine {
     pub fn list_pop(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         // self only, no explicit args
         if arg_count != 1 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 0, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let receiver = args[0];
@@ -153,7 +153,7 @@ impl VirtualMachine {
     /// `list.extend(other)` — extend this list with all items from another list.
     pub fn list_extend(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
         if arg_count != 2 {
-            Err(ExecuteError::ArgmentCountUnmatch { expcted: 1, got: arg_count.saturating_sub(1) })?;
+            Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: arg_count.saturating_sub(1) })?;
         }
         let args = top_args(self, arg_count);
         let receiver = args[0];
@@ -162,5 +162,21 @@ impl VirtualMachine {
         let items = self.get_list_instance_mut(receiver)?;
         items.extend(other_items);
         Ok(ObjectHandle::NIL)
+    }
+
+    pub fn register_list_builtins(&mut self) {
+        let lc = self.obj_heap.list_class;
+        self.reg_native_method(lc, "__not__", VirtualMachine::list_not);
+        self.reg_native_method(lc, "__add__", VirtualMachine::list_add);
+        self.reg_native_method(lc, "__eq__", VirtualMachine::list_eq);
+        self.reg_native_method(lc, "__ne__", VirtualMachine::list_ne);
+        self.reg_native_method(lc, "__str__", VirtualMachine::list_str);
+        self.reg_native_method(lc, "__bool__", VirtualMachine::list_bool);
+        self.reg_native_method(lc, "__len__", VirtualMachine::list_len);
+        self.reg_native_method(lc, "__getitem__", VirtualMachine::list_getitem);
+        self.reg_native_method(lc, "__setitem__", VirtualMachine::list_setitem);
+        self.reg_native_method(lc, "append", VirtualMachine::list_append);
+        self.reg_native_method(lc, "pop", VirtualMachine::list_pop);
+        self.reg_native_method(lc, "extend", VirtualMachine::list_extend);
     }
 }

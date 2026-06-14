@@ -36,13 +36,17 @@ impl VirtualMachine {
         }
 
         // mark builtin class handles (always reachable)
-        self.obj_heap.mark_object(self.nil_class);
-        self.obj_heap.mark_object(self.int_class);
-        self.obj_heap.mark_object(self.float_class);
-        self.obj_heap.mark_object(self.bool_class);
-        self.obj_heap.mark_object(self.string_class);
-        self.obj_heap.mark_object(self.list_class);
-        self.obj_heap.mark_object(self.dict_class);
+        self.obj_heap.mark_object(self.obj_heap.nil_class);
+        self.obj_heap.mark_object(self.obj_heap.int_class);
+        self.obj_heap.mark_object(self.obj_heap.float_class);
+        self.obj_heap.mark_object(self.obj_heap.bool_class);
+        self.obj_heap.mark_object(self.obj_heap.string_class);
+        self.obj_heap.mark_object(self.obj_heap.list_class);
+        self.obj_heap.mark_object(self.obj_heap.dict_class);
+
+        // mark singleton bool instances (always reachable)
+        self.obj_heap.mark_object(self.obj_heap.true_instance);
+        self.obj_heap.mark_object(self.obj_heap.false_instance);
 
         // collect_garbage by gc
         self.obj_heap.collect_garbage();
