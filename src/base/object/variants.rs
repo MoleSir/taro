@@ -12,8 +12,8 @@ use super::ObjectHandle;
 pub enum Method {
     /// User-defined method (closure handle, compiled from Taro source).
     User(ObjectHandle),
-    /// Builtin method (Rust function pointer).
-    Builtin(BuiltinFn),
+    /// Builtin method (handle to an `ObjectBuiltinFn`).
+    Builtin(ObjectHandle),
 }
 
 // ========================================================================== //

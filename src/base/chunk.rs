@@ -81,15 +81,15 @@ impl Chunk {
 
             // globals — store string handle in constant pool
             Instruction::DefineGlobal(name) => {
-                let handle = heap.alloc_string(name);
+                let handle = heap.alloc_string_instance(name);
                 self.write_const_op(ByteCode::DefineGlobal, handle);
             }
             Instruction::GetGlobal(name) => {
-                let handle = heap.alloc_string(name);
+                let handle = heap.alloc_string_instance(name);
                 self.write_const_op(ByteCode::GetGlobal, handle);
             }
             Instruction::SetGlobal(name) => {
-                let handle = heap.alloc_string(name);
+                let handle = heap.alloc_string_instance(name);
                 self.write_const_op(ByteCode::SetGlobal, handle);
             }
 
@@ -151,28 +151,28 @@ impl Chunk {
             }
 
             Instruction::Class(class_name) => {
-                let handle = heap.alloc_string(class_name);
+                let handle = heap.alloc_string_instance(class_name);
                 self.write_const_op(ByteCode::Class, handle);
             }
             Instruction::SetProperty(class_name) => {
-                let handle = heap.alloc_string(class_name);
+                let handle = heap.alloc_string_instance(class_name);
                 self.write_const_op(ByteCode::SetProperty, handle);
             }
             Instruction::GetProperty(class_name) => {
-                let handle = heap.alloc_string(class_name);
+                let handle = heap.alloc_string_instance(class_name);
                 self.write_const_op(ByteCode::GetProperty, handle);
             }
             Instruction::Method(method_name) => {
-                let handle = heap.alloc_string(method_name);
+                let handle = heap.alloc_string_instance(method_name);
                 self.write_const_op(ByteCode::Method, handle);
             }
             Instruction::Invoke(method_name, arg_count) => {
-                let handle = heap.alloc_string(method_name);
+                let handle = heap.alloc_string_instance(method_name);
                 self.write_const_op(ByteCode::Invoke, handle);
                 self.write_byte(arg_count as u8);
             }
             Instruction::SuperInvoke(method_name, arg_count) => {
-                let handle = heap.alloc_string(method_name);
+                let handle = heap.alloc_string_instance(method_name);
                 self.write_const_op(ByteCode::SuperInvoke, handle);
                 self.write_byte(arg_count as u8);
             }

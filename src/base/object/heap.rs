@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::LazyLock};
 
 use crate::{Chunk, ShrString};
-use super::{BuiltinFn, Method, Object, ObjectBoundMethod, ObjectBuiltinFn, ObjectClass, ObjectClosure, ObjectError, ObjectFunction, ObjectInstance, ObjectInstanceData, ObjectUpvalue};
+use super::{BuiltinFn, Method, Object, ObjectBoundMethod, ObjectBuiltinFn, ObjectClass, ObjectClosure, ObjectFunction, ObjectInstance, ObjectInstanceData, ObjectUpvalue};
 
 /// Static nil object — backing for `ObjectHandle::NIL`.
 static NIL_OBJECT: LazyLock<Object> = LazyLock::new(|| {
@@ -63,13 +63,13 @@ impl ObjectHeap {
             dict_class: ObjectHandle::NIL,
         };
 
-        heap.nil_class = heap.alloc_class("nil");
-        heap.int_class = heap.alloc_class("int");
-        heap.float_class = heap.alloc_class("float");
-        heap.bool_class = heap.alloc_class("bool");
-        heap.string_class = heap.alloc_class("string");
-        heap.list_class = heap.alloc_class("list");
-        heap.dict_class = heap.alloc_class("dict");
+        heap.nil_class = heap.alloc_class("Nil");
+        heap.int_class = heap.alloc_class("Int");
+        heap.float_class = heap.alloc_class("Float");
+        heap.bool_class = heap.alloc_class("Bool");
+        heap.string_class = heap.alloc_class("String");
+        heap.list_class = heap.alloc_class("List");
+        heap.dict_class = heap.alloc_class("Dict");
 
         heap
     }
@@ -121,11 +121,11 @@ impl ObjectHeap {
     }
 
     #[inline]
-    pub fn alloc_bool(&mut self, v: bool) -> ObjectHandle {
+    pub fn alloc_bool_instance(&mut self, v: bool) -> ObjectHandle {
         self.alloc_instance(self.bool_class, ObjectInstanceData::Bool(v))
     }
 
-    pub fn alloc_integer(&mut self, v: i64) -> ObjectHandle {
+    pub fn alloc_integer_instance(&mut self, v: i64) -> ObjectHandle {
         // Small-integer interning: -5..256
         if (-5..=256).contains(&v) {
             if let Some(&handle) = self.int_cache.get(&v) {
@@ -139,11 +139,11 @@ impl ObjectHeap {
     }
 
     #[inline]
-    pub fn alloc_float(&mut self, v: f64) -> ObjectHandle {
+    pub fn alloc_float_instance(&mut self, v: f64) -> ObjectHandle {
         self.alloc_instance(self.float_class, ObjectInstanceData::Float(v))
     }
 
-    pub fn alloc_string(&mut self, s: ShrString) -> ObjectHandle {
+    pub fn alloc_string_instance(&mut self, s: ShrString) -> ObjectHandle {
         if let Some(&handle) = self.string_cache.get(&s) {
             return handle;
         }
@@ -153,12 +153,12 @@ impl ObjectHeap {
     }
 
     #[inline]
-    pub fn alloc_list(&mut self, items: Vec<ObjectHandle>) -> ObjectHandle {
+    pub fn alloc_list_instance(&mut self, items: Vec<ObjectHandle>) -> ObjectHandle {
         self.alloc_instance(self.list_class, ObjectInstanceData::List(items))
     }
 
     #[inline]
-    pub fn alloc_dict(&mut self, items: Vec<(ObjectHandle, ObjectHandle)>) -> ObjectHandle {
+    pub fn alloc_dict_instance(&mut self, items: Vec<(ObjectHandle, ObjectHandle)>) -> ObjectHandle {
         self.alloc_instance(self.dict_class, ObjectInstanceData::Dict(items))
     }
 
@@ -192,12 +192,12 @@ macro_rules! impl_getters {
     ($name:ident, $ty:ty) => {
         paste::paste! {
             #[inline]
-            pub fn [<get_ $name>](&self, handle: ObjectHandle) -> Result<&$ty, ObjectError> {
+            pub fn [<get_ $name>](&self, handle: ObjectHandle) -> Option<&$ty> {
                 self.get(handle).[<as_ $name>]()
             }
 
             #[inline]
-            pub fn [<get_ $name _mut>](&mut self, handle: ObjectHandle) -> Result<&mut $ty, ObjectError> {
+            pub fn [<get_ $name _mut>](&mut self, handle: ObjectHandle) -> Option<&mut $ty> {
                 self.get_mut(handle).[<as_ $name _mut>]()
             }
         }
@@ -239,20 +239,20 @@ macro_rules! impl_instance_data_getter {
             /// (intended for use in tests and internal code that has already
             /// verified the type).
             #[doc = "Return a reference to the inner `" $label "` data."]
-            pub fn [<get_ $name _instance>](&self, handle: ObjectHandle) -> &$ty {
-                let inst = self.get_instance(handle).expect("must be Instance");
+            pub fn [<get_ $name _instance>](&self, handle: ObjectHandle) -> Option<&$ty> {
+                let inst = self.get_instance(handle)?;
                 match &inst.data {
-                    ObjectInstanceData::$variant(v) => v,
-                    _ => panic!("expected {}", $label),
+                    ObjectInstanceData::$variant(v) => Some(v),
+                    _ => None,
                 }
             }
 
             #[doc = "Return a mutable reference to the inner `" $label "` data."]
-            pub fn [<get_ $name _instance_mut>](&mut self, handle: ObjectHandle) -> &mut $ty {
-                let inst = self.get_instance_mut(handle).expect("must be Instance");
+            pub fn [<get_ $name _instance_mut>](&mut self, handle: ObjectHandle) -> Option<&mut $ty> {
+                let inst = self.get_instance_mut(handle)?;
                 match &mut inst.data {
-                    ObjectInstanceData::$variant(v) => v,
-                    _ => panic!("expected {}", $label),
+                    ObjectInstanceData::$variant(v) => Some(v),
+                    _ => None,
                 }
             }
         }
@@ -362,8 +362,9 @@ impl ObjectHeap {
                     }
                 }
                 Object::BoundMethod(bound) => {
-                    if let Method::User(method_handle) = bound.method {
-                        self.mark_object(method_handle);
+                    match bound.method {
+                        Method::User(method_handle) => self.mark_object(method_handle),
+                        Method::Builtin(handle) => self.mark_object(handle),
                     }
                     self.mark_object(bound.receiver);
                 }
@@ -372,8 +373,9 @@ impl ObjectHeap {
                         self.mark_object(superclass);
                     }
                     for method in class.methods.values() {
-                        if let Method::User(method_handle) = method {
-                            self.mark_object(*method_handle);
+                        match method {
+                            Method::User(method_handle) => self.mark_object(*method_handle),
+                            Method::Builtin(handle) => self.mark_object(*handle),
                         }
                     }
                 }

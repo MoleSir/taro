@@ -42,25 +42,19 @@ macro_rules! impl_object_conversions {
 
             paste::paste! {
                 $(
-                    pub fn [<as_ $method>](&self) -> Result<&$ty, ObjectError> {
+                    pub fn [<as_ $method>](&self) -> Option<&$ty> {
                         match self {
-                            Object::$variant(value) => Ok(value),
-                            _ => Err(ObjectError::TypeMismatch {
-                                expected: $name,
-                                found: self.type_name(),
-                            }),
+                            Object::$variant(value) => Some(value),
+                            _ => None,
                         }
                     }
                 )*
 
                 $(
-                    pub fn [<as_ $method _mut>](&mut self) -> Result<&mut $ty, ObjectError> {
+                    pub fn [<as_ $method _mut>](&mut self) -> Option<&mut $ty> {
                         match self {
-                            Object::$variant(value) => Ok(value),
-                            _ => Err(ObjectError::TypeMismatch {
-                                expected: $name,
-                                found: self.type_name(),
-                            }),
+                            Object::$variant(value) => Some(value),
+                            _ => None
                         }
                     }
                 )*
@@ -86,10 +80,4 @@ impl_object_conversions! {
     Class => { ty: ObjectClass, method: class, name: "Class" },
     Instance => { ty: ObjectInstance, method: instance, name: "Instance" },
     BoundMethod => { ty: ObjectBoundMethod, method: bound_method, name: "BoundMethod" },
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum ObjectError {
-    #[error("expected {expected}, got {found}")]
-    TypeMismatch { expected: &'static str, found: &'static str },
 }

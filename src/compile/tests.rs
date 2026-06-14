@@ -25,22 +25,22 @@ fn codes(source: &str) -> Vec<u8> {
 
 /// Get integer value from a constant handle.
 fn const_int(heap: &ObjectHeap, h: ObjectHandle) -> i64 {
-    *heap.get_integer_instance(h)
+    *heap.get_integer_instance(h).expect("int")
 }
 
 /// Get float value from a constant handle.
 fn const_float(heap: &ObjectHeap, h: ObjectHandle) -> f64 {
-    *heap.get_float_instance(h)
+    *heap.get_float_instance(h).expect("float")
 }
 
 /// Get string value from a constant handle.
 fn const_string(heap: &ObjectHeap, h: ObjectHandle) -> String {
-    heap.get_string_instance(h).as_str().to_string()
+    heap.get_string_instance(h).expect("str").as_str().to_string()
 }
 
 /// Check if a constant handle contains the given integer.
 fn is_const_int(heap: &ObjectHeap, h: ObjectHandle, expected: i64) -> bool {
-    *heap.get_integer_instance(h) == expected
+    *heap.get_integer_instance(h).expect("int") == expected
 }
 
 /// Assert that source fails to compile.
@@ -722,7 +722,7 @@ fn test_nested_function_call() {
     // Find g's function: it's the second function in constants
     let mut g_handle = None;
     for &h in &chunk.constants {
-        if let Ok(f) = heap.get(h).as_function() {
+        if let Some(f) = heap.get(h).as_function() {
             if f.name.as_str() == "g" {
                 g_handle = Some(h);
                 break;

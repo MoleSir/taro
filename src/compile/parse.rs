@@ -812,7 +812,7 @@ impl<'a> Parser<'a> {
                 .map_err(|e|
                     error_at_previous!(parser, ParseReason::InvalidFloat(e))
                 )?;
-            let handle = parser.obj_heap.alloc_float(value);
+            let handle = parser.obj_heap.alloc_float_instance(value);
             parser.emit(Instruction::Constant(handle));
         } else {
             let value: i64 = lexeme
@@ -820,7 +820,7 @@ impl<'a> Parser<'a> {
                 .map_err(|e|
                     error_at_previous!(parser, ParseReason::InvalidInteger(e))
                 )?;
-            let handle = parser.obj_heap.alloc_integer(value);
+            let handle = parser.obj_heap.alloc_integer_instance(value);
             parser.emit(Instruction::Constant(handle));
         }
         Ok(())
@@ -831,7 +831,7 @@ impl<'a> Parser<'a> {
         // The lexeme includes the surrounding quotes — strip them.
         let lexeme = parser.previous().lexeme;
         let inner = &lexeme[1..lexeme.len() - 1];
-        let handle = parser.obj_heap.alloc_string(inner.to_string().into());
+        let handle = parser.obj_heap.alloc_string_instance(inner.to_string().into());
         parser.emit(Instruction::Constant(handle));
         Ok(())
     }

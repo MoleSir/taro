@@ -1,4 +1,4 @@
-use crate::{compile::CompileError, ChunkError, ObjectError};
+use crate::{compile::CompileError, ChunkError};
 
 #[derive(Debug)]
 pub enum InterpretError {
@@ -8,9 +8,6 @@ pub enum InterpretError {
 
 #[thiserrorctx::context_error]
 pub enum ExecuteError {
-    #[error(transparent)]
-    Object(#[from] ObjectError),
-
     #[error(transparent)]
     Chunk(#[from] ChunkError),
 
@@ -50,8 +47,8 @@ pub enum ExecuteError {
     #[error("Undefined property {0}")]
     UndefinedProperty(String),
 
-    #[error("Set property for builin instance of {0}")]
-    SetPropertyForBuilinInstance(&'static str),
+    #[error("Cannot set property on {0}")]
+    CannotSetProperty(&'static str),
 
     #[error("__str__ method must return a string, got '{0}'")]
     BadStrResult(&'static str),
@@ -79,4 +76,13 @@ pub enum ExecuteError {
 
     #[error("cannot pop from empty list")]
     EmptyPop,
-}
+
+    #[error("expected {expected}, got {found}")]
+    TypeMismatch { expected: &'static str, found: &'static str },
+
+    #[error("class '{0}' not implement '{1}' method")]
+    NoImplementMethod(String, &'static str),
+
+    #[error("unsupport method call '{0}' for {1}")]
+    UnsupportMethodCall(&'static str, &'static str),
+}   

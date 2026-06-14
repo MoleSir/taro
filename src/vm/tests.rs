@@ -14,17 +14,17 @@ fn run_chunk(build: impl FnOnce(&mut Chunk, &mut ObjectHeap)) -> VirtualMachine 
 
 /// Helper: get integer value from an instance handle.
 fn get_int(vm: &VirtualMachine, handle: ObjectHandle) -> i64 {
-    *vm.obj_heap.get_integer_instance(handle)
+    *vm.obj_heap.get_integer_instance(handle).unwrap()
 }
 
 /// Helper: get float value.
 fn get_float(vm: &VirtualMachine, handle: ObjectHandle) -> f64 {
-    *vm.obj_heap.get_float_instance(handle)
+    *vm.obj_heap.get_float_instance(handle).unwrap()
 }
 
 /// Helper: get bool value.
 fn get_bool(vm: &VirtualMachine, handle: ObjectHandle) -> bool {
-    *vm.obj_heap.get_bool_instance(handle)
+    *vm.obj_heap.get_bool_instance(handle).unwrap()
 }
 
 /// Helper: check nil.
@@ -33,10 +33,10 @@ fn is_nil(handle: ObjectHandle) -> bool { handle.is_nil() }
 #[test]
 pub fn test_base_arith() {
     let mut vm = run_chunk(|c, h| {
-        c.write_instruction(Instruction::Constant(h.alloc_float(3.4)), h);
-        c.write_instruction(Instruction::Constant(h.alloc_float(1.2)), h);
+        c.write_instruction(Instruction::Constant(h.alloc_float_instance(3.4)), h);
+        c.write_instruction(Instruction::Constant(h.alloc_float_instance(1.2)), h);
         c.write_instruction(Instruction::Add, h);
-        c.write_instruction(Instruction::Constant(h.alloc_float(5.6)), h);
+        c.write_instruction(Instruction::Constant(h.alloc_float_instance(5.6)), h);
         c.write_instruction(Instruction::Div, h);
         c.write_instruction(Instruction::Negate, h);
         c.write_instruction(Instruction::Return, h);
@@ -49,13 +49,13 @@ pub fn test_base_arith() {
 #[test]
 pub fn test_global_variable() {
     let _vm = run_chunk(|c, h| {
-        c.write_instruction(Instruction::Constant(h.alloc_integer(42)), h);
+        c.write_instruction(Instruction::Constant(h.alloc_integer_instance(42)), h);
         c.write_instruction(Instruction::DefineGlobal("x".into()), h);
         c.write_instruction(Instruction::GetGlobal("print".into()), h);
         c.write_instruction(Instruction::GetGlobal("x".into()), h);
         c.write_instruction(Instruction::Call(1), h);
         c.write_instruction(Instruction::Pop, h);
-        c.write_instruction(Instruction::Constant(h.alloc_integer(99)), h);
+        c.write_instruction(Instruction::Constant(h.alloc_integer_instance(99)), h);
         c.write_instruction(Instruction::SetGlobal("x".into()), h);
         c.write_instruction(Instruction::GetGlobal("print".into()), h);
         c.write_instruction(Instruction::GetGlobal("x".into()), h);
@@ -68,8 +68,8 @@ pub fn test_global_variable() {
 #[test]
 pub fn test_local_variable_get_set() {
     let mut vm = run_chunk(|c, h| {
-        c.write_instruction(Instruction::Constant(h.alloc_integer(10)), h);
-        c.write_instruction(Instruction::Constant(h.alloc_integer(20)), h);
+        c.write_instruction(Instruction::Constant(h.alloc_integer_instance(10)), h);
+        c.write_instruction(Instruction::Constant(h.alloc_integer_instance(20)), h);
         c.write_instruction(Instruction::GetLocal(1), h);
         c.write_instruction(Instruction::GetLocal(2), h);
         c.write_instruction(Instruction::Add, h);
@@ -82,8 +82,8 @@ pub fn test_local_variable_get_set() {
 #[test]
 pub fn test_local_variable_set() {
     let mut vm = run_chunk(|c, h| {
-        c.write_instruction(Instruction::Constant(h.alloc_integer(10)), h);
-        c.write_instruction(Instruction::Constant(h.alloc_integer(42)), h);
+        c.write_instruction(Instruction::Constant(h.alloc_integer_instance(10)), h);
+        c.write_instruction(Instruction::Constant(h.alloc_integer_instance(42)), h);
         c.write_instruction(Instruction::SetLocal(1), h);
         c.write_instruction(Instruction::Pop, h);
         c.write_instruction(Instruction::GetLocal(1), h);
@@ -96,7 +96,7 @@ pub fn test_local_variable_set() {
 #[test]
 pub fn test_scopes() {
     let mut vm = run_chunk(|c, h| {
-        c.write_instruction(Instruction::Constant(h.alloc_integer(42)), h);
+        c.write_instruction(Instruction::Constant(h.alloc_integer_instance(42)), h);
         c.write_instruction(Instruction::GetLocal(1), h);
         c.write_instruction(Instruction::Return, h);
     });
@@ -110,7 +110,7 @@ pub fn test_jump_if_false() {
         c.write_instruction(Instruction::True, h);
         c.write_instruction(Instruction::JumpIfFalse(5), h);
         c.write_instruction(Instruction::Pop, h);
-        c.write_instruction(Instruction::Constant(h.alloc_integer(42)), h);
+        c.write_instruction(Instruction::Constant(h.alloc_integer_instance(42)), h);
         c.write_instruction(Instruction::Return, h);
     });
     let r = vm.pop_stack().unwrap();
@@ -136,8 +136,8 @@ pub fn test_function_call() {
         let fn_h = h.alloc_function("add", 2, f);
         let cl_h = h.alloc_closure(fn_h);
         c.write_instruction(Instruction::Constant(cl_h), h);
-        c.write_instruction(Instruction::Constant(h.alloc_integer(10)), h);
-        c.write_instruction(Instruction::Constant(h.alloc_integer(20)), h);
+        c.write_instruction(Instruction::Constant(h.alloc_integer_instance(10)), h);
+        c.write_instruction(Instruction::Constant(h.alloc_integer_instance(20)), h);
         c.write_instruction(Instruction::Call(2), h);
         c.write_instruction(Instruction::Return, h);
     });
@@ -148,20 +148,20 @@ pub fn test_function_call() {
 #[test]
 pub fn test_string_concat() {
     let mut vm = run_chunk(|c, h| {
-        c.write_instruction(Instruction::Constant(h.alloc_string("hello".into())), h);
-        c.write_instruction(Instruction::Constant(h.alloc_string(" world".into())), h);
+        c.write_instruction(Instruction::Constant(h.alloc_string_instance("hello".into())), h);
+        c.write_instruction(Instruction::Constant(h.alloc_string_instance(" world".into())), h);
         c.write_instruction(Instruction::Add, h);
         c.write_instruction(Instruction::Return, h);
     });
     let r = vm.pop_stack().unwrap();
-    assert_eq!(vm.obj_heap.get_string_instance(r).as_str(), "hello world");
+    assert_eq!(vm.obj_heap.get_string_instance(r).unwrap().as_str(), "hello world");
 }
 
 #[test]
 pub fn test_string_equality() {
     let mut vm = run_chunk(|c, h| {
-        c.write_instruction(Instruction::Constant(h.alloc_string("abc".into())), h);
-        c.write_instruction(Instruction::Constant(h.alloc_string("abc".into())), h);
+        c.write_instruction(Instruction::Constant(h.alloc_string_instance("abc".into())), h);
+        c.write_instruction(Instruction::Constant(h.alloc_string_instance("abc".into())), h);
         c.write_instruction(Instruction::Equal, h);
         c.write_instruction(Instruction::Return, h);
     });
@@ -171,8 +171,8 @@ pub fn test_string_equality() {
 #[test]
 pub fn test_string_not_equality() {
     let mut vm = run_chunk(|c, h| {
-        c.write_instruction(Instruction::Constant(h.alloc_string("abc".into())), h);
-        c.write_instruction(Instruction::Constant(h.alloc_string("xyz".into())), h);
+        c.write_instruction(Instruction::Constant(h.alloc_string_instance("abc".into())), h);
+        c.write_instruction(Instruction::Constant(h.alloc_string_instance("xyz".into())), h);
         c.write_instruction(Instruction::NotEqual, h);
         c.write_instruction(Instruction::Return, h);
     });
@@ -183,7 +183,7 @@ pub fn test_string_not_equality() {
 pub fn test_len_string() {
     let mut vm = run_chunk(|c, h| {
         c.write_instruction(Instruction::GetGlobal("len".into()), h);
-        c.write_instruction(Instruction::Constant(h.alloc_string("hello".into())), h);
+        c.write_instruction(Instruction::Constant(h.alloc_string_instance("hello".into())), h);
         c.write_instruction(Instruction::Call(1), h);
         c.write_instruction(Instruction::Return, h);
     });
@@ -194,7 +194,7 @@ pub fn test_len_string() {
 pub fn test_type_of_string() {
     let mut vm = run_chunk(|c, h| {
         c.write_instruction(Instruction::GetGlobal("type".into()), h);
-        c.write_instruction(Instruction::Constant(h.alloc_string("hi".into())), h);
+        c.write_instruction(Instruction::Constant(h.alloc_string_instance("hi".into())), h);
         c.write_instruction(Instruction::Call(1), h);
         c.write_instruction(Instruction::Return, h);
     });
@@ -215,7 +215,7 @@ pub fn test_bool_negate() {
 #[test]
 pub fn test_bool_truthy() {
     let mut vm = run_chunk(|c, h| {
-        c.write_instruction(Instruction::Constant(h.alloc_integer(0)), h);
+        c.write_instruction(Instruction::Constant(h.alloc_integer_instance(0)), h);
         c.write_instruction(Instruction::Not, h);
         c.write_instruction(Instruction::Return, h);
     });
@@ -225,22 +225,22 @@ pub fn test_bool_truthy() {
 #[test]
 pub fn test_build_list() {
     let mut vm = run_chunk(|c, h| {
-        c.write_instruction(Instruction::Constant(h.alloc_integer(1)), h);
-        c.write_instruction(Instruction::Constant(h.alloc_integer(2)), h);
-        c.write_instruction(Instruction::Constant(h.alloc_integer(3)), h);
+        c.write_instruction(Instruction::Constant(h.alloc_integer_instance(1)), h);
+        c.write_instruction(Instruction::Constant(h.alloc_integer_instance(2)), h);
+        c.write_instruction(Instruction::Constant(h.alloc_integer_instance(3)), h);
         c.write_instruction(Instruction::BuildList(3), h);
         c.write_instruction(Instruction::Return, h);
     });
     let r = vm.pop_stack().unwrap();
-    assert_eq!(vm.obj_heap.get_list_instance(r).len(), 3);
+    assert_eq!(vm.obj_heap.get_list_instance(r).unwrap().len(), 3);
 }
 
 #[test]
 pub fn test_list_index_get() {
     let mut vm = run_chunk(|c, h| {
-        c.write_instruction(Instruction::Constant(h.alloc_integer(10)), h);
+        c.write_instruction(Instruction::Constant(h.alloc_integer_instance(10)), h);
         c.write_instruction(Instruction::BuildList(1), h);
-        c.write_instruction(Instruction::Constant(h.alloc_integer(0)), h);
+        c.write_instruction(Instruction::Constant(h.alloc_integer_instance(0)), h);
         c.write_instruction(Instruction::IndexGet, h);
         c.write_instruction(Instruction::Return, h);
     });
@@ -250,10 +250,10 @@ pub fn test_list_index_get() {
 #[test]
 pub fn test_list_index_set() {
     let mut vm = run_chunk(|c, h| {
-        c.write_instruction(Instruction::Constant(h.alloc_integer(10)), h);
+        c.write_instruction(Instruction::Constant(h.alloc_integer_instance(10)), h);
         c.write_instruction(Instruction::BuildList(1), h);
-        c.write_instruction(Instruction::Constant(h.alloc_integer(0)), h);
-        c.write_instruction(Instruction::Constant(h.alloc_integer(42)), h);
+        c.write_instruction(Instruction::Constant(h.alloc_integer_instance(0)), h);
+        c.write_instruction(Instruction::Constant(h.alloc_integer_instance(42)), h);
         c.write_instruction(Instruction::IndexSet, h);
         c.write_instruction(Instruction::Return, h);
     });
@@ -264,9 +264,9 @@ pub fn test_list_index_set() {
 #[test]
 pub fn test_list_append_method() {
     let mut vm = run_chunk(|c, h| {
-        c.write_instruction(Instruction::Constant(h.alloc_integer(1)), h);
+        c.write_instruction(Instruction::Constant(h.alloc_integer_instance(1)), h);
         c.write_instruction(Instruction::BuildList(1), h);
-        c.write_instruction(Instruction::Constant(h.alloc_integer(2)), h);
+        c.write_instruction(Instruction::Constant(h.alloc_integer_instance(2)), h);
         c.write_instruction(Instruction::Invoke("append".into(), 1), h);
         c.write_instruction(Instruction::Return, h);
     });
@@ -276,23 +276,23 @@ pub fn test_list_append_method() {
 #[test]
 pub fn test_build_dict() {
     let mut vm = run_chunk(|c, h| {
-        c.write_instruction(Instruction::Constant(h.alloc_string("a".into())), h);
-        c.write_instruction(Instruction::Constant(h.alloc_integer(1)), h);
-        c.write_instruction(Instruction::Constant(h.alloc_string("b".into())), h);
-        c.write_instruction(Instruction::Constant(h.alloc_integer(2)), h);
+        c.write_instruction(Instruction::Constant(h.alloc_string_instance("a".into())), h);
+        c.write_instruction(Instruction::Constant(h.alloc_integer_instance(1)), h);
+        c.write_instruction(Instruction::Constant(h.alloc_string_instance("b".into())), h);
+        c.write_instruction(Instruction::Constant(h.alloc_integer_instance(2)), h);
         c.write_instruction(Instruction::BuildDict(2), h);
         c.write_instruction(Instruction::Return, h);
     });
     let r = vm.pop_stack().unwrap();
-    assert_eq!(vm.obj_heap.get_dict_instance(r).len(), 2);
+    assert_eq!(vm.obj_heap.get_dict_instance(r).unwrap().len(), 2);
 }
 
 #[test]
 pub fn test_dict_index_get() {
     let mut vm = run_chunk(|c, h| {
-        let k = h.alloc_string("x".into());
+        let k = h.alloc_string_instance("x".into());
         c.write_instruction(Instruction::Constant(k), h);
-        c.write_instruction(Instruction::Constant(h.alloc_integer(42)), h);
+        c.write_instruction(Instruction::Constant(h.alloc_integer_instance(42)), h);
         c.write_instruction(Instruction::BuildDict(1), h);
         c.write_instruction(Instruction::Constant(k), h);
         c.write_instruction(Instruction::IndexGet, h);
@@ -305,9 +305,9 @@ pub fn test_dict_index_get() {
 #[test]
 pub fn test_dict_get_method() {
     let mut vm = run_chunk(|c, h| {
-        let k = h.alloc_string("x".into());
+        let k = h.alloc_string_instance("x".into());
         c.write_instruction(Instruction::Constant(k), h);
-        c.write_instruction(Instruction::Constant(h.alloc_integer(42)), h);
+        c.write_instruction(Instruction::Constant(h.alloc_integer_instance(42)), h);
         c.write_instruction(Instruction::BuildDict(1), h);
         c.write_instruction(Instruction::Constant(k), h);
         c.write_instruction(Instruction::Invoke("get".into(), 1), h);
@@ -320,10 +320,10 @@ pub fn test_dict_get_method() {
 #[test]
 pub fn test_dict_get_missing() {
     let mut vm = run_chunk(|c, h| {
-        c.write_instruction(Instruction::Constant(h.alloc_string("x".into())), h);
-        c.write_instruction(Instruction::Constant(h.alloc_integer(42)), h);
+        c.write_instruction(Instruction::Constant(h.alloc_string_instance("x".into())), h);
+        c.write_instruction(Instruction::Constant(h.alloc_integer_instance(42)), h);
         c.write_instruction(Instruction::BuildDict(1), h);
-        c.write_instruction(Instruction::Constant(h.alloc_string("y".into())), h);
+        c.write_instruction(Instruction::Constant(h.alloc_string_instance("y".into())), h);
         c.write_instruction(Instruction::Invoke("get".into(), 1), h);
         c.write_instruction(Instruction::Return, h);
     });
@@ -333,22 +333,22 @@ pub fn test_dict_get_missing() {
 #[test]
 pub fn test_dict_keys_method() {
     let mut vm = run_chunk(|c, h| {
-        c.write_instruction(Instruction::Constant(h.alloc_string("a".into())), h);
-        c.write_instruction(Instruction::Constant(h.alloc_integer(1)), h);
+        c.write_instruction(Instruction::Constant(h.alloc_string_instance("a".into())), h);
+        c.write_instruction(Instruction::Constant(h.alloc_integer_instance(1)), h);
         c.write_instruction(Instruction::BuildDict(1), h);
         c.write_instruction(Instruction::Invoke("keys".into(), 0), h);
         c.write_instruction(Instruction::Return, h);
     });
     let r = vm.pop_stack().unwrap();
-    assert_eq!(vm.obj_heap.get_list_instance(r).len(), 1);
+    assert_eq!(vm.obj_heap.get_list_instance(r).unwrap().len(), 1);
 }
 
 #[test]
 pub fn test_dict_pop_method() {
     let mut vm = run_chunk(|c, h| {
-        let k = h.alloc_string("x".into());
+        let k = h.alloc_string_instance("x".into());
         c.write_instruction(Instruction::Constant(k), h);
-        c.write_instruction(Instruction::Constant(h.alloc_integer(42)), h);
+        c.write_instruction(Instruction::Constant(h.alloc_integer_instance(42)), h);
         c.write_instruction(Instruction::BuildDict(1), h);
         c.write_instruction(Instruction::Constant(k), h);
         c.write_instruction(Instruction::Invoke("pop".into(), 1), h);
@@ -375,7 +375,7 @@ pub fn test_class_with_method() {
         let cls = h.alloc_class("Calc");
         let mut mc = Chunk::new();
         mc.write_instruction(Instruction::GetLocal(1), h);
-        mc.write_instruction(Instruction::Constant(h.alloc_integer(2)), h);
+        mc.write_instruction(Instruction::Constant(h.alloc_integer_instance(2)), h);
         mc.write_instruction(Instruction::Mul, h);
         mc.write_instruction(Instruction::Return, h);
         let mfn = h.alloc_function("double", 2, mc);
@@ -383,7 +383,7 @@ pub fn test_class_with_method() {
         h.get_class_mut(cls).unwrap().methods.insert("double".into(), crate::Method::User(mcl));
         c.write_instruction(Instruction::Constant(cls), h);
         c.write_instruction(Instruction::Call(0), h);
-        c.write_instruction(Instruction::Constant(h.alloc_integer(5)), h);
+        c.write_instruction(Instruction::Constant(h.alloc_integer_instance(5)), h);
         c.write_instruction(Instruction::Invoke("double".into(), 1), h);
         c.write_instruction(Instruction::Return, h);
     });
@@ -394,7 +394,7 @@ pub fn test_class_with_method() {
 pub fn test_builtin_abs() {
     let mut vm = run_chunk(|c, h| {
         c.write_instruction(Instruction::GetGlobal("abs".into()), h);
-        c.write_instruction(Instruction::Constant(h.alloc_integer(-5)), h);
+        c.write_instruction(Instruction::Constant(h.alloc_integer_instance(-5)), h);
         c.write_instruction(Instruction::Call(1), h);
         c.write_instruction(Instruction::Return, h);
     });
@@ -405,9 +405,9 @@ pub fn test_builtin_abs() {
 pub fn test_builtin_min() {
     let mut vm = run_chunk(|c, h| {
         c.write_instruction(Instruction::GetGlobal("min".into()), h);
-        c.write_instruction(Instruction::Constant(h.alloc_integer(1)), h);
-        c.write_instruction(Instruction::Constant(h.alloc_integer(5)), h);
-        c.write_instruction(Instruction::Constant(h.alloc_integer(-3)), h);
+        c.write_instruction(Instruction::Constant(h.alloc_integer_instance(1)), h);
+        c.write_instruction(Instruction::Constant(h.alloc_integer_instance(5)), h);
+        c.write_instruction(Instruction::Constant(h.alloc_integer_instance(-3)), h);
         c.write_instruction(Instruction::Call(3), h);
         c.write_instruction(Instruction::Return, h);
     });
@@ -418,12 +418,12 @@ pub fn test_builtin_min() {
 pub fn test_builtin_type() {
     let mut vm = run_chunk(|c, h| {
         c.write_instruction(Instruction::GetGlobal("type".into()), h);
-        c.write_instruction(Instruction::Constant(h.alloc_integer(42)), h);
+        c.write_instruction(Instruction::Constant(h.alloc_integer_instance(42)), h);
         c.write_instruction(Instruction::Call(1), h);
         c.write_instruction(Instruction::Return, h);
     });
     match {let r=vm.pop_stack().unwrap(); vm.obj_heap.get(r)} {
-        crate::Object::Class(c) => assert_eq!(c.name.as_str(), "int"),
+        crate::Object::Class(c) => assert_eq!(c.name.as_str(), "Int"),
         _ => panic!(),
     }
 }
@@ -433,7 +433,7 @@ pub fn test_super_invoke() {
     let mut vm = run_chunk(|c, h| {
         let base = h.alloc_class("Base");
         let mut bc = Chunk::new();
-        bc.write_instruction(Instruction::Constant(h.alloc_integer(1)), h);
+        bc.write_instruction(Instruction::Constant(h.alloc_integer_instance(1)), h);
         bc.write_instruction(Instruction::Return, h);
         let bm = h.alloc_function("m", 1, bc);
         let bm_cl = h.alloc_closure(bm);
