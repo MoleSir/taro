@@ -38,6 +38,8 @@ pub type NativeFn0 = fn(&mut VirtualMachine) -> ExecuteResult<ObjectHandle>;
 pub type NativeFn1 = fn(&mut VirtualMachine, ObjectHandle) -> ExecuteResult<ObjectHandle>;
 pub type NativeFn2 = fn(&mut VirtualMachine, ObjectHandle, ObjectHandle) -> ExecuteResult<ObjectHandle>;
 pub type NativeFn3 = fn(&mut VirtualMachine, ObjectHandle, ObjectHandle, ObjectHandle) -> ExecuteResult<ObjectHandle>;
+pub type NativeFn4 = fn(&mut VirtualMachine, ObjectHandle, ObjectHandle, ObjectHandle, ObjectHandle) -> ExecuteResult<ObjectHandle>;
+pub type NativeFn5 = fn(&mut VirtualMachine, ObjectHandle, ObjectHandle, ObjectHandle, ObjectHandle, ObjectHandle) -> ExecuteResult<ObjectHandle>;
 pub type NativeFnN = fn(&mut VirtualMachine, args: &[ObjectHandle]) -> ExecuteResult<ObjectHandle>;
 
 /// Tagged union over native function arities.
@@ -46,43 +48,49 @@ pub type NativeFnN = fn(&mut VirtualMachine, args: &[ObjectHandle]) -> ExecuteRe
 /// arguments before calling the inner function, so individual native functions
 /// never deal with raw stack indices.
 #[derive(Clone, Copy)]
-pub enum NativeFunc {
+pub enum NativeFunction {
     Arity0(NativeFn0),
     Arity1(NativeFn1),
     Arity2(NativeFn2),
     Arity3(NativeFn3),
+    Arity4(NativeFn4),
+    Arity5(NativeFn5),
     Variadic(NativeFnN),
 }
 
 // `From` impls allow `.into()` on already-coerced function pointers.
-impl From<NativeFn0> for NativeFunc { fn from(f: NativeFn0) -> Self { NativeFunc::Arity0(f) } }
-impl From<NativeFn1> for NativeFunc { fn from(f: NativeFn1) -> Self { NativeFunc::Arity1(f) } }
-impl From<NativeFn2> for NativeFunc { fn from(f: NativeFn2) -> Self { NativeFunc::Arity2(f) } }
-impl From<NativeFn3> for NativeFunc { fn from(f: NativeFn3) -> Self { NativeFunc::Arity3(f) } }
-impl From<NativeFnN> for NativeFunc { fn from(f: NativeFnN) -> Self { NativeFunc::Variadic(f) } }
+impl From<NativeFn0> for NativeFunction { fn from(f: NativeFn0) -> Self { NativeFunction::Arity0(f) } }
+impl From<NativeFn1> for NativeFunction { fn from(f: NativeFn1) -> Self { NativeFunction::Arity1(f) } }
+impl From<NativeFn2> for NativeFunction { fn from(f: NativeFn2) -> Self { NativeFunction::Arity2(f) } }
+impl From<NativeFn3> for NativeFunction { fn from(f: NativeFn3) -> Self { NativeFunction::Arity3(f) } }
+impl From<NativeFn4> for NativeFunction { fn from(f: NativeFn4) -> Self { NativeFunction::Arity4(f) } }
+impl From<NativeFn5> for NativeFunction { fn from(f: NativeFn5) -> Self { NativeFunction::Arity5(f) } }
+impl From<NativeFnN> for NativeFunction { fn from(f: NativeFnN) -> Self { NativeFunction::Variadic(f) } }
 
 // Explicit constructors — these trigger function-item → function-pointer
 // coercion because the parameter type is concrete (not generic).
-impl NativeFunc {
-    pub fn a0(f: NativeFn0) -> Self { NativeFunc::Arity0(f) }
-    pub fn a1(f: NativeFn1) -> Self { NativeFunc::Arity1(f) }
-    pub fn a2(f: NativeFn2) -> Self { NativeFunc::Arity2(f) }
-    pub fn a3(f: NativeFn3) -> Self { NativeFunc::Arity3(f) }
-    pub fn var(f: NativeFnN) -> Self { NativeFunc::Variadic(f) }
+impl NativeFunction {
+    pub fn a0(f: NativeFn0) -> Self { NativeFunction::Arity0(f) }
+    pub fn a1(f: NativeFn1) -> Self { NativeFunction::Arity1(f) }
+    pub fn a2(f: NativeFn2) -> Self { NativeFunction::Arity2(f) }
+    pub fn a3(f: NativeFn3) -> Self { NativeFunction::Arity3(f) }
+    pub fn a4(f: NativeFn4) -> Self { NativeFunction::Arity4(f) }
+    pub fn a5(f: NativeFn5) -> Self { NativeFunction::Arity5(f) }
+    pub fn var(f: NativeFnN) -> Self { NativeFunction::Variadic(f) }
 }
 
-// NativeFunc contains only function pointers — safe to share across threads
+// NativeFunction contains only function pointers — safe to share across threads
 // in our single-threaded VM.
-unsafe impl Send for NativeFunc {}
-unsafe impl Sync for NativeFunc {}
+unsafe impl Send for NativeFunction {}
+unsafe impl Sync for NativeFunction {}
 
 pub struct ObjectNativeFn {
     pub name: ShrString,
-    pub function: NativeFunc,
+    pub function: NativeFunction,
 }
 
 impl ObjectNativeFn {
-    pub fn new(name: impl Into<ShrString>, function: NativeFunc) -> Self {
+    pub fn new(name: impl Into<ShrString>, function: NativeFunction) -> Self {
         Self { name: name.into(), function }
     }
 }

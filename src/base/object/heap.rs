@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::LazyLock};
 
 use crate::{Chunk, ShrString};
-use super::{NativeFunc, Method, Object, ObjectBoundMethod, ObjectNativeFn, ObjectClass, ObjectClosure, ObjectFunction, ObjectInstance, ObjectInstanceData, ObjectUpvalue};
+use super::{NativeFunction, Method, Object, ObjectBoundMethod, ObjectNativeFn, ObjectClass, ObjectClosure, ObjectFunction, ObjectInstance, ObjectInstanceData, ObjectUpvalue};
 
 /// Static nil object — backing for `ObjectHandle::NIL`.
 static NIL_OBJECT: LazyLock<Object> = LazyLock::new(|| {
@@ -109,7 +109,7 @@ impl ObjectHeap {
         self.alloc(obj)
     }
 
-    pub fn alloc_native_fn(&mut self, name: impl Into<ShrString>, function: NativeFunc) -> ObjectHandle {
+    pub fn alloc_native_fn(&mut self, name: impl Into<ShrString>, function: NativeFunction) -> ObjectHandle {
         let obj = ObjectNativeFn::new(name, function);
         self.alloc(obj)
     }

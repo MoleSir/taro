@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Seek, Write};
 
-use crate::{NativeFunc, ObjectHandle, ObjectInstanceData, ShrString, ToNative};
+use crate::{NativeFunction, ObjectHandle, ObjectInstanceData, ShrString, ToNative};
 use crate::vm::{ExecuteError, ExecuteResult, VirtualMachine};
 
 // =============================================================================
@@ -20,7 +20,7 @@ fn native_mut<'vm, T: 'static>(
 ) -> ExecuteResult<&'vm mut T> {
     vm.obj_heap
         .get_native_mut::<T>(handle)
-        .ok_or_else(|| ExecuteError::ImportError("file is closed".into()))
+        .ok_or_else(|| ExecuteError::IoError("file is closed".into()))
 }
 
 // =============================================================================
@@ -50,25 +50,25 @@ impl VirtualMachine {
     pub(super) fn create_fs_module(&mut self) -> ExecuteResult<ObjectHandle> {
         let file_class = self.obj_heap.alloc_class("File");
 
-        self.register_native_method(file_class, "__init__",  NativeFunc::var(VirtualMachine::fs_file_init));
-        self.register_native_method(file_class, "read",      NativeFunc::a1(VirtualMachine::fs_file_read));
-        self.register_native_method(file_class, "write",     NativeFunc::a2(VirtualMachine::fs_file_write));
-        self.register_native_method(file_class, "readline",  NativeFunc::a1(VirtualMachine::fs_file_readline));
-        self.register_native_method(file_class, "close",     NativeFunc::a1(VirtualMachine::fs_file_close));
-        self.register_native_method(file_class, "seek",      NativeFunc::a2(VirtualMachine::fs_file_seek));
-        self.register_native_method(file_class, "tell",      NativeFunc::a1(VirtualMachine::fs_file_tell));
-        self.register_native_method(file_class, "__str__",   NativeFunc::a1(VirtualMachine::fs_file_str));
+        self.register_native_method(file_class, "__init__",  NativeFunction::var(VirtualMachine::fs_file_init));
+        self.register_native_method(file_class, "read",      NativeFunction::a1(VirtualMachine::fs_file_read));
+        self.register_native_method(file_class, "write",     NativeFunction::a2(VirtualMachine::fs_file_write));
+        self.register_native_method(file_class, "readline",  NativeFunction::a1(VirtualMachine::fs_file_readline));
+        self.register_native_method(file_class, "close",     NativeFunction::a1(VirtualMachine::fs_file_close));
+        self.register_native_method(file_class, "seek",      NativeFunction::a2(VirtualMachine::fs_file_seek));
+        self.register_native_method(file_class, "tell",      NativeFunction::a1(VirtualMachine::fs_file_tell));
+        self.register_native_method(file_class, "__str__",   NativeFunction::a1(VirtualMachine::fs_file_str));
 
         // Standalone function handles.
-        let exists = self.obj_heap.alloc_native_fn("exists", NativeFunc::a1(VirtualMachine::fs_exists));
-        let is_file = self.obj_heap.alloc_native_fn("is_file", NativeFunc::a1(VirtualMachine::fs_is_file));
-        let is_dir = self.obj_heap.alloc_native_fn("is_dir", NativeFunc::a1(VirtualMachine::fs_is_dir));
-        let remove = self.obj_heap.alloc_native_fn("remove", NativeFunc::a1(VirtualMachine::fs_remove));
-        let rename = self.obj_heap.alloc_native_fn("rename", NativeFunc::a2(VirtualMachine::fs_rename));
-        let read = self.obj_heap.alloc_native_fn("read", NativeFunc::a1(VirtualMachine::fs_read));
-        let write = self.obj_heap.alloc_native_fn("write", NativeFunc::a2(VirtualMachine::fs_write));
-        let list_dir = self.obj_heap.alloc_native_fn("list_dir", NativeFunc::a1(VirtualMachine::fs_list_dir));
-        let mkdir = self.obj_heap.alloc_native_fn("mkdir", NativeFunc::a1(VirtualMachine::fs_mkdir));
+        let exists = self.obj_heap.alloc_native_fn("exists", NativeFunction::a1(VirtualMachine::fs_exists));
+        let is_file = self.obj_heap.alloc_native_fn("is_file", NativeFunction::a1(VirtualMachine::fs_is_file));
+        let is_dir = self.obj_heap.alloc_native_fn("is_dir", NativeFunction::a1(VirtualMachine::fs_is_dir));
+        let remove = self.obj_heap.alloc_native_fn("remove", NativeFunction::a1(VirtualMachine::fs_remove));
+        let rename = self.obj_heap.alloc_native_fn("rename", NativeFunction::a2(VirtualMachine::fs_rename));
+        let read = self.obj_heap.alloc_native_fn("read", NativeFunction::a1(VirtualMachine::fs_read));
+        let write = self.obj_heap.alloc_native_fn("write", NativeFunction::a2(VirtualMachine::fs_write));
+        let list_dir = self.obj_heap.alloc_native_fn("list_dir", NativeFunction::a1(VirtualMachine::fs_list_dir));
+        let mkdir = self.obj_heap.alloc_native_fn("mkdir", NativeFunction::a1(VirtualMachine::fs_mkdir));
 
         let mut exports: HashMap<ShrString, ObjectHandle> = HashMap::new();
         exports.insert(ShrString::new_str("File"), file_class);
@@ -114,17 +114,17 @@ impl VirtualMachine {
 
         let file = match mode.as_str() {
             "r" => std::fs::File::open(&path)
-                .map_err(|e| ExecuteError::ImportError(format!("cannot open '{}': {}", path, e)))?,
+                .map_err(|e| ExecuteError::IoError(format!("cannot open '{}': {}", path, e)))?,
             "w" => std::fs::File::create(&path)
-                .map_err(|e| ExecuteError::ImportError(format!("cannot create '{}': {}", path, e)))?,
+                .map_err(|e| ExecuteError::IoError(format!("cannot create '{}': {}", path, e)))?,
             "a" => std::fs::OpenOptions::new()
                 .append(true).create(true).open(&path)
-                .map_err(|e| ExecuteError::ImportError(format!("cannot open '{}': {}", path, e)))?,
-            _ => Err(ExecuteError::ImportError(format!("unknown file mode '{}'", mode)))?,
+                .map_err(|e| ExecuteError::IoError(format!("cannot open '{}': {}", path, e)))?,
+            _ => Err(ExecuteError::IoError(format!("unknown file mode '{}'", mode)))?,
         };
 
         let inst = self.obj_heap.get_instance_mut(self_handle)
-            .ok_or_else(|| ExecuteError::ImportError("not a File instance".into()))?;
+            .ok_or_else(|| ExecuteError::IoError("not a File instance".into()))?;
         inst.data = ObjectInstanceData::Native(
             FileData { reader: Some(BufReader::new(file)), path, mode }.into_native(),
         );
@@ -134,28 +134,28 @@ impl VirtualMachine {
 
     fn fs_file_read(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
         let reader = native_mut::<FileData>(self, receiver)?.reader.as_mut()
-            .ok_or_else(|| ExecuteError::ImportError("file is closed".into()))?;
+            .ok_or_else(|| ExecuteError::IoError("file is closed".into()))?;
         let mut buf = String::new();
         reader.read_to_string(&mut buf)
-            .map_err(|e| ExecuteError::ImportError(format!("read error: {}", e)))?;
+            .map_err(|e| ExecuteError::IoError(format!("read error: {}", e)))?;
         Ok(self.obj_heap.alloc_string_instance(ShrString::new_string(&buf)))
     }
 
     fn fs_file_write(&mut self, receiver: ObjectHandle, text: ObjectHandle) -> ExecuteResult<ObjectHandle> {
         let text = self.get_string_instance(text)?.clone();
         let reader = native_mut::<FileData>(self, receiver)?.reader.as_mut()
-            .ok_or_else(|| ExecuteError::ImportError("file is closed".into()))?;
+            .ok_or_else(|| ExecuteError::IoError("file is closed".into()))?;
         reader.get_mut().write_all(text.as_bytes())
-            .map_err(|e| ExecuteError::ImportError(format!("write error: {}", e)))?;
+            .map_err(|e| ExecuteError::IoError(format!("write error: {}", e)))?;
         Ok(ObjectHandle::NIL)
     }
 
     fn fs_file_readline(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
         let reader = native_mut::<FileData>(self, receiver)?.reader.as_mut()
-            .ok_or_else(|| ExecuteError::ImportError("file is closed".into()))?;
+            .ok_or_else(|| ExecuteError::IoError("file is closed".into()))?;
         let mut line = String::new();
         let n = reader.read_line(&mut line)
-            .map_err(|e| ExecuteError::ImportError(format!("read error: {}", e)))?;
+            .map_err(|e| ExecuteError::IoError(format!("read error: {}", e)))?;
         if n == 0 {
             return Ok(ObjectHandle::NIL);
         }
@@ -172,17 +172,17 @@ impl VirtualMachine {
     fn fs_file_seek(&mut self, receiver: ObjectHandle, pos: ObjectHandle) -> ExecuteResult<ObjectHandle> {
         let pos = *self.get_integer_instance(pos)?;
         let reader = native_mut::<FileData>(self, receiver)?.reader.as_mut()
-            .ok_or_else(|| ExecuteError::ImportError("file is closed".into()))?;
+            .ok_or_else(|| ExecuteError::IoError("file is closed".into()))?;
         reader.seek(std::io::SeekFrom::Start(pos as u64))
-            .map_err(|e| ExecuteError::ImportError(format!("seek error: {}", e)))?;
+            .map_err(|e| ExecuteError::IoError(format!("seek error: {}", e)))?;
         Ok(ObjectHandle::NIL)
     }
 
     fn fs_file_tell(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
         let reader = native_mut::<FileData>(self, receiver)?.reader.as_mut()
-            .ok_or_else(|| ExecuteError::ImportError("file is closed".into()))?;
+            .ok_or_else(|| ExecuteError::IoError("file is closed".into()))?;
         let pos = reader.stream_position()
-            .map_err(|e| ExecuteError::ImportError(format!("tell error: {}", e)))?;
+            .map_err(|e| ExecuteError::IoError(format!("tell error: {}", e)))?;
         Ok(self.obj_heap.alloc_integer_instance(pos as i64))
     }
 
@@ -223,7 +223,7 @@ impl VirtualMachine {
         let s = self.get_string_instance(path)?;
         let p = std::path::Path::new(s.as_str());
         if p.is_dir() { std::fs::remove_dir(p) } else { std::fs::remove_file(p) }
-            .map_err(|e| ExecuteError::ImportError(format!("cannot remove '{}': {}", s, e)))?;
+            .map_err(|e| ExecuteError::IoError(format!("cannot remove '{}': {}", s, e)))?;
         Ok(ObjectHandle::NIL)
     }
 
@@ -231,14 +231,14 @@ impl VirtualMachine {
         let from_s = self.get_string_instance(from)?;
         let to_s = self.get_string_instance(to)?;
         std::fs::rename(from_s.as_str(), to_s.as_str())
-            .map_err(|e| ExecuteError::ImportError(format!("cannot rename: {}", e)))?;
+            .map_err(|e| ExecuteError::IoError(format!("cannot rename: {}", e)))?;
         Ok(ObjectHandle::NIL)
     }
 
     fn fs_read(&mut self, path: ObjectHandle) -> ExecuteResult<ObjectHandle> {
         let s = self.get_string_instance(path)?;
         let content = std::fs::read_to_string(s.as_str())
-            .map_err(|e| ExecuteError::ImportError(format!("cannot read '{}': {}", s, e)))?;
+            .map_err(|e| ExecuteError::IoError(format!("cannot read '{}': {}", s, e)))?;
         Ok(self.obj_heap.alloc_string_instance(ShrString::new_string(&content)))
     }
 
@@ -246,17 +246,17 @@ impl VirtualMachine {
         let path_s = self.get_string_instance(path)?;
         let text_s = self.get_string_instance(text)?;
         std::fs::write(path_s.as_str(), text_s.as_bytes())
-            .map_err(|e| ExecuteError::ImportError(format!("cannot write '{}': {}", path_s, e)))?;
+            .map_err(|e| ExecuteError::IoError(format!("cannot write '{}': {}", path_s, e)))?;
         Ok(ObjectHandle::NIL)
     }
 
     fn fs_list_dir(&mut self, path: ObjectHandle) -> ExecuteResult<ObjectHandle> {
         let s = self.get_string_instance(path)?;
         let dir = std::fs::read_dir(s.as_str())
-            .map_err(|e| ExecuteError::ImportError(format!("cannot list '{}': {}", s, e)))?;
+            .map_err(|e| ExecuteError::IoError(format!("cannot list '{}': {}", s, e)))?;
         let mut entries = Vec::new();
         for entry in dir {
-            let entry = entry.map_err(|e| ExecuteError::ImportError(format!("readdir: {}", e)))?;
+            let entry = entry.map_err(|e| ExecuteError::IoError(format!("readdir: {}", e)))?;
             let name = entry.file_name().to_string_lossy().to_string();
             entries.push(self.obj_heap.alloc_string_instance(ShrString::new_string(&name)));
         }
@@ -266,7 +266,7 @@ impl VirtualMachine {
     fn fs_mkdir(&mut self, path: ObjectHandle) -> ExecuteResult<ObjectHandle> {
         let s = self.get_string_instance(path)?;
         std::fs::create_dir_all(s.as_str())
-            .map_err(|e| ExecuteError::ImportError(format!("cannot mkdir '{}': {}", s, e)))?;
+            .map_err(|e| ExecuteError::IoError(format!("cannot mkdir '{}': {}", s, e)))?;
         Ok(ObjectHandle::NIL)
     }
 }

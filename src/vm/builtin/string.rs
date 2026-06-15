@@ -1,4 +1,4 @@
-use crate::{NativeFunc, ObjectHandle};
+use crate::{NativeFunction, ObjectHandle};
 use crate::vm::{ExecuteError, ExecuteResult, VirtualMachine};
 
 macro_rules! string_cmp_op {
@@ -80,19 +80,19 @@ impl VirtualMachine {
 
     pub fn register_string_builtins(&mut self) {
         let sc = self.obj_heap.string_class;
-        self.register_native_method(sc, "__not__",      NativeFunc::a1(VirtualMachine::string_not));
-        self.register_native_method(sc, "__add__",      NativeFunc::a2(VirtualMachine::string_add));
-        self.register_native_method(sc, "__eq__",       NativeFunc::a2(VirtualMachine::string_eq));
-        self.register_native_method(sc, "__ne__",       NativeFunc::a2(VirtualMachine::string_ne));
-        self.register_native_method(sc, "__gt__",       NativeFunc::a2(VirtualMachine::string_gt));
-        self.register_native_method(sc, "__ge__",       NativeFunc::a2(VirtualMachine::string_ge));
-        self.register_native_method(sc, "__lt__",       NativeFunc::a2(VirtualMachine::string_lt));
-        self.register_native_method(sc, "__le__",       NativeFunc::a2(VirtualMachine::string_le));
-        self.register_native_method(sc, "__str__",      NativeFunc::a1(VirtualMachine::string_str));
-        self.register_native_method(sc, "__bool__",     NativeFunc::a1(VirtualMachine::string_bool));
-        self.register_native_method(sc, "__int__",      NativeFunc::a1(VirtualMachine::string_int));
-        self.register_native_method(sc, "__float__",    NativeFunc::a1(VirtualMachine::string_float));
-        self.register_native_method(sc, "__len__",      NativeFunc::a1(VirtualMachine::string_len));
-        self.register_native_method(sc, "__getitem__",  NativeFunc::a2(VirtualMachine::string_getitem));
+        self.register_native_method(sc, "__not__",      NativeFunction::a1(VirtualMachine::string_not));
+        self.register_native_method(sc, "__add__",      NativeFunction::a2(VirtualMachine::string_add));
+        self.register_native_method(sc, "__eq__",       NativeFunction::a2(VirtualMachine::string_eq));
+        self.register_native_method(sc, "__ne__",       NativeFunction::a2(VirtualMachine::string_ne));
+        self.register_native_method(sc, "__gt__",       NativeFunction::a2(VirtualMachine::string_gt));
+        self.register_native_method(sc, "__ge__",       NativeFunction::a2(VirtualMachine::string_ge));
+        self.register_native_method(sc, "__lt__",       NativeFunction::a2(VirtualMachine::string_lt));
+        self.register_native_method(sc, "__le__",       NativeFunction::a2(VirtualMachine::string_le));
+        self.register_native_method(sc, "__str__",      NativeFunction::a1(VirtualMachine::string_str));
+        self.register_native_method(sc, "__bool__",     NativeFunction::a1(VirtualMachine::string_bool));
+        self.register_native_method(sc, "__int__",      NativeFunction::a1(VirtualMachine::string_int));
+        self.register_native_method(sc, "__float__",    NativeFunction::a1(VirtualMachine::string_float));
+        self.register_native_method(sc, "__len__",      NativeFunction::a1(VirtualMachine::string_len));
+        self.register_native_method(sc, "__getitem__",  NativeFunction::a2(VirtualMachine::string_getitem));
     }
 }

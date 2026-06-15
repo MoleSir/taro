@@ -317,3 +317,104 @@ appender(42);   // same as my_list.append(42)
 var getter = my_dict.get;
 print(getter("key"));
 ```
+
+## Imports and modules
+
+Taro supports two kinds of module imports:
+
+**File-based imports** load and execute a `.taro` script, exposing its top-level definitions
+as fields on a module object:
+
+```taro
+import "tests/scripts/lib/math.taro";
+print(math.PI);                  // 3.14159
+print(math.add(10, 20));         // 30
+
+// Import as expression
+import "tests/scripts/lib/math.taro" as m;
+print(m.mul(7, 6));              // 42
+
+// Use classes from modules
+var v = math.Vec(3, 4) + math.Vec(1, 2);
+print(str(v));                   // Vec(4,6)
+```
+
+Module globals do not leak — `PI` is only accessible via `math.PI`.
+
+**Virtual std modules** are built into the VM and imported via `import "std/<name>"`:
+
+| Module | Description |
+|--------|-------------|
+| `std/math` | Constants, trig, logarithms, rounding, angle conversion |
+| `std/fs`   | File I/O — `File` class + standalone convenience functions |
+
+### `std/math`
+
+```taro
+import "std/math";
+
+// Constants
+print(math.PI);                  // 3.141592653589793
+print(math.E);                   // 2.718281828459045
+print(math.TAU);                 // 6.283185307179586
+
+// Trig
+print(math.sin(math.PI / 2));    // 1
+print(math.cos(0));              // 1
+print(math.tan(math.PI / 4));    // ~1
+print(math.asin(0));             // 0
+print(math.atan2(1, 1));         // π/4
+
+// Power / log
+print(math.sqrt(16));            // 4
+print(math.pow(2, 10));          // 1024
+print(math.ln(math.E));          // 1
+print(math.log2(8));             // 3
+print(math.log10(100));          // 2
+print(math.hypot(3, 4));         // 5
+
+// Rounding
+print(math.floor(3.7));          // 3
+print(math.ceil(3.1));           // 4
+print(math.round(3.5));          // 4
+
+// Angle conversion
+print(math.degrees(math.PI));    // 180
+print(math.radians(180));        // π
+```
+
+All functions accept both int and float arguments, returning float.
+
+### `std/fs`
+
+```taro
+import "std/fs";
+
+// Standalone convenience functions
+fs.write("/tmp/hello.txt", "Hello from Taro!");
+print(fs.read("/tmp/hello.txt"));
+print(fs.exists("/tmp/hello.txt"));     // true
+print(fs.is_file("/tmp/hello.txt"));    // true
+print(fs.is_dir("/tmp"));               // true
+fs.rename("/tmp/hello.txt", "/tmp/hi.txt");
+fs.remove("/tmp/hi.txt");
+
+fs.mkdir("/tmp/taro_demo");
+fs.list_dir("/tmp");                    // list of entry names
+
+// File class — open, read/write line-by-line, seek
+var f = fs.File("/tmp/demo.txt", "w");
+f.write("line1\nline2\nline3");
+f.close();
+
+var g = fs.File("/tmp/demo.txt", "r");
+print(g.readline());                    // line1
+print(g.tell());                        // 6
+g.seek(0);
+print(g.read());                        // all content
+g.close();
+
+print(str(g));                          // <File path='...' mode='r' status=closed>
+```
+
+File modes: `"r"` (read), `"w"` (write/create), `"a"` (append).

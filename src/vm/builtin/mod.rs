@@ -1,4 +1,4 @@
-use crate::{NativeFunc, Method, ObjectHandle};
+use crate::{NativeFunction, Method, ObjectHandle};
 
 use super::VirtualMachine;
 
@@ -21,20 +21,20 @@ impl VirtualMachine {
         self.register_builtin_class("Bool", self.obj_heap.bool_class);
 
         // ---- global native functions ----
-        self.register_native_fn("print", NativeFunc::var(VirtualMachine::print));
-        self.register_native_fn("str",   NativeFunc::a1(VirtualMachine::str));
-        self.register_native_fn("bool",  NativeFunc::a1(VirtualMachine::bool));
-        self.register_native_fn("len",   NativeFunc::a1(VirtualMachine::len));
-        self.register_native_fn("int",   NativeFunc::a1(VirtualMachine::int));
-        self.register_native_fn("float", NativeFunc::a1(VirtualMachine::float));
-        self.register_native_fn("type",  NativeFunc::a1(VirtualMachine::typeof_val));
-        self.register_native_fn("input", NativeFunc::var(VirtualMachine::input));
-        self.register_native_fn("abs",   NativeFunc::a1(VirtualMachine::abs));
-        self.register_native_fn("min",   NativeFunc::var(VirtualMachine::min));
-        self.register_native_fn("max",   NativeFunc::var(VirtualMachine::max));
-        self.register_native_fn("clock", NativeFunc::a0(VirtualMachine::clock));
-        self.register_native_fn("list",  NativeFunc::var(VirtualMachine::list));
-        self.register_native_fn("dict",  NativeFunc::a0(VirtualMachine::dict));
+        self.register_native_fn("print", NativeFunction::var(VirtualMachine::print));
+        self.register_native_fn("str",   NativeFunction::a1(VirtualMachine::str));
+        self.register_native_fn("bool",  NativeFunction::a1(VirtualMachine::bool));
+        self.register_native_fn("len",   NativeFunction::a1(VirtualMachine::len));
+        self.register_native_fn("int",   NativeFunction::a1(VirtualMachine::int));
+        self.register_native_fn("float", NativeFunction::a1(VirtualMachine::float));
+        self.register_native_fn("type",  NativeFunction::a1(VirtualMachine::typeof_val));
+        self.register_native_fn("input", NativeFunction::var(VirtualMachine::input));
+        self.register_native_fn("abs",   NativeFunction::a1(VirtualMachine::abs));
+        self.register_native_fn("min",   NativeFunction::var(VirtualMachine::min));
+        self.register_native_fn("max",   NativeFunction::var(VirtualMachine::max));
+        self.register_native_fn("clock", NativeFunction::a0(VirtualMachine::clock));
+        self.register_native_fn("list",  NativeFunction::var(VirtualMachine::list));
+        self.register_native_fn("dict",  NativeFunction::a0(VirtualMachine::dict));
     }
 
     pub fn register_builtins_class_method(&mut self) {
@@ -46,13 +46,13 @@ impl VirtualMachine {
         self.register_bool_builtins();
     }
 
-    pub(crate) fn register_native_method(&mut self, class_handle: ObjectHandle, name: &'static str, function: NativeFunc) {
+    pub(crate) fn register_native_method(&mut self, class_handle: ObjectHandle, name: &'static str, function: NativeFunction) {
         let handle = self.obj_heap.alloc_native_fn(name, function);
         let class = self.obj_heap.get_class_mut(class_handle).expect("class");
         class.methods.insert(name.into(), Method::Native(handle));
     }
 
-    fn register_native_fn(&mut self, name: &'static str, function: NativeFunc) {
+    fn register_native_fn(&mut self, name: &'static str, function: NativeFunction) {
         let function = self.obj_heap.alloc_native_fn(name, function);
         self.globals.insert(name.into(), function);
     }

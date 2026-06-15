@@ -99,6 +99,7 @@ fn get_rule(kind: TokenKind) -> ParseRule {
 
         // Keywords ----------------------------------------------------------
         TokenKind::And          => ParseRule::new(None, Some(Parser::and), Prec::And),
+        TokenKind::As           => ParseRule::NONE,
         TokenKind::Import       => ParseRule::new(Some(Parser::import_expr), None, Prec::Call),
         TokenKind::Class        => ParseRule::NONE,
         TokenKind::Else         => ParseRule::NONE,
@@ -443,13 +444,19 @@ impl<'a> Parser<'a> {
         let path = self.previous().lexeme;
         let inner = &path[1..path.len() - 1]; // strip quotes
 
-        // Derive module name from path (basename without extension).
-        let module_name = Self::derive_module_name(inner);
+        // Determine the module name: either from `as <name>` or derived from
+        // the file path (basename without extension).
+        let module_name = if self.match_token(TokenKind::As) {
+            self.consume(TokenKind::Identifier, "Expect module name after 'as'.")?;
+            self.previous().lexeme.to_string()
+        } else {
+            Self::derive_module_name(inner)
+        };
 
         // Emit import instruction (pushes module object onto stack).
         self.emit(Instruction::Import(ShrString::new_string(inner)));
 
-        // Define global with the derived module name.
+        // Define global with the module name.
         self.emit(Instruction::DefineGlobal(ShrString::new_string(module_name)));
 
         self.consume(TokenKind::Semicolon, "Expect ';' after import.")?;

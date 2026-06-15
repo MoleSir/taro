@@ -1,4 +1,4 @@
-use crate::{NativeFunc, ObjectHandle};
+use crate::{NativeFunction, ObjectHandle};
 use crate::vm::{ExecuteError, ExecuteResult, VirtualMachine};
 
 macro_rules! int_binary_arith {
@@ -89,21 +89,21 @@ impl VirtualMachine {
 
     pub fn register_int_builtins(&mut self) {
         let ic = self.obj_heap.int_class;
-        self.register_native_method(ic, "__neg__",   NativeFunc::a1(VirtualMachine::int_neg));
-        self.register_native_method(ic, "__not__",   NativeFunc::a1(VirtualMachine::int_not));
-        self.register_native_method(ic, "__add__",   NativeFunc::a2(VirtualMachine::int_add));
-        self.register_native_method(ic, "__sub__",   NativeFunc::a2(VirtualMachine::int_sub));
-        self.register_native_method(ic, "__mul__",   NativeFunc::a2(VirtualMachine::int_mul));
-        self.register_native_method(ic, "__div__",   NativeFunc::a2(VirtualMachine::int_div));
-        self.register_native_method(ic, "__eq__",    NativeFunc::a2(VirtualMachine::int_eq));
-        self.register_native_method(ic, "__ne__",    NativeFunc::a2(VirtualMachine::int_ne));
-        self.register_native_method(ic, "__gt__",    NativeFunc::a2(VirtualMachine::int_gt));
-        self.register_native_method(ic, "__ge__",    NativeFunc::a2(VirtualMachine::int_ge));
-        self.register_native_method(ic, "__lt__",    NativeFunc::a2(VirtualMachine::int_lt));
-        self.register_native_method(ic, "__le__",    NativeFunc::a2(VirtualMachine::int_le));
-        self.register_native_method(ic, "__str__",   NativeFunc::a1(VirtualMachine::int_str));
-        self.register_native_method(ic, "__bool__",  NativeFunc::a1(VirtualMachine::int_bool));
-        self.register_native_method(ic, "__int__",   NativeFunc::a1(VirtualMachine::int_int));
-        self.register_native_method(ic, "__float__", NativeFunc::a1(VirtualMachine::int_float));
+        self.register_native_method(ic, "__neg__",   NativeFunction::a1(VirtualMachine::int_neg));
+        self.register_native_method(ic, "__not__",   NativeFunction::a1(VirtualMachine::int_not));
+        self.register_native_method(ic, "__add__",   NativeFunction::a2(VirtualMachine::int_add));
+        self.register_native_method(ic, "__sub__",   NativeFunction::a2(VirtualMachine::int_sub));
+        self.register_native_method(ic, "__mul__",   NativeFunction::a2(VirtualMachine::int_mul));
+        self.register_native_method(ic, "__div__",   NativeFunction::a2(VirtualMachine::int_div));
+        self.register_native_method(ic, "__eq__",    NativeFunction::a2(VirtualMachine::int_eq));
+        self.register_native_method(ic, "__ne__",    NativeFunction::a2(VirtualMachine::int_ne));
+        self.register_native_method(ic, "__gt__",    NativeFunction::a2(VirtualMachine::int_gt));
+        self.register_native_method(ic, "__ge__",    NativeFunction::a2(VirtualMachine::int_ge));
+        self.register_native_method(ic, "__lt__",    NativeFunction::a2(VirtualMachine::int_lt));
+        self.register_native_method(ic, "__le__",    NativeFunction::a2(VirtualMachine::int_le));
+        self.register_native_method(ic, "__str__",   NativeFunction::a1(VirtualMachine::int_str));
+        self.register_native_method(ic, "__bool__",  NativeFunction::a1(VirtualMachine::int_bool));
+        self.register_native_method(ic, "__int__",   NativeFunction::a1(VirtualMachine::int_int));
+        self.register_native_method(ic, "__float__", NativeFunction::a1(VirtualMachine::int_float));
     }
 }

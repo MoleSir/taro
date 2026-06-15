@@ -1,4 +1,4 @@
-use crate::{NativeFunc, ObjectHandle};
+use crate::{NativeFunction, ObjectHandle};
 use crate::vm::{ExecuteError, ExecuteResult, VirtualMachine};
 
 impl VirtualMachine {
@@ -109,17 +109,17 @@ impl VirtualMachine {
 
     pub fn register_list_builtins(&mut self) {
         let lc = self.obj_heap.list_class;
-        self.register_native_method(lc, "__not__",     NativeFunc::a1(VirtualMachine::list_not));
-        self.register_native_method(lc, "__add__",     NativeFunc::a2(VirtualMachine::list_add));
-        self.register_native_method(lc, "__eq__",      NativeFunc::a2(VirtualMachine::list_eq));
-        self.register_native_method(lc, "__ne__",      NativeFunc::a2(VirtualMachine::list_ne));
-        self.register_native_method(lc, "__str__",     NativeFunc::a1(VirtualMachine::list_str));
-        self.register_native_method(lc, "__bool__",    NativeFunc::a1(VirtualMachine::list_bool));
-        self.register_native_method(lc, "__len__",     NativeFunc::a1(VirtualMachine::list_len));
-        self.register_native_method(lc, "__getitem__", NativeFunc::a2(VirtualMachine::list_getitem));
-        self.register_native_method(lc, "__setitem__", NativeFunc::a3(VirtualMachine::list_setitem));
-        self.register_native_method(lc, "append",      NativeFunc::a2(VirtualMachine::list_append));
-        self.register_native_method(lc, "pop",         NativeFunc::a1(VirtualMachine::list_pop));
-        self.register_native_method(lc, "extend",      NativeFunc::a2(VirtualMachine::list_extend));
+        self.register_native_method(lc, "__not__",     NativeFunction::a1(VirtualMachine::list_not));
+        self.register_native_method(lc, "__add__",     NativeFunction::a2(VirtualMachine::list_add));
+        self.register_native_method(lc, "__eq__",      NativeFunction::a2(VirtualMachine::list_eq));
+        self.register_native_method(lc, "__ne__",      NativeFunction::a2(VirtualMachine::list_ne));
+        self.register_native_method(lc, "__str__",     NativeFunction::a1(VirtualMachine::list_str));
+        self.register_native_method(lc, "__bool__",    NativeFunction::a1(VirtualMachine::list_bool));
+        self.register_native_method(lc, "__len__",     NativeFunction::a1(VirtualMachine::list_len));
+        self.register_native_method(lc, "__getitem__", NativeFunction::a2(VirtualMachine::list_getitem));
+        self.register_native_method(lc, "__setitem__", NativeFunction::a3(VirtualMachine::list_setitem));
+        self.register_native_method(lc, "append",      NativeFunction::a2(VirtualMachine::list_append));
+        self.register_native_method(lc, "pop",         NativeFunction::a1(VirtualMachine::list_pop));
+        self.register_native_method(lc, "extend",      NativeFunction::a2(VirtualMachine::list_extend));
     }
 }

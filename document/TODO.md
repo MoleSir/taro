@@ -1,5 +1,7 @@
 - [x] super
 - [x] list
 - [x] dict(TODO: all value as key??)
-- [ ] import
-- [ ] std
+- [x] import
+- [ ] std 
+  - [x] fs
+  - [x] math

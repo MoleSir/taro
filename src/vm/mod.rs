@@ -7,7 +7,7 @@ mod utils;
 pub use error::*;
 #[cfg(test)]
 mod tests;
-use crate::{NativeFunc, Instruction, Method, Object, ObjectBoundMethod, ObjectNativeFn, ObjectClass, ObjectClosure, ObjectFunction, ObjectHandle, ObjectHeap, ObjectInstance, ObjectInstanceData, ObjectUpvalue, ShrString};
+use crate::{NativeFunction, Instruction, Method, Object, ObjectBoundMethod, ObjectNativeFn, ObjectClass, ObjectClosure, ObjectFunction, ObjectHandle, ObjectHeap, ObjectInstance, ObjectInstanceData, ObjectUpvalue, ShrString};
 use std::collections::HashMap;
 
 pub struct VirtualMachine {
@@ -685,7 +685,7 @@ impl VirtualMachine {
     ///
     /// When `callee_on_stack` is true the callee is popped before the native
     /// function reads its arguments (see [`call_closure`] for the two stack layouts).
-    fn call_native_fn(&mut self, native_func: NativeFunc, arg_count: usize, callee_on_stack: bool) -> ExecuteResult<()> {
+    fn call_native_fn(&mut self, native_func: NativeFunction, arg_count: usize, callee_on_stack: bool) -> ExecuteResult<()> {
         let actual_args = if callee_on_stack {
             let callee_idx = self.stack.len() - arg_count - 1;
             self.stack.remove(callee_idx);
@@ -693,26 +693,33 @@ impl VirtualMachine {
         } else {
             arg_count
         };
-        let n = self.stack.len();
         let result = match native_func {
-            NativeFunc::Arity0(f) => {
+            NativeFunction::Arity0(f) => {
                 self.get_0_args(actual_args)?;
                 f(self)?
             }
-            NativeFunc::Arity1(f) => {
+            NativeFunction::Arity1(f) => {
                 let a0 = self.get_1_args(actual_args)?;
                 f(self, a0)?
             }
-            NativeFunc::Arity2(f) => {
+            NativeFunction::Arity2(f) => {
                 let (a0, a1) = self.get_2_args(actual_args)?;
                 f(self, a0, a1)?
             }
-            NativeFunc::Arity3(f) => {
+            NativeFunction::Arity3(f) => {
                 let (a0, a1, a2) = self.get_3_args(actual_args)?;
                 f(self, a0, a1, a2)?
             }
-            NativeFunc::Variadic(f) => {
-                let args: Vec<ObjectHandle> = self.stack[n - actual_args..].to_vec();
+            NativeFunction::Arity4(f) => {
+                let (a0, a1, a2, a3) = self.get_4_args(actual_args)?;
+                f(self, a0, a1, a2, a3)?
+            }
+            NativeFunction::Arity5(f) => {
+                let (a0, a1, a2, a3, a4) = self.get_5_args(actual_args)?;
+                f(self, a0, a1, a2, a3, a4)?
+            }
+            NativeFunction::Variadic(f) => {
+                let args = self.get_args(actual_args).to_vec();
                 f(self, &args)?
             }
         };

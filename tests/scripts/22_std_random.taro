@@ -1,0 +1,51 @@
+// Random std module — integration test
+
+// === 1. Basic import ===
+print("=== basic import ===");
+import "std/random";
+print(random.random());   // random float in [0, 1)
+
+// === 2. Import with alias ===
+print("=== import with alias ===");
+import "std/random" as r;
+print(r.random());         // another random float
+
+// === 3. randint ===
+print("=== randint ===");
+var a = r.randint(1, 100);
+if (a >= 1 and a <= 100) {
+    print("randint in range");
+} else {
+    print("randint OUT OF RANGE: " + str(a));
+}
+
+// === 4. uniform ===
+print("=== uniform ===");
+var b = r.uniform(0.0, 10.0);
+if (b >= 0.0 and b < 10.0) {
+    print("uniform in range");
+} else {
+    print("uniform OUT OF RANGE: " + str(b));
+}
+
+// === 5. choice ===
+print("=== choice ===");
+var items = ["apple", "banana", "cherry"];
+var pick = r.choice(items);
+if (pick == "apple" or pick == "banana" or pick == "cherry") {
+    print("choice works");
+} else {
+    print("choice failed: " + str(pick));
+}
+
+// === 6. shuffle ===
+print("=== shuffle ===");
+var nums = [1, 2, 3, 4, 5];
+r.shuffle(nums);
+if (len(nums) == 5) {
+    print("shuffle works");
+} else {
+    print("shuffle failed: wrong length");
+}
+
+print("done");

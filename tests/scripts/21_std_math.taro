@@ -1,0 +1,74 @@
+// Std module tests — math
+
+// === 1. Import std/math (statement form) ===
+print("=== import std/math ===");
+import "std/math";
+print(math);                       // module instance
+print(math.PI);                    // 3.141592653589793
+
+// === 2. Constants ===
+print("=== constants ===");
+print(math.PI);                    // 3.141592653589793
+print(math.E);                     // 2.718281828459045
+print(math.TAU);                   // 6.283185307179586
+
+// === 3. Trig functions ===
+print("=== trig ===");
+print(math.sin(0));                // 0
+print(math.cos(0));                // 1
+print(math.tan(0));                // 0
+print(math.asin(0));               // 0
+print(math.acos(1));               // 0
+print(math.atan(0));               // 0
+print(math.sin(1.5));              // ~0.997
+print(math.cos(math.PI));          // ~-1
+print(math.tan(math.PI / 4));      // ~1
+print(math.atan2(1, 1));           // π/4 ≈ 0.785
+
+// === 4. Power / exponent / log ===
+print("=== power / log ===");
+print(math.sqrt(16));              // 4
+print(math.sqrt(2));               // ~1.414
+print(math.pow(2, 10));            // 1024
+print(math.exp(1));                // e ≈ 2.718
+print(math.ln(math.E));            // 1
+print(math.log2(8));               // 3
+print(math.log10(100));            // 2
+print(math.hypot(3, 4));           // 5
+
+// === 5. Rounding ===
+print("=== rounding ===");
+print(math.floor(3.7));            // 3
+print(math.floor(-1.2));           // -2
+print(math.ceil(3.1));             // 4
+print(math.ceil(-1.2));            // -1
+print(math.round(3.5));            // 4
+print(math.round(2.3));            // 2
+print(math.round(-1.5));           // -2
+
+// === 6. Angle conversion ===
+print("=== conversion ===");
+print(math.degrees(math.PI));      // 180
+print(math.degrees(math.PI / 2));  // 90
+print(math.radians(180));          // π ≈ 3.1415
+print(math.radians(90));           // π/2 ≈ 1.5708
+
+// === 7. Accept int arguments ===
+print("=== int args ===");
+print(math.sin(0));                // 0
+print(math.sqrt(16));              // 4
+print(math.pow(2, 10));            // 1024
+print(math.floor(3));              // 3
+print(math.hypot(3, 4));           // 5
+
+// === 8. Chained calls in expression ===
+print("=== chained ===");
+print(math.sqrt(math.pow(3, 2) + math.pow(4, 2))); // 5
+
+// === 9. Import as expression ===
+print("=== import as expression ===");
+var m = import "std/math";
+print(m.PI);                       // 3.141592653589793
+print(m.sin(m.PI / 2));            // 1
+
+print("done");

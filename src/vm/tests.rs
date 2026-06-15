@@ -1599,3 +1599,249 @@ pub fn test_file_wrong_arg_count() {
     ).unwrap_err();
     assert!(err.to_string().contains("argument"), "got: {err}");
 }
+
+// ===========================================================================
+// Std module tests — Math
+// ===========================================================================
+
+#[test]
+pub fn test_std_math_import_creates_global() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("import \"std/math\"; print(math);").unwrap();
+}
+
+#[test]
+pub fn test_std_math_import_as_expression() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("var m = import \"std/math\"; print(m); print(m.PI);").unwrap();
+}
+
+#[test]
+pub fn test_math_constants() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("import \"std/math\"; print(math.PI); print(math.E); print(math.TAU);").unwrap();
+}
+
+#[test]
+pub fn test_math_trig() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(
+        "import \"std/math\"; \
+         print(math.sin(0)); \
+         print(math.cos(0)); \
+         print(math.tan(0)); \
+         print(math.asin(0)); \
+         print(math.acos(1)); \
+         print(math.atan(0)); \
+         print(math.sin(1.5)); \
+         print(math.atan2(1, 1));"
+    ).unwrap();
+}
+
+#[test]
+pub fn test_math_power_log() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(
+        "import \"std/math\"; \
+         print(math.sqrt(16)); \
+         print(math.pow(2, 10)); \
+         print(math.exp(1)); \
+         print(math.ln(math.E)); \
+         print(math.log2(8)); \
+         print(math.log10(100)); \
+         print(math.hypot(3, 4));"
+    ).unwrap();
+}
+
+#[test]
+pub fn test_math_rounding() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(
+        "import \"std/math\"; \
+         print(math.floor(3.7)); \
+         print(math.ceil(3.1)); \
+         print(math.round(3.5));"
+    ).unwrap();
+}
+
+#[test]
+pub fn test_math_conversion() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(
+        "import \"std/math\"; \
+         print(math.degrees(math.PI)); \
+         print(math.radians(180));"
+    ).unwrap();
+}
+
+#[test]
+pub fn test_math_accepts_int_args() {
+    // All math functions should accept int and treat it as float.
+    let mut vm = VirtualMachine::new();
+    vm.interpret(
+        "import \"std/math\"; \
+         print(math.sin(0)); \
+         print(math.sqrt(16)); \
+         print(math.pow(2, 10)); \
+         print(math.floor(3)); \
+         print(math.ceil(3));"
+    ).unwrap();
+}
+
+#[test]
+pub fn test_math_type_error() {
+    let mut vm = VirtualMachine::new();
+    let err = vm.interpret(
+        "import \"std/math\"; math.sin(\"hello\");"
+    ).unwrap_err();
+    assert!(err.to_string().contains("unsupported operand"), "got: {err}");
+}
+
+#[test]
+pub fn test_math_wrong_arg_count() {
+    let mut vm = VirtualMachine::new();
+    // sin() takes 1 argument
+    let err = vm.interpret(
+        "import \"std/math\"; math.sin();"
+    ).unwrap_err();
+    assert!(err.to_string().contains("argument"), "got: {err}");
+
+    let mut vm2 = VirtualMachine::new();
+    // sqrt() takes 1 argument
+    let err2 = vm2.interpret(
+        "import \"std/math\"; math.sqrt(4, 5);"
+    ).unwrap_err();
+    assert!(err2.to_string().contains("argument"), "got: {err2}");
+}
+
+// ==========================================================================
+//  std/random
+// ==========================================================================
+
+#[test]
+pub fn test_std_random_import_creates_global() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("import \"std/random\"; print(random);").unwrap();
+}
+
+#[test]
+pub fn test_std_random_import_as_expression() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("var r = import \"std/random\"; print(r); print(r.random());").unwrap();
+}
+
+#[test]
+pub fn test_random_random_in_range() {
+    let mut vm = VirtualMachine::new();
+    // random() should return values in [0, 1).
+    vm.interpret(
+        "import \"std/random\"; \
+         var sum = 0.0; \
+         for (var i = 0; i < 100; i = i + 1) { \
+             var v = random.random(); \
+             if (v < 0 or v >= 1) print(\"out of range: \" + str(v)); \
+         }"
+    ).unwrap();
+}
+
+#[test]
+pub fn test_random_randint() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(
+        "import \"std/random\"; \
+         var v = random.randint(1, 10); \
+         if (v < 1 or v > 10) print(\"out of range: \" + str(v)); \
+         var w = random.randint(-5, 5); \
+         if (w < -5 or w > 5) print(\"out of range: \" + str(w));"
+    ).unwrap();
+}
+
+#[test]
+pub fn test_random_randint_min_equals_max() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(
+        "import \"std/random\"; \
+         var v = random.randint(7, 7); \
+         if (v != 7) print(\"expected 7, got \" + str(v));"
+    ).unwrap();
+}
+
+#[test]
+pub fn test_random_randint_error_on_float() {
+    let mut vm = VirtualMachine::new();
+    let err = vm.interpret(
+        "import \"std/random\"; random.randint(1.5, 10);"
+    ).unwrap_err();
+    assert!(err.to_string().contains("unsupported"), "got: {err}");
+}
+
+#[test]
+pub fn test_random_randint_error_min_gt_max() {
+    let mut vm = VirtualMachine::new();
+    let err = vm.interpret(
+        "import \"std/random\"; random.randint(10, 1);"
+    ).unwrap_err();
+    assert!(err.to_string().contains("must be <="), "got: {err}");
+}
+
+#[test]
+pub fn test_random_uniform() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(
+        "import \"std/random\"; \
+         var v = random.uniform(1.0, 5.0); \
+         if (v < 1.0 or v >= 5.0) print(\"out of range: \" + str(v)); \
+         var w = random.uniform(-2.5, 3.5); \
+         if (w < -2.5 or w >= 3.5) print(\"out of range: \" + str(w));"
+    ).unwrap();
+}
+
+#[test]
+pub fn test_random_uniform_accepts_int_args() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(
+        "import \"std/random\"; \
+         var v = random.uniform(0, 10); \
+         if (v < 0 or v >= 10) print(\"out of range: \" + str(v));"
+    ).unwrap();
+}
+
+#[test]
+pub fn test_random_choice() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(
+        "import \"std/random\"; \
+         var items = [\"a\", \"b\", \"c\"]; \
+         var v = random.choice(items); \
+         if (v != \"a\" and v != \"b\" and v != \"c\") print(\"unexpected element: \" + str(v));"
+    ).unwrap();
+}
+
+#[test]
+pub fn test_random_choice_empty_error() {
+    let mut vm = VirtualMachine::new();
+    let err = vm.interpret(
+        "import \"std/random\"; random.choice([]);"
+    ).unwrap_err();
+    assert!(err.to_string().contains("empty"), "got: {err}");
+}
+
+#[test]
+pub fn test_random_choice_non_list_error() {
+    let mut vm = VirtualMachine::new();
+    let err = vm.interpret(
+        "import \"std/random\"; random.choice(42);"
+    ).unwrap_err();
+    assert!(err.to_string().contains("unsupported"), "got: {err}");
+}
+
+#[test]
+pub fn test_random_shuffle() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(
+        "import \"std/random\"; \
+         var items = [1, 2, 3, 4, 5]; \
+         var result = random.shuffle(items); \
+         if (len(result) != 5) print(\"wrong length: \" + str(len(result)));"
+    ).unwrap();
+}

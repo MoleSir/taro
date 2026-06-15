@@ -1,4 +1,4 @@
-use crate::{NativeFunc, ObjectHandle, ObjectInstanceData};
+use crate::{NativeFunction, ObjectHandle, ObjectInstanceData};
 use crate::vm::{ExecuteError, ExecuteResult, VirtualMachine};
 
 impl VirtualMachine {
@@ -122,15 +122,15 @@ impl VirtualMachine {
 
     pub fn register_dict_builtins(&mut self) {
         let dc = self.obj_heap.dict_class;
-        self.register_native_method(dc, "__not__",     NativeFunc::a1(VirtualMachine::dict_not));
-        self.register_native_method(dc, "__str__",     NativeFunc::a1(VirtualMachine::dict_str));
-        self.register_native_method(dc, "__bool__",    NativeFunc::a1(VirtualMachine::dict_bool));
-        self.register_native_method(dc, "__len__",     NativeFunc::a1(VirtualMachine::dict_len));
-        self.register_native_method(dc, "__getitem__", NativeFunc::a2(VirtualMachine::dict_getitem));
-        self.register_native_method(dc, "__setitem__", NativeFunc::a3(VirtualMachine::dict_setitem));
-        self.register_native_method(dc, "get",         NativeFunc::a2(VirtualMachine::dict_get));
-        self.register_native_method(dc, "keys",        NativeFunc::a1(VirtualMachine::dict_keys));
-        self.register_native_method(dc, "values",      NativeFunc::a1(VirtualMachine::dict_values));
-        self.register_native_method(dc, "pop",         NativeFunc::a2(VirtualMachine::dict_pop));
+        self.register_native_method(dc, "__not__",     NativeFunction::a1(VirtualMachine::dict_not));
+        self.register_native_method(dc, "__str__",     NativeFunction::a1(VirtualMachine::dict_str));
+        self.register_native_method(dc, "__bool__",    NativeFunction::a1(VirtualMachine::dict_bool));
+        self.register_native_method(dc, "__len__",     NativeFunction::a1(VirtualMachine::dict_len));
+        self.register_native_method(dc, "__getitem__", NativeFunction::a2(VirtualMachine::dict_getitem));
+        self.register_native_method(dc, "__setitem__", NativeFunction::a3(VirtualMachine::dict_setitem));
+        self.register_native_method(dc, "get",         NativeFunction::a2(VirtualMachine::dict_get));
+        self.register_native_method(dc, "keys",        NativeFunction::a1(VirtualMachine::dict_keys));
+        self.register_native_method(dc, "values",      NativeFunction::a1(VirtualMachine::dict_values));
+        self.register_native_method(dc, "pop",         NativeFunction::a2(VirtualMachine::dict_pop));
     }
 }

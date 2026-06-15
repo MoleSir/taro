@@ -7,9 +7,9 @@ print(math.PI);                  // 3.14159
 print(math.add(10, 20));        // 30
 print(math.mul(7, 6));          // 42
 
-// === 2. Import as expression ===
-print("=== import as expression ===");
-var m = import "tests/scripts/lib/math.taro";
+// === 2. Import with alias ===
+print("=== import with alias ===");
+import "tests/scripts/lib/math.taro" as m;
 print(m.PI);                     // 3.14159
 print(m.add(100, 200));          // 300
 
