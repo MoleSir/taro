@@ -160,6 +160,14 @@ impl<'a> Scanner<'a> {
             if c == '\n' {
                 self.line += 1;
             }
+            // Skip the next character after a backslash — this keeps the raw
+            // lexeme intact while preventing `\"` from closing the string.
+            if c == '\\' && !self.at_end() {
+                let next = self.advance()?;
+                if next == '\n' {
+                    self.line += 1;
+                }
+            }
         }
         Ok(self.make_token(TokenKind::String))
     }
@@ -523,6 +531,37 @@ mod tests {
     fn test_unterminated_string_is_error() {
         let result = Scanner::new("\"no close").scan_tokens();
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_string_with_escaped_quote() {
+        // `\"` inside a string should not close it.
+        let tokens = scan_tokens("\"hello\\\"world\"");
+        assert_eq!(tokens[0].kind, TokenKind::String);
+        assert_eq!(tokens[0].lexeme, "\"hello\\\"world\"");
+    }
+
+    #[test]
+    fn test_string_with_backslash() {
+        let tokens = scan_tokens("\"a\\\\b\"");
+        assert_eq!(tokens[0].kind, TokenKind::String);
+        assert_eq!(tokens[0].lexeme, "\"a\\\\b\"");
+    }
+
+    #[test]
+    fn test_string_with_newline_escape_keeps_line_counter() {
+        // `\n` (two chars: backslash + n) should not increment the line counter.
+        let mut scanner = Scanner::new("\"a\\nb\"");
+        let tokens = scanner.scan_tokens().unwrap();
+        assert_eq!(tokens[0].kind, TokenKind::String);
+        assert_eq!(scanner.line, 1); // `\n` is an escape, not a real newline
+    }
+
+    #[test]
+    fn test_string_with_multiple_escapes() {
+        let tokens = scan_tokens("\"\\t\\r\\n\"");
+        assert_eq!(tokens[0].kind, TokenKind::String);
+        assert_eq!(tokens[0].lexeme, "\"\\t\\r\\n\"");
     }
 
     // ------------------------------------------------------------------------

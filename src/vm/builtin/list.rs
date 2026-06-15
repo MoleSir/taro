@@ -120,6 +120,7 @@ impl VirtualMachine {
         self.register_native_method(lc, "__setitem__", NativeFunction::a3(VirtualMachine::list_setitem));
         self.register_native_method(lc, "append",      NativeFunction::a2(VirtualMachine::list_append));
         self.register_native_method(lc, "pop",         NativeFunction::a1(VirtualMachine::list_pop));
+        self.register_native_method(lc, "len",         NativeFunction::a1(VirtualMachine::list_len));
         self.register_native_method(lc, "extend",      NativeFunction::a2(VirtualMachine::list_extend));
     }
 }

@@ -240,6 +240,9 @@ pub enum ParseReason {
 
     #[error("'continue' outside of loop")]
     ContinueOutsideLoop,
+
+    #[error("invalid escape sequence '\\{0}'")]
+    InvalidEscape(char),
 }
 
 #[derive(Debug)]
@@ -1009,7 +1012,15 @@ impl<'a> Parser<'a> {
         // The lexeme includes the surrounding quotes — strip them.
         let lexeme = parser.previous().lexeme;
         let inner = &lexeme[1..lexeme.len() - 1];
-        let handle = parser.obj_heap.alloc_string_instance(inner.to_string().into());
+        let unescaped = unescape_string(inner)
+            .map_err(|c| ParseError {
+                line: parser.previous().line,
+                lexeme: lexeme.to_string(),
+                reason: ParseReason::InvalidEscape(c),
+            })?;
+        let handle = parser
+            .obj_heap
+            .alloc_string_instance(unescaped.into());
         parser.emit(Instruction::Constant(handle));
         Ok(())
     }
@@ -1404,4 +1415,33 @@ impl<'a> Parser<'a> {
             self.advance();
         }
     }
+}
+
+// ========================================================================== //
+//                    String unescape helper
+// ========================================================================== //
+
+/// Process escape sequences in a raw string literal (without surrounding
+/// quotes).  Returns the unescaped string, or the offending character if an
+/// unknown escape sequence is encountered.
+fn unescape_string(raw: &str) -> Result<String, char> {
+    let mut result = String::with_capacity(raw.len());
+    let mut chars = raw.chars();
+    while let Some(c) = chars.next() {
+        if c == '\\' {
+            match chars.next() {
+                Some('n')  => result.push('\n'),
+                Some('r')  => result.push('\r'),
+                Some('t')  => result.push('\t'),
+                Some('\\') => result.push('\\'),
+                Some('"')  => result.push('"'),
+                Some('0')  => result.push('\0'),
+                Some(c)    => return Err(c),
+                None       => return Err('\\'), // trailing backslash at EOF
+            }
+        } else {
+            result.push(c);
+        }
+    }
+    Ok(result)
 }

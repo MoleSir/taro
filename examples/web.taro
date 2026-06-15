@@ -1,0 +1,125 @@
+import "std/net";
+
+// ==========================================
+// 1. 辅助函数：解析 HTTP 请求的首行，提取 Path
+// 假设 HTTP 请求首行格式为 "GET /path HTTP/1.1"
+// ==========================================
+fun extract_path(req_str) {
+    var i = 0;
+    var length = len(req_str);
+    
+    // 1. 跳过请求方法 (如 "GET")，直到遇到第一个空格
+    while (i < length) {
+        if (req_str[i] == " ") { break; }
+        i = i + 1;
+    }
+    
+    i = i + 1; // 跳过空格
+    
+    // 2. 提取路径
+    var path = "";
+    while (i < length) {
+        if (req_str[i] == " ") { break; } // 遇到第二个空格结束
+        path = path + req_str[i];
+        i = i + 1;
+    }
+    
+    // 如果解析失败，默认返回根路径
+    if (len(path) == 0) { return "/"; }
+    return path;
+}
+
+// ==========================================
+// 2. 框架核心：TaroWeb App 类
+// ==========================================
+class TaroWeb {
+    fun __init__(self) {
+        // 路由表：路径 -> 闭包函数
+        self.routes = dict();
+    }
+
+    // 注册路由
+    fun route(self, path, handler) {
+        self.routes[path] = handler;
+    }
+
+    // 启动服务器
+    fun run(self, port) {
+        var server = net.Server();
+        server.bind(port);
+        print("TaroWeb is running on http://127.0.0.1:" + str(port));
+        print("Press Ctrl+C to stop.");
+
+        while (true) {
+            var client = server.accept();
+            var req_data = client.recv(1024);
+            
+            if (len(req_data) > 0) {
+                self.handle_request(client, req_data);
+            } else {
+                client.close();
+            }
+        }
+    }
+
+    // 处理单个 HTTP 请求
+    fun handle_request(self, client, req_data) {
+        var path = extract_path(req_data);
+        print("[Request] " + path);
+
+        var handler = self.routes.get(path);
+        var response_body = "";
+        var status_code = "200 OK";
+
+        // 路由分发
+        if (handler == nil) {
+            status_code = "404 Not Found";
+            response_body = "<h1>404 Not Found</h1><p>The page '" + path + "' does not exist.</p>";
+        } else {
+            // 执行绑定的函数获取返回值
+            response_body = str(handler());
+        }
+
+        // 拼接标准的 HTTP 响应报文
+        var response = "HTTP/1.1 " + status_code + "\r\n";
+        response = response + "Content-Type: text/html; charset=utf-8\r\n";
+        response = response + "Connection: close\r\n";
+        response = response + "Server: Taro/1.0\r\n";
+        response = response + "\r\n";  // 空行分隔 Header 和 Body
+        response = response + response_body;
+
+        client.send(response);
+        client.close();
+    }
+}
+
+// ==========================================
+// 3. 业务代码：使用 TaroWeb 写一个网站！
+// ==========================================
+var app = TaroWeb();
+
+// 路由 1：首页
+fun home() {
+    return "<h1>Hello Taro!</h1><p>Welcome to my awesome micro web framework.</p>";
+}
+app.route("/", home);
+
+// 路由 2：利用【闭包】特性实现一个有状态的访问计数器
+var visit_count = 0;
+fun counter() {
+    visit_count = visit_count + 1;
+    print(visit_count);
+    var html = "<h1>Visitor Counter</h1>";
+    html = html + "<p>You are visitor number: <b>" + str(visit_count) + "</b></p>";
+    return html;
+}
+app.route("/count", counter);
+
+// 路由 3：模拟一个 API 接口
+fun api_ping() {
+    return "Ping";
+}
+app.route("/api/ping", api_ping);
+
+// 启动服务器，监听 8080 端口
+app.run(8080);

@@ -124,6 +124,63 @@ fn test_empty_string() {
     assert_eq!(const_string(&heap, chunk.constants[0]), "");
 }
 
+#[test]
+fn test_string_escape_newline() {
+    let (chunk, heap) = compile_with_heap("\"a\\nb\";");
+    assert_eq!(const_string(&heap, chunk.constants[0]), "a\nb");
+}
+
+#[test]
+fn test_string_escape_tab() {
+    let (chunk, heap) = compile_with_heap("\"a\\tb\";");
+    assert_eq!(const_string(&heap, chunk.constants[0]), "a\tb");
+}
+
+#[test]
+fn test_string_escape_quote() {
+    let (chunk, heap) = compile_with_heap("\"a\\\"b\";");
+    assert_eq!(const_string(&heap, chunk.constants[0]), "a\"b");
+}
+
+#[test]
+fn test_string_escape_backslash() {
+    let (chunk, heap) = compile_with_heap("\"a\\\\b\";");
+    assert_eq!(const_string(&heap, chunk.constants[0]), "a\\b");
+}
+
+#[test]
+fn test_string_escape_carriage_return() {
+    let (chunk, heap) = compile_with_heap("\"a\\rb\";");
+    assert_eq!(const_string(&heap, chunk.constants[0]), "a\rb");
+}
+
+#[test]
+fn test_string_escape_null() {
+    let (chunk, heap) = compile_with_heap("\"a\\0b\";");
+    assert_eq!(const_string(&heap, chunk.constants[0]), "a\0b");
+}
+
+#[test]
+fn test_string_escape_multiple() {
+    let (chunk, heap) = compile_with_heap("\"\\n\\t\\r\\\\\\\"\";");
+    assert_eq!(const_string(&heap, chunk.constants[0]), "\n\t\r\\\"");
+}
+
+#[test]
+fn test_string_invalid_escape_is_error() {
+    let mut obj_heap = ObjectHeap::new();
+    match compile("\"hello\\xworld\";", &mut obj_heap) {
+        Err(CompileError::Parse(errors)) => {
+            assert!(
+                errors.iter().any(|e| matches!(e.reason, ParseReason::InvalidEscape('x'))),
+                "expected InvalidEscape error"
+            );
+        }
+        Err(CompileError::Scan(_)) => panic!("unexpected scan error"),
+        Ok(_) => panic!("expected compilation to fail for invalid escape"),
+    }
+}
+
 // ------------------------------------------------------------------------
 //  Unary expressions
 // ------------------------------------------------------------------------

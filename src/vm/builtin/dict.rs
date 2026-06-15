@@ -132,5 +132,6 @@ impl VirtualMachine {
         self.register_native_method(dc, "keys",        NativeFunction::a1(VirtualMachine::dict_keys));
         self.register_native_method(dc, "values",      NativeFunction::a1(VirtualMachine::dict_values));
         self.register_native_method(dc, "pop",         NativeFunction::a2(VirtualMachine::dict_pop));
+        self.register_native_method(dc, "len",         NativeFunction::a1(VirtualMachine::dict_len));
     }
 }

@@ -94,5 +94,6 @@ impl VirtualMachine {
         self.register_native_method(sc, "__float__",    NativeFunction::a1(VirtualMachine::string_float));
         self.register_native_method(sc, "__len__",      NativeFunction::a1(VirtualMachine::string_len));
         self.register_native_method(sc, "__getitem__",  NativeFunction::a2(VirtualMachine::string_getitem));
+        self.register_native_method(sc, "len",          NativeFunction::a1(VirtualMachine::string_len));
     }
 }
