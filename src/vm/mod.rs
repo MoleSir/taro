@@ -1,11 +1,13 @@
 mod magic;
 mod builtin;
+mod stdlib;
 mod error;
 mod gc;
+mod utils;
 pub use error::*;
 #[cfg(test)]
 mod tests;
-use crate::{NativeFn, Instruction, Method, Object, ObjectBoundMethod, ObjectNativeFn, ObjectClass, ObjectClosure, ObjectFunction, ObjectHandle, ObjectHeap, ObjectInstance, ObjectInstanceData, ObjectUpvalue, ShrString};
+use crate::{NativeFunc, Instruction, Method, Object, ObjectBoundMethod, ObjectNativeFn, ObjectClass, ObjectClosure, ObjectFunction, ObjectHandle, ObjectHeap, ObjectInstance, ObjectInstanceData, ObjectUpvalue, ShrString};
 use std::collections::HashMap;
 
 pub struct VirtualMachine {
@@ -16,6 +18,9 @@ pub struct VirtualMachine {
     /// Sorted (by descending location) linked list of open upvalues.
     open_upvalues: Vec<ObjectHandle>,
     gc_threshold: usize,
+    /// Handles that should always be treated as GC roots (used during import
+    /// to keep the importing script's state alive while a module executes).
+    extra_gc_roots: Vec<ObjectHandle>,
 }
 
 /// A single function-call frame.  `slots_start` is the index into
@@ -56,8 +61,10 @@ impl VirtualMachine {
             globals: HashMap::new(),
             open_upvalues: vec![],
             gc_threshold: 1024 * 1024,
+            extra_gc_roots: vec![],
         };
         vm.register_builtins();
+        vm.register_builtins_class_method();
         vm
     }
 
@@ -86,6 +93,95 @@ impl VirtualMachine {
         self.push_stack(closure);
         self.call_closure(closure, 0, true).expect("can't failed in script call");
         self.run().map_err(InterpretError::Runtime)
+    }
+
+    /// Import a module: read `path`, compile and execute it with isolated
+    /// globals, then return a module object containing the top-level
+    /// definitions (everything except the builtins).
+    pub fn import_module(&mut self, path: &str) -> ExecuteResult<ObjectHandle> {
+        // 0. Virtual std/ modules — no file on disk.
+        if let Some(module_name) = path.strip_prefix("std/") {
+            return self.import_std_module(module_name);
+        }
+
+        // 1. Read file content.
+        let source = std::fs::read_to_string(path)
+            .map_err(|e| ExecuteError::ImportError(format!("cannot read '{path}': {e}")))?;
+
+        // 2. Compile the module source (uses local scope so nested functions
+        //    capture module-level names as upvalues).
+        let function = crate::compile::compile_module(&source, &mut self.obj_heap)
+            .map_err(|e| ExecuteError::ImportError(format!("compile error in '{path}': {e:?}")))?;
+
+        // 3. Save current VM execution state.
+        let saved_frames = std::mem::take(&mut self.frames);
+        let saved_stack = std::mem::take(&mut self.stack);
+        let saved_globals = std::mem::take(&mut self.globals);
+        let saved_upvalues = std::mem::take(&mut self.open_upvalues);
+        let saved_gc_threshold = self.gc_threshold;
+
+        // 4. Prevent GC from running while saved state is unreachable from VM roots.
+        self.gc_threshold = usize::MAX;
+
+        // 5. Populate extra_gc_roots so the GC (which always runs in test /
+        //    gc-stress mode) keeps the importing script's state alive while the
+        //    module executes.
+        self.extra_gc_roots.clear();
+        self.extra_gc_roots.extend_from_slice(&saved_stack);
+        for frame in &saved_frames {
+            self.extra_gc_roots.push(frame.closure);
+        }
+        for &handle in saved_globals.values() {
+            self.extra_gc_roots.push(handle);
+        }
+        self.extra_gc_roots.extend_from_slice(&saved_upvalues);
+
+        // 6. Set up fresh globals with builtins only (module top-level
+        //    definitions use locals, but builtin functions like `print` still
+        //    need to be accessible as globals).
+        self.register_builtins();
+
+        // 7. Execute the module function.
+        let result = self.interpret_function(function);
+
+        // 8. The module function returns a dict containing its top-level
+        //    definitions.  Grab it from the stack before restoring state.
+        let exports_dict = self.pop_stack().unwrap_or(ObjectHandle::NIL);
+
+        // 9. Restore original VM state.
+        self.frames = saved_frames;
+        self.stack = saved_stack;
+        self.open_upvalues = saved_upvalues;
+        self.globals = saved_globals;
+        self.gc_threshold = saved_gc_threshold;
+        self.extra_gc_roots.clear();
+
+        // 10. Propagate execution errors.
+        result.map_err(|e| {
+            ExecuteError::ImportError(format!("error in module '{path}': {e}"))
+        })?;
+
+        // 11. Convert the dict into a fields instance.
+        let exports: HashMap<ShrString, ObjectHandle> = if let Some(entries) = self.obj_heap.get_dict_instance(exports_dict) {
+            entries.iter().map(|(k, v)| {
+                let key = self.obj_heap.get_string_instance(*k)
+                    .cloned()
+                    .unwrap_or_else(|| ShrString::new_str("?"));
+                (key, *v)
+            }).collect()
+        } else {
+            HashMap::new()
+        };
+
+        // 12. Create module object with exported names as fields.
+        let module = self.obj_heap.alloc_fields_instance(self.obj_heap.module_class);
+        if let Some(inst) = self.obj_heap.get_instance_mut(module) {
+            if let ObjectInstanceData::Fields(fields) = &mut inst.data {
+                *fields = exports;
+            }
+        }
+
+        Ok(module)
     }
 
     pub fn run(&mut self) -> ExecuteResult<()> {
@@ -151,11 +247,14 @@ impl VirtualMachine {
             }
             Instruction::Return => {
                 let frame = self.frames.pop().expect("not empty frame");
-                if self.frames.is_empty() {
-                    return Ok(());
-                }
                 let result = self.pop_stack()?;
                 self.close_upvalues(frame.slots_start)?;
+                if self.frames.is_empty() {
+                    // Last frame — keep only the result on the stack.
+                    self.stack.truncate(0);
+                    self.push_stack(result);
+                    return Ok(());
+                }
                 self.stack.truncate(frame.slots_start);
                 self.push_stack(result);
                 return Ok(());
@@ -337,10 +436,32 @@ impl VirtualMachine {
             Instruction::Invoke(method_name, arg_count) => {
                 let receiver = self.peek_stack(arg_count)?;
 
-                // Extract the class handle.
+                // First, check if the receiver is an Instance with a field
+                // named `method_name`.  If so, try to call it directly (this
+                // makes module exports and dynamically-assigned callable fields
+                // work naturally).
+                let field_value = match self.obj_heap.get(receiver) {
+                    Object::Instance(inst) => {
+                        match &inst.data {
+                            ObjectInstanceData::Fields(fields) => fields.get(&method_name).copied(),
+                            _ => None,
+                        }
+                    }
+                    _ => None,
+                };
+
+                if let Some(handle) = field_value {
+                    // Replace the receiver slot with the field value and call it.
+                    let index = self.callee_slot(arg_count);
+                    self.stack[index] = handle;
+                    self.frame_mut()?.ip = ip;
+                    self.call_value(handle, arg_count)?;
+                    return Ok(());
+                }
+
+                // Not a field — fall back to class method lookup.
                 let class_handle = self.get_instance(receiver)?.class;
 
-                // Look up the method in the class.
                 let method = {
                     let class_ = self.get_class(class_handle)?;
                     class_.methods.get(&method_name).copied()
@@ -423,6 +544,13 @@ impl VirtualMachine {
                 let collection = self.pop_stack()?;
                 let result = self.__setitem__(collection, index, value)?;
                 self.push_stack(result);
+            }
+
+            Instruction::Import(file_path) => {
+                self.frame_mut()?.ip = ip;
+                let module = self.import_module(file_path.as_str())?;
+                self.push_stack(module);
+                return Ok(());
             }
         }
 
@@ -557,7 +685,7 @@ impl VirtualMachine {
     ///
     /// When `callee_on_stack` is true the callee is popped before the native
     /// function reads its arguments (see [`call_closure`] for the two stack layouts).
-    fn call_native_fn(&mut self, native_fn: NativeFn, arg_count: usize, callee_on_stack: bool) -> ExecuteResult<()> {
+    fn call_native_fn(&mut self, native_func: NativeFunc, arg_count: usize, callee_on_stack: bool) -> ExecuteResult<()> {
         let actual_args = if callee_on_stack {
             let callee_idx = self.stack.len() - arg_count - 1;
             self.stack.remove(callee_idx);
@@ -565,7 +693,29 @@ impl VirtualMachine {
         } else {
             arg_count
         };
-        let result = native_fn(self, actual_args)?;
+        let n = self.stack.len();
+        let result = match native_func {
+            NativeFunc::Arity0(f) => {
+                self.get_0_args(actual_args)?;
+                f(self)?
+            }
+            NativeFunc::Arity1(f) => {
+                let a0 = self.get_1_args(actual_args)?;
+                f(self, a0)?
+            }
+            NativeFunc::Arity2(f) => {
+                let (a0, a1) = self.get_2_args(actual_args)?;
+                f(self, a0, a1)?
+            }
+            NativeFunc::Arity3(f) => {
+                let (a0, a1, a2) = self.get_3_args(actual_args)?;
+                f(self, a0, a1, a2)?
+            }
+            NativeFunc::Variadic(f) => {
+                let args: Vec<ObjectHandle> = self.stack[n - actual_args..].to_vec();
+                f(self, &args)?
+            }
+        };
         self.stack.truncate(self.stack.len() - actual_args);
         self.push_stack(result);
         Ok(())

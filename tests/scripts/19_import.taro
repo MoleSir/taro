@@ -1,0 +1,36 @@
+// Import tests — integration test
+
+// === 1. Basic import statement ===
+print("=== basic import ===");
+import "tests/scripts/lib/math.taro";
+print(math.PI);                  // 3.14159
+print(math.add(10, 20));        // 30
+print(math.mul(7, 6));          // 42
+
+// === 2. Import as expression ===
+print("=== import as expression ===");
+var m = import "tests/scripts/lib/math.taro";
+print(m.PI);                     // 3.14159
+print(m.add(100, 200));          // 300
+
+// === 3. Use class from module ===
+print("=== class from module ===");
+var v = math.Vec(3, 4);
+var w = math.Vec(1, 2);
+var sum = v + w;                 // uses __add__
+print(str(sum));                 // Vec(4,6)
+
+// === 4. Module exports don't leak ===
+print("=== no global leak ===");
+// PI should not be in global scope — only accessible via math.PI
+// If this doesn't error, it means PI leaked.
+// (Skipping actual test — covered by unit tests)
+
+// === 5. Call math function in expression ===
+print("=== expression ===");
+print(math.add(
+    math.mul(2, 3),
+    math.mul(4, 5)
+));                              // 2*3 + 4*5 = 26
+
+print("done");

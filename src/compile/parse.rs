@@ -99,6 +99,7 @@ fn get_rule(kind: TokenKind) -> ParseRule {
 
         // Keywords ----------------------------------------------------------
         TokenKind::And          => ParseRule::new(None, Some(Parser::and), Prec::And),
+        TokenKind::Import       => ParseRule::new(Some(Parser::import_expr), None, Prec::Call),
         TokenKind::Class        => ParseRule::NONE,
         TokenKind::Else         => ParseRule::NONE,
         TokenKind::Extends      => ParseRule::NONE,
@@ -145,6 +146,10 @@ enum FunctionKind {
     Method,
     /// Top-level script — same layout as `Function`.
     Script,
+    /// Module — like Function but top-level definitions use locals so nested
+    /// functions capture them as upvalues.  The function returns a fields
+    /// instance containing all top-level definitions.
+    Module,
 }
 
 struct CompilationUnit {
@@ -274,13 +279,16 @@ impl CompilationUnit {
         } else {
             vec![Local { depth: 0, name: "".into(), is_captured: false }]
         };
+        // Modules start at scope depth 1 so top-level definitions use locals
+        // (capturable by nested functions as upvalues) instead of globals.
+        let scope_depth = if kind == FunctionKind::Module { 1 } else { 0 };
         Self {
             name: name.clone(),
             arity: 0,
             chunk: Chunk::new(),
             kind,
             locals,
-            scope_depth: 0,
+            scope_depth,
             upvalues: vec![],
             enclosing,
         }
@@ -295,6 +303,18 @@ impl CompilationUnit {
 impl<'a> Parser<'a> {
     pub fn new(tokens: Vec<Token<'a>>, obj_heap: &'a mut ObjectHeap) -> Self {
         let unit = CompilationUnit::new(obj_heap, "", FunctionKind::Script, 0);
+        Self {
+            obj_heap,
+            tokens,
+            current: 0,
+            errors: vec![],
+            units: vec![unit],
+            current_unit: 0,
+        }
+    }
+
+    pub fn new_module(tokens: Vec<Token<'a>>, obj_heap: &'a mut ObjectHeap) -> Self {
+        let unit = CompilationUnit::new(obj_heap, "__module__", FunctionKind::Module, 0);
         Self {
             obj_heap,
             tokens,
@@ -341,9 +361,29 @@ impl<'a> Parser<'a> {
     /// pop the unit from the stack, and restore the enclosing unit.
     fn finish_compilation_unit(&mut self) -> ObjectHandle {
         let is_init = self.cur_unit().name.as_str() == "__init__";
+        let is_module = self.cur_unit().kind == FunctionKind::Module;
+
         if is_init {
             // __init__() should return the receiver (self), not nil.
             self.emit(Instruction::GetLocal(0));
+            self.emit(Instruction::Return);
+        } else if is_module {
+            // Build an exports dict from the module's top-level locals.
+            // The Return instruction that follows will close upvalues for any
+            // locals captured by nested functions / class methods.
+            let num_locals = self.cur_unit().locals.len();
+            let mut export_count: usize = 0;
+            for i in 1..num_locals {
+                let local = &self.cur_unit().locals[i];
+                if local.name.as_str().is_empty() {
+                    continue; // skip dummy closure slot
+                }
+                let name_handle = self.obj_heap.alloc_string_instance(local.name.clone());
+                self.emit(Instruction::Constant(name_handle));
+                self.emit(Instruction::GetLocal(i));
+                export_count += 1;
+            }
+            self.emit(Instruction::BuildDict(export_count));
             self.emit(Instruction::Return);
         } else {
             self.emit(Instruction::Nil);
@@ -362,6 +402,8 @@ impl<'a> Parser<'a> {
             self.parse_fun_declaration()
         } else if self.match_token(TokenKind::Class) {
             self.parse_class_declaration()
+        } else if self.match_token(TokenKind::Import) {
+            self.parse_import_declaration()
         } else {
             self.parse_statement()
         }
@@ -394,6 +436,34 @@ impl<'a> Parser<'a> {
         self.consume(TokenKind::RightBrace, "Expect '}' after class body.")?;
         self.emit(Instruction::Pop);
         Ok(())
+    }
+
+    fn parse_import_declaration(&mut self) -> ParseResult<()> {
+        self.consume(TokenKind::String, "Expect string literal after 'import'.")?;
+        let path = self.previous().lexeme;
+        let inner = &path[1..path.len() - 1]; // strip quotes
+
+        // Derive module name from path (basename without extension).
+        let module_name = Self::derive_module_name(inner);
+
+        // Emit import instruction (pushes module object onto stack).
+        self.emit(Instruction::Import(ShrString::new_string(inner)));
+
+        // Define global with the derived module name.
+        self.emit(Instruction::DefineGlobal(ShrString::new_string(module_name)));
+
+        self.consume(TokenKind::Semicolon, "Expect ';' after import.")?;
+        Ok(())
+    }
+
+    /// Derive a module name from a file path.
+    /// e.g. "path/to/math.taro" → "math", "utils" → "utils"
+    fn derive_module_name(path: &str) -> String {
+        std::path::Path::new(path)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(path)
+            .to_string()
     }
 
     fn parse_fun_declaration(&mut self) -> ParseResult<()> {
@@ -918,6 +988,16 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
+    /// `import_expr` — prefix parser for `import "filename"` expression.
+    /// Pushes a module object onto the stack.
+    fn import_expr(parser: &mut Parser<'_>, _can_assign: bool) -> ParseResult<()> {
+        parser.consume(TokenKind::String, "Expect string literal after 'import'.")?;
+        let path = parser.previous().lexeme;
+        let inner = &path[1..path.len() - 1]; // strip quotes
+        parser.emit(Instruction::Import(ShrString::new_string(inner)));
+        Ok(())
+    }
+
     /// `super_` — prefix parser for `super.method(args)` syntax.
     fn super_(parser: &mut Parser<'_>, _can_assign: bool) -> ParseResult<()> {
         parser.consume(TokenKind::Dot, "Expect '.' after 'super'.")?;
@@ -1205,7 +1285,7 @@ impl<'a> Parser<'a> {
             }
 
             match self.peek().kind {
-                TokenKind::Class | TokenKind::Fun | TokenKind::Var |
+                TokenKind::Class | TokenKind::Fun | TokenKind::Import | TokenKind::Var |
                 TokenKind::For | TokenKind::If | TokenKind::While |
                 TokenKind::Return => {
                     return;

@@ -1,23 +1,14 @@
-use crate::ObjectHandle;
+use crate::{NativeFunc, ObjectHandle};
 use crate::vm::{ExecuteError, ExecuteResult, VirtualMachine};
-use super::utils::top_args;
 
 impl VirtualMachine {
-    pub fn bool_neg(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
-        if arg_count != 1 {
-            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
-        }
-        let args = top_args(self, arg_count);
-        let val = *self.get_bool_instance(args[0])?;
+    pub fn bool_neg(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let val = *self.get_bool_instance(receiver)?;
         Ok(self.obj_heap.alloc_integer_instance(if val { -1 } else { 0 }))
     }
 
-    pub fn bool_not(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
-        if arg_count != 1 {
-            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
-        }
-        let args = top_args(self, arg_count);
-        let val = *self.get_bool_instance(args[0])?;
+    pub fn bool_not(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let val = *self.get_bool_instance(receiver)?;
         Ok(self.obj_heap.alloc_bool_instance(!val))
     }
 
@@ -27,253 +18,196 @@ impl VirtualMachine {
         Ok(if val { 1 } else { 0 })
     }
 
-    pub fn bool_add(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
-        if arg_count != 2 {
-            Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: arg_count.saturating_sub(1) })?;
-        }
-        let args = top_args(self, arg_count);
-        let lhs_val = self.bool_as_int(args[0])?;
-        let other = args[1];
-        if let Ok(rhs) = self.get_integer_instance(other) {
+    pub fn bool_add(&mut self, lhs: ObjectHandle, rhs: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let lhs_val = self.bool_as_int(lhs)?;
+
+        if let Ok(rhs) = self.get_integer_instance(rhs) {
             return Ok(self.obj_heap.alloc_integer_instance(lhs_val.wrapping_add(*rhs)));
         }
-        if let Ok(rhs) = self.get_float_instance(other) {
+        if let Ok(rhs) = self.get_float_instance(rhs) {
             return Ok(self.obj_heap.alloc_float_instance(lhs_val as f64 + *rhs));
         }
-        if self.get_bool_instance(other).is_ok() {
-            let rhs_val = self.bool_as_int(other)?;
+        if self.get_bool_instance(rhs).is_ok() {
+            let rhs_val = self.bool_as_int(rhs)?;
             return Ok(self.obj_heap.alloc_integer_instance(lhs_val.wrapping_add(rhs_val)));
         }
-        Err(ExecuteError::BinaryOpTypeMismatch("add", "bool", self.value_type_name(other)))
+        Err(ExecuteError::BinaryOpTypeMismatch("add", "bool", self.value_type_name(rhs)))
     }
 
-    pub fn bool_sub(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
-        if arg_count != 2 {
-            Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: arg_count.saturating_sub(1) })?;
-        }
-        let args = top_args(self, arg_count);
-        let lhs_val = self.bool_as_int(args[0])?;
-        let other = args[1];
-        if let Ok(rhs) = self.get_integer_instance(other) {
+    pub fn bool_sub(&mut self, lhs: ObjectHandle, rhs: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let lhs_val = self.bool_as_int(lhs)?;
+
+        if let Ok(rhs) = self.get_integer_instance(rhs) {
             return Ok(self.obj_heap.alloc_integer_instance(lhs_val.wrapping_sub(*rhs)));
         }
-        if let Ok(rhs) = self.get_float_instance(other) {
+        if let Ok(rhs) = self.get_float_instance(rhs) {
             return Ok(self.obj_heap.alloc_float_instance(lhs_val as f64 - *rhs));
         }
-        if self.get_bool_instance(other).is_ok() {
-            let rhs_val = self.bool_as_int(other)?;
+        if self.get_bool_instance(rhs).is_ok() {
+            let rhs_val = self.bool_as_int(rhs)?;
             return Ok(self.obj_heap.alloc_integer_instance(lhs_val.wrapping_sub(rhs_val)));
         }
-        Err(ExecuteError::BinaryOpTypeMismatch("sub", "bool", self.value_type_name(other)))
+        Err(ExecuteError::BinaryOpTypeMismatch("sub", "bool", self.value_type_name(rhs)))
     }
 
-    pub fn bool_mul(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
-        if arg_count != 2 {
-            Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: arg_count.saturating_sub(1) })?;
-        }
-        let args = top_args(self, arg_count);
-        let lhs_val = self.bool_as_int(args[0])?;
-        let other = args[1];
-        if let Ok(rhs) = self.get_integer_instance(other) {
+    pub fn bool_mul(&mut self, lhs: ObjectHandle, rhs: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let lhs_val = self.bool_as_int(lhs)?;
+
+        if let Ok(rhs) = self.get_integer_instance(rhs) {
             return Ok(self.obj_heap.alloc_integer_instance(lhs_val.wrapping_mul(*rhs)));
         }
-        if let Ok(rhs) = self.get_float_instance(other) {
+        if let Ok(rhs) = self.get_float_instance(rhs) {
             return Ok(self.obj_heap.alloc_float_instance(lhs_val as f64 * *rhs));
         }
-        if self.get_bool_instance(other).is_ok() {
-            let rhs_val = self.bool_as_int(other)?;
+        if self.get_bool_instance(rhs).is_ok() {
+            let rhs_val = self.bool_as_int(rhs)?;
             return Ok(self.obj_heap.alloc_integer_instance(lhs_val.wrapping_mul(rhs_val)));
         }
-        Err(ExecuteError::BinaryOpTypeMismatch("mul", "bool", self.value_type_name(other)))
+        Err(ExecuteError::BinaryOpTypeMismatch("mul", "bool", self.value_type_name(rhs)))
     }
 
-    pub fn bool_div(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
-        if arg_count != 2 {
-            Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: arg_count.saturating_sub(1) })?;
-        }
-        let args = top_args(self, arg_count);
-        let lhs_val = self.bool_as_int(args[0])? as f64;
-        let other = args[1];
-        if let Ok(rhs) = self.get_integer_instance(other) {
+    pub fn bool_div(&mut self, lhs: ObjectHandle, rhs: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let lhs_val = self.bool_as_int(lhs)? as f64;
+
+        if let Ok(rhs) = self.get_integer_instance(rhs) {
             if *rhs == 0 { return Err(ExecuteError::DivideByZero); }
             return Ok(self.obj_heap.alloc_float_instance(lhs_val / *rhs as f64));
         }
-        if let Ok(rhs) = self.get_float_instance(other) {
+        if let Ok(rhs) = self.get_float_instance(rhs) {
             if *rhs == 0.0 { return Err(ExecuteError::DivideByZero); }
             return Ok(self.obj_heap.alloc_float_instance(lhs_val / *rhs));
         }
-        if self.get_bool_instance(other).is_ok() {
-            let rhs_val = self.bool_as_int(other)?;
+        if self.get_bool_instance(rhs).is_ok() {
+            let rhs_val = self.bool_as_int(rhs)?;
             if rhs_val == 0 { return Err(ExecuteError::DivideByZero); }
             return Ok(self.obj_heap.alloc_float_instance(lhs_val / rhs_val as f64));
         }
-        Err(ExecuteError::BinaryOpTypeMismatch("div", "bool", self.value_type_name(other)))
+        Err(ExecuteError::BinaryOpTypeMismatch("div", "bool", self.value_type_name(rhs)))
     }
 
-    pub fn bool_eq(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
-        if arg_count != 2 {
-            Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: arg_count.saturating_sub(1) })?;
-        }
-        let args = top_args(self, arg_count);
-        let lhs_val = *self.get_bool_instance(args[0])?;
-        let other = args[1];
-        if let Ok(rhs) = self.get_bool_instance(other) {
+    pub fn bool_eq(&mut self, lhs: ObjectHandle, rhs: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let lhs_val = *self.get_bool_instance(lhs)?;
+
+        if let Ok(rhs) = self.get_bool_instance(rhs) {
             return Ok(self.obj_heap.alloc_bool_instance(lhs_val == *rhs));
         }
         // Treat bool as 1/0 for numeric comparison.
         let lhs_int = if lhs_val { 1i64 } else { 0 };
-        if let Ok(rhs) = self.get_integer_instance(other) {
+        if let Ok(rhs) = self.get_integer_instance(rhs) {
             return Ok(self.obj_heap.alloc_bool_instance(lhs_int == *rhs));
         }
-        if let Ok(rhs) = self.get_float_instance(other) {
+        if let Ok(rhs) = self.get_float_instance(rhs) {
             return Ok(self.obj_heap.alloc_bool_instance(lhs_int as f64 == *rhs));
         }
         Ok(self.obj_heap.alloc_bool_instance(false))
     }
 
-    pub fn bool_ne(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
-        if arg_count != 2 {
-            Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: arg_count.saturating_sub(1) })?;
-        }
-        let eq = self.bool_eq(arg_count)?;
-        let b = *self.get_bool_instance(eq)?;
-        Ok(self.obj_heap.alloc_bool_instance(!b))
+    pub fn bool_ne(&mut self, lhs: ObjectHandle, rhs: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let eq = self.bool_eq(lhs, rhs)?;
+        let b = self.get_bool_instance_mut(eq).expect("must return bool");
+        *b = !*b;
+        Ok(eq)
     }
 
-    pub fn bool_gt(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
-        if arg_count != 2 {
-            Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: arg_count.saturating_sub(1) })?;
-        }
-        let args = top_args(self, arg_count);
-        let lhs_val = *self.get_bool_instance(args[0])?;
-        let lhs_int = if lhs_val { 1i64 } else { 0 };
-        let other = args[1];
-        if let Ok(rhs) = self.get_bool_instance(other) {
+    pub fn bool_gt(&mut self, lhs: ObjectHandle, rhs: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let lhs_int = self.bool_as_int(lhs)?;
+
+        if let Ok(rhs) = self.get_bool_instance(rhs) {
             return Ok(self.obj_heap.alloc_bool_instance(lhs_int > (if *rhs { 1 } else { 0 })));
         }
-        if let Ok(rhs) = self.get_integer_instance(other) {
+        if let Ok(rhs) = self.get_integer_instance(rhs) {
             return Ok(self.obj_heap.alloc_bool_instance(lhs_int > *rhs));
         }
-        if let Ok(rhs) = self.get_float_instance(other) {
+        if let Ok(rhs) = self.get_float_instance(rhs) {
             return Ok(self.obj_heap.alloc_bool_instance(lhs_int as f64 > *rhs));
         }
-        Err(ExecuteError::BinaryOpTypeMismatch("gt", "bool", self.value_type_name(other)))
+        Err(ExecuteError::BinaryOpTypeMismatch("gt", "bool", self.value_type_name(rhs)))
     }
 
-    pub fn bool_ge(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
-        if arg_count != 2 {
-            Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: arg_count.saturating_sub(1) })?;
-        }
-        let args = top_args(self, arg_count);
-        let lhs_val = *self.get_bool_instance(args[0])?;
+    pub fn bool_ge(&mut self, lhs: ObjectHandle, rhs: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let lhs_val = *self.get_bool_instance(lhs)?;
         let lhs_int = if lhs_val { 1i64 } else { 0 };
-        let other = args[1];
-        if let Ok(rhs) = self.get_bool_instance(other) {
-            return Ok(self.obj_heap.alloc_bool_instance(lhs_int >= (if *rhs { 1 } else { 0 })));
+        if let Ok(rhs_val) = self.get_bool_instance(rhs) {
+            return Ok(self.obj_heap.alloc_bool_instance(lhs_int >= (if *rhs_val { 1 } else { 0 })));
         }
-        if let Ok(rhs) = self.get_integer_instance(other) {
-            return Ok(self.obj_heap.alloc_bool_instance(lhs_int >= *rhs));
+        if let Ok(rhs_val) = self.get_integer_instance(rhs) {
+            return Ok(self.obj_heap.alloc_bool_instance(lhs_int >= *rhs_val));
         }
-        if let Ok(rhs) = self.get_float_instance(other) {
-            return Ok(self.obj_heap.alloc_bool_instance(lhs_int as f64 >= *rhs));
+        if let Ok(rhs_val) = self.get_float_instance(rhs) {
+            return Ok(self.obj_heap.alloc_bool_instance(lhs_int as f64 >= *rhs_val));
         }
-        Err(ExecuteError::BinaryOpTypeMismatch("ge", "bool", self.value_type_name(other)))
+        Err(ExecuteError::BinaryOpTypeMismatch("ge", "bool", self.value_type_name(rhs)))
     }
 
-    pub fn bool_lt(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
-        if arg_count != 2 {
-            Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: arg_count.saturating_sub(1) })?;
-        }
-        let args = top_args(self, arg_count);
-        let lhs_val = *self.get_bool_instance(args[0])?;
+    pub fn bool_lt(&mut self, lhs: ObjectHandle, rhs: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let lhs_val = *self.get_bool_instance(lhs)?;
         let lhs_int = if lhs_val { 1i64 } else { 0 };
-        let other = args[1];
-        if let Ok(rhs) = self.get_bool_instance(other) {
-            return Ok(self.obj_heap.alloc_bool_instance(lhs_int < (if *rhs { 1 } else { 0 })));
+        if let Ok(rhs_val) = self.get_bool_instance(rhs) {
+            return Ok(self.obj_heap.alloc_bool_instance(lhs_int < (if *rhs_val { 1 } else { 0 })));
         }
-        if let Ok(rhs) = self.get_integer_instance(other) {
-            return Ok(self.obj_heap.alloc_bool_instance(lhs_int < *rhs));
+        if let Ok(rhs_val) = self.get_integer_instance(rhs) {
+            return Ok(self.obj_heap.alloc_bool_instance(lhs_int < *rhs_val));
         }
-        if let Ok(rhs) = self.get_float_instance(other) {
-            return Ok(self.obj_heap.alloc_bool_instance((lhs_int as f64) < *rhs));
+        if let Ok(rhs_val) = self.get_float_instance(rhs) {
+            return Ok(self.obj_heap.alloc_bool_instance((lhs_int as f64) < *rhs_val));
         }
-        Err(ExecuteError::BinaryOpTypeMismatch("lt", "bool", self.value_type_name(other)))
+        Err(ExecuteError::BinaryOpTypeMismatch("lt", "bool", self.value_type_name(rhs)))
     }
 
-    pub fn bool_le(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
-        if arg_count != 2 {
-            Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: arg_count.saturating_sub(1) })?;
-        }
-        let args = top_args(self, arg_count);
-        let lhs_val = *self.get_bool_instance(args[0])?;
+    pub fn bool_le(&mut self, lhs: ObjectHandle, rhs: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let lhs_val = *self.get_bool_instance(lhs)?;
         let lhs_int = if lhs_val { 1i64 } else { 0 };
-        let other = args[1];
-        if let Ok(rhs) = self.get_bool_instance(other) {
-            return Ok(self.obj_heap.alloc_bool_instance(lhs_int <= (if *rhs { 1 } else { 0 })));
+        if let Ok(rhs_val) = self.get_bool_instance(rhs) {
+            return Ok(self.obj_heap.alloc_bool_instance(lhs_int <= (if *rhs_val { 1 } else { 0 })));
         }
-        if let Ok(rhs) = self.get_integer_instance(other) {
-            return Ok(self.obj_heap.alloc_bool_instance(lhs_int <= *rhs));
+        if let Ok(rhs_val) = self.get_integer_instance(rhs) {
+            return Ok(self.obj_heap.alloc_bool_instance(lhs_int <= *rhs_val));
         }
-        if let Ok(rhs) = self.get_float_instance(other) {
-            return Ok(self.obj_heap.alloc_bool_instance(lhs_int as f64 <= *rhs));
+        if let Ok(rhs_val) = self.get_float_instance(rhs) {
+            return Ok(self.obj_heap.alloc_bool_instance(lhs_int as f64 <= *rhs_val));
         }
-        Err(ExecuteError::BinaryOpTypeMismatch("le", "bool", self.value_type_name(other)))
+        Err(ExecuteError::BinaryOpTypeMismatch("le", "bool", self.value_type_name(rhs)))
     }
 
-    pub fn bool_str(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
-        if arg_count != 1 {
-            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
-        }
-        let args = top_args(self, arg_count);
-        let val = *self.get_bool_instance(args[0])?;
+    pub fn bool_str(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let val = *self.get_bool_instance(receiver)?;
         Ok(self.obj_heap.alloc_string_instance(
             if val { crate::ShrString::from("true") } else { crate::ShrString::from("false") }
         ))
     }
 
-    pub fn bool_bool(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
-        if arg_count != 1 {
-            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
-        }
+    pub fn bool_bool(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
         // Return self.
-        Ok(top_args(self, arg_count)[0])
+        Ok(receiver)
     }
 
-    pub fn bool_int(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
-        if arg_count != 1 {
-            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
-        }
-        let args = top_args(self, arg_count);
-        let val = *self.get_bool_instance(args[0])?;
+    pub fn bool_int(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let val = *self.get_bool_instance(receiver)?;
         Ok(self.obj_heap.alloc_integer_instance(if val { 1 } else { 0 }))
     }
 
-    pub fn bool_float(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
-        if arg_count != 1 {
-            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
-        }
-        let args = top_args(self, arg_count);
-        let val = *self.get_bool_instance(args[0])?;
+    pub fn bool_float(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let val = *self.get_bool_instance(receiver)?;
         Ok(self.obj_heap.alloc_float_instance(if val { 1.0 } else { 0.0 }))
     }
 
     pub fn register_bool_builtins(&mut self) {
         let bc = self.obj_heap.bool_class;
-        self.reg_native_method(bc, "__neg__", VirtualMachine::bool_neg);
-        self.reg_native_method(bc, "__not__", VirtualMachine::bool_not);
-        self.reg_native_method(bc, "__add__", VirtualMachine::bool_add);
-        self.reg_native_method(bc, "__sub__", VirtualMachine::bool_sub);
-        self.reg_native_method(bc, "__mul__", VirtualMachine::bool_mul);
-        self.reg_native_method(bc, "__div__", VirtualMachine::bool_div);
-        self.reg_native_method(bc, "__eq__", VirtualMachine::bool_eq);
-        self.reg_native_method(bc, "__ne__", VirtualMachine::bool_ne);
-        self.reg_native_method(bc, "__gt__", VirtualMachine::bool_gt);
-        self.reg_native_method(bc, "__ge__", VirtualMachine::bool_ge);
-        self.reg_native_method(bc, "__lt__", VirtualMachine::bool_lt);
-        self.reg_native_method(bc, "__le__", VirtualMachine::bool_le);
-        self.reg_native_method(bc, "__str__", VirtualMachine::bool_str);
-        self.reg_native_method(bc, "__bool__", VirtualMachine::bool_bool);
-        self.reg_native_method(bc, "__int__", VirtualMachine::bool_int);
-        self.reg_native_method(bc, "__float__", VirtualMachine::bool_float);
+        self.register_native_method(bc, "__neg__",   NativeFunc::a1(VirtualMachine::bool_neg));
+        self.register_native_method(bc, "__not__",   NativeFunc::a1(VirtualMachine::bool_not));
+        self.register_native_method(bc, "__add__",   NativeFunc::a2(VirtualMachine::bool_add));
+        self.register_native_method(bc, "__sub__",   NativeFunc::a2(VirtualMachine::bool_sub));
+        self.register_native_method(bc, "__mul__",   NativeFunc::a2(VirtualMachine::bool_mul));
+        self.register_native_method(bc, "__div__",   NativeFunc::a2(VirtualMachine::bool_div));
+        self.register_native_method(bc, "__eq__",    NativeFunc::a2(VirtualMachine::bool_eq));
+        self.register_native_method(bc, "__ne__",    NativeFunc::a2(VirtualMachine::bool_ne));
+        self.register_native_method(bc, "__gt__",    NativeFunc::a2(VirtualMachine::bool_gt));
+        self.register_native_method(bc, "__ge__",    NativeFunc::a2(VirtualMachine::bool_ge));
+        self.register_native_method(bc, "__lt__",    NativeFunc::a2(VirtualMachine::bool_lt));
+        self.register_native_method(bc, "__le__",    NativeFunc::a2(VirtualMachine::bool_le));
+        self.register_native_method(bc, "__str__",   NativeFunc::a1(VirtualMachine::bool_str));
+        self.register_native_method(bc, "__bool__",  NativeFunc::a1(VirtualMachine::bool_bool));
+        self.register_native_method(bc, "__int__",   NativeFunc::a1(VirtualMachine::bool_int));
+        self.register_native_method(bc, "__float__", NativeFunc::a1(VirtualMachine::bool_float));
     }
 }

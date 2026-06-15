@@ -47,6 +47,7 @@ pub enum TokenKind {
     For,
     Fun,
     If,
+    Import,
     Nil,
     Or,
     Return,

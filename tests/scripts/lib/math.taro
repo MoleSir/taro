@@ -1,0 +1,26 @@
+// math.taro — a simple math module for testing import
+
+fun add(a, b) {
+    return a + b;
+}
+
+fun mul(a, b) {
+    return a * b;
+}
+
+var PI = 3.14159;
+
+class Vec {
+    fun __init__(self, x, y) {
+        self.x = x;
+        self.y = y;
+    }
+
+    fun __add__(self, other) {
+        return Vec(self.x + other.x, self.y + other.y);
+    }
+
+    fun __str__(self) {
+        return "Vec(" + str(self.x) + "," + str(self.y) + ")";
+    }
+}

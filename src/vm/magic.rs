@@ -425,6 +425,7 @@ impl VirtualMachine {
                     ObjectInstanceData::List(_) => "list",
                     ObjectInstanceData::Dict(_) => "dict",
                     ObjectInstanceData::Fields(_) => "instance",
+                    ObjectInstanceData::Native(_) => "native object",
                 }
             }
             Object::BoundMethod(_) => "bound method",

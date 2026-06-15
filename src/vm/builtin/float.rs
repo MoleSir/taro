@@ -1,46 +1,31 @@
-use crate::ObjectHandle;
+use crate::{NativeFunc, ObjectHandle};
 use crate::vm::{ExecuteError, ExecuteResult, VirtualMachine};
-
-/// Return a slice of the top `arg_count` stack entries.
-fn top_args(vm: &VirtualMachine, arg_count: usize) -> &[ObjectHandle] {
-    &vm.stack[vm.stack.len() - arg_count..]
-}
 
 macro_rules! float_binary_arith {
     ($name:ident, $float_op:expr, $op_name:literal) => {
-        pub fn $name(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
-            if arg_count != 2 {
-                Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: arg_count.saturating_sub(1) })?;
-            }
-            let args = top_args(self, arg_count);
-            let lhs_val = *self.get_float_instance(args[0])?;
-            let other = args[1];
-            if let Ok(rhs) = self.get_float_instance(other) {
+        pub fn $name(&mut self, lhs: ObjectHandle, rhs: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+            let lhs_val = *self.get_float_instance(lhs)?;
+            if let Ok(rhs) = self.get_float_instance(rhs) {
                 return Ok(self.obj_heap.alloc_float_instance($float_op(lhs_val, *rhs)));
             }
-            if let Ok(rhs) = self.get_integer_instance(other) {
+            if let Ok(rhs) = self.get_integer_instance(rhs) {
                 return Ok(self.obj_heap.alloc_float_instance($float_op(lhs_val, *rhs as f64)));
             }
-            Err(ExecuteError::BinaryOpTypeMismatch($op_name, "float", self.value_type_name(other)))
+            Err(ExecuteError::BinaryOpTypeMismatch($op_name, "float", self.value_type_name(rhs)))
         }
     };
 }
 
 macro_rules! float_cmp_op {
     ($name:ident, $float_cmp:expr, $op_name:literal) => {
-        pub fn $name(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
-            if arg_count != 2 {
-                Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: arg_count.saturating_sub(1) })?;
-            }
-            let args = top_args(self, arg_count);
-            let lhs_val = *self.get_float_instance(args[0])?;
-            let other = args[1];
-            let result = if let Ok(rhs) = self.get_float_instance(other) {
+        pub fn $name(&mut self, lhs: ObjectHandle, rhs: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+            let lhs_val = *self.get_float_instance(lhs)?;
+            let result = if let Ok(rhs) = self.get_float_instance(rhs) {
                 $float_cmp(lhs_val, *rhs)
-            } else if let Ok(rhs) = self.get_integer_instance(other) {
+            } else if let Ok(rhs) = self.get_integer_instance(rhs) {
                 $float_cmp(lhs_val, *rhs as f64)
             } else {
-                return Err(ExecuteError::BinaryOpTypeMismatch($op_name, "float", self.value_type_name(other)));
+                return Err(ExecuteError::BinaryOpTypeMismatch($op_name, "float", self.value_type_name(rhs)));
             };
             Ok(self.obj_heap.alloc_bool_instance(result))
         }
@@ -59,94 +44,66 @@ impl VirtualMachine {
     float_cmp_op!(float_lt, |a, b| a < b, "lt");
     float_cmp_op!(float_le, |a, b| a <= b, "le");
 
-    pub fn float_div(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
-        if arg_count != 2 {
-            Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: arg_count.saturating_sub(1) })?;
-        }
-        let args = top_args(self, arg_count);
-        let lhs_val = *self.get_float_instance(args[0])?;
-        let other = args[1];
-        if let Ok(rhs) = self.get_float_instance(other) {
+    pub fn float_div(&mut self, lhs: ObjectHandle, rhs: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let lhs_val = *self.get_float_instance(lhs)?;
+        if let Ok(rhs) = self.get_float_instance(rhs) {
             if *rhs == 0.0 { return Err(ExecuteError::DivideByZero); }
             return Ok(self.obj_heap.alloc_float_instance(lhs_val / *rhs));
         }
-        if let Ok(rhs) = self.get_integer_instance(other) {
+        if let Ok(rhs) = self.get_integer_instance(rhs) {
             if *rhs == 0 { return Err(ExecuteError::DivideByZero); }
             return Ok(self.obj_heap.alloc_float_instance(lhs_val / *rhs as f64));
         }
-        Err(ExecuteError::BinaryOpTypeMismatch("div", "float", self.value_type_name(other)))
+        Err(ExecuteError::BinaryOpTypeMismatch("div", "float", self.value_type_name(rhs)))
     }
 
-    pub fn float_neg(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
-        if arg_count != 1 {
-            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
-        }
-        let args = top_args(self, arg_count);
-        let val = *self.get_float_instance(args[0])?;
+    pub fn float_neg(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let val = *self.get_float_instance(receiver)?;
         Ok(self.obj_heap.alloc_float_instance(-val))
     }
 
-    pub fn float_not(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
-        if arg_count != 1 {
-            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
-        }
-        let args = top_args(self, arg_count);
-        let val = *self.get_float_instance(args[0])?;
+    pub fn float_not(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let val = *self.get_float_instance(receiver)?;
         Ok(self.obj_heap.alloc_bool_instance(val == 0.0))
     }
 
-    pub fn float_str(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
-        if arg_count != 1 {
-            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
-        }
-        let args = top_args(self, arg_count);
-        let val = *self.get_float_instance(args[0])?;
+    pub fn float_str(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let val = *self.get_float_instance(receiver)?;
         Ok(self.obj_heap.alloc_string_instance(crate::format_shr!("{}", val)))
     }
 
-    pub fn float_bool(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
-        if arg_count != 1 {
-            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
-        }
-        let args = top_args(self, arg_count);
-        let val = *self.get_float_instance(args[0])?;
+    pub fn float_bool(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let val = *self.get_float_instance(receiver)?;
         Ok(self.obj_heap.alloc_bool_instance(val != 0.0))
     }
 
-    pub fn float_int(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
-        if arg_count != 1 {
-            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
-        }
-        let args = top_args(self, arg_count);
-        let val = *self.get_float_instance(args[0])?;
+    pub fn float_int(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let val = *self.get_float_instance(receiver)?;
         Ok(self.obj_heap.alloc_integer_instance(val as i64))
     }
 
-    pub fn float_float(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
-        if arg_count != 1 {
-            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
-        }
+    pub fn float_float(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
         // Return self.
-        Ok(top_args(self, arg_count)[0])
+        Ok(receiver)
     }
 
     pub fn register_float_builtins(&mut self) {
         let fc = self.obj_heap.float_class;
-        self.reg_native_method(fc, "__neg__", VirtualMachine::float_neg);
-        self.reg_native_method(fc, "__not__", VirtualMachine::float_not);
-        self.reg_native_method(fc, "__add__", VirtualMachine::float_add);
-        self.reg_native_method(fc, "__sub__", VirtualMachine::float_sub);
-        self.reg_native_method(fc, "__mul__", VirtualMachine::float_mul);
-        self.reg_native_method(fc, "__div__", VirtualMachine::float_div);
-        self.reg_native_method(fc, "__eq__", VirtualMachine::float_eq);
-        self.reg_native_method(fc, "__ne__", VirtualMachine::float_ne);
-        self.reg_native_method(fc, "__gt__", VirtualMachine::float_gt);
-        self.reg_native_method(fc, "__ge__", VirtualMachine::float_ge);
-        self.reg_native_method(fc, "__lt__", VirtualMachine::float_lt);
-        self.reg_native_method(fc, "__le__", VirtualMachine::float_le);
-        self.reg_native_method(fc, "__str__", VirtualMachine::float_str);
-        self.reg_native_method(fc, "__bool__", VirtualMachine::float_bool);
-        self.reg_native_method(fc, "__int__", VirtualMachine::float_int);
-        self.reg_native_method(fc, "__float__", VirtualMachine::float_float);
+        self.register_native_method(fc, "__neg__",   NativeFunc::a1(VirtualMachine::float_neg));
+        self.register_native_method(fc, "__not__",   NativeFunc::a1(VirtualMachine::float_not));
+        self.register_native_method(fc, "__add__",   NativeFunc::a2(VirtualMachine::float_add));
+        self.register_native_method(fc, "__sub__",   NativeFunc::a2(VirtualMachine::float_sub));
+        self.register_native_method(fc, "__mul__",   NativeFunc::a2(VirtualMachine::float_mul));
+        self.register_native_method(fc, "__div__",   NativeFunc::a2(VirtualMachine::float_div));
+        self.register_native_method(fc, "__eq__",    NativeFunc::a2(VirtualMachine::float_eq));
+        self.register_native_method(fc, "__ne__",    NativeFunc::a2(VirtualMachine::float_ne));
+        self.register_native_method(fc, "__gt__",    NativeFunc::a2(VirtualMachine::float_gt));
+        self.register_native_method(fc, "__ge__",    NativeFunc::a2(VirtualMachine::float_ge));
+        self.register_native_method(fc, "__lt__",    NativeFunc::a2(VirtualMachine::float_lt));
+        self.register_native_method(fc, "__le__",    NativeFunc::a2(VirtualMachine::float_le));
+        self.register_native_method(fc, "__str__",   NativeFunc::a1(VirtualMachine::float_str));
+        self.register_native_method(fc, "__bool__",  NativeFunc::a1(VirtualMachine::float_bool));
+        self.register_native_method(fc, "__int__",   NativeFunc::a1(VirtualMachine::float_int));
+        self.register_native_method(fc, "__float__", NativeFunc::a1(VirtualMachine::float_float));
     }
 }

@@ -1,0 +1,80 @@
+// Std module tests — fs (file system)
+
+// === 1. Import std/fs (statement form) ===
+print("=== import std/fs ===");
+import "std/fs";
+print(fs);                       // module instance
+print(fs.File);                  // File class
+
+// === 2. Standalone: exists / is_file / is_dir ===
+print("=== exists / is_file / is_dir ===");
+print(fs.exists("/tmp"));        // true
+print(fs.is_dir("/tmp"));        // true
+print(fs.is_file("/tmp"));       // false
+
+// === 3. Standalone: write + read ===
+print("=== write + read ===");
+fs.write("/tmp/taro_fs_test.txt", "hello from fs module");
+print(fs.read("/tmp/taro_fs_test.txt"));
+
+// === 4. Standalone: rename ===
+print("=== rename ===");
+fs.rename("/tmp/taro_fs_test.txt", "/tmp/taro_fs_test_renamed.txt");
+print(fs.exists("/tmp/taro_fs_test.txt"));         // false
+print(fs.exists("/tmp/taro_fs_test_renamed.txt")); // true
+
+// === 5. Standalone: remove ===
+print("=== remove ===");
+fs.remove("/tmp/taro_fs_test_renamed.txt");
+print(fs.exists("/tmp/taro_fs_test_renamed.txt")); // false
+
+// === 6. Standalone: mkdir + list_dir ===
+print("=== mkdir + list_dir ===");
+fs.mkdir("/tmp/taro_fs_testdir");
+fs.write("/tmp/taro_fs_testdir/a.txt", "aaa");
+fs.write("/tmp/taro_fs_testdir/b.txt", "bbb");
+var entries = fs.list_dir("/tmp/taro_fs_testdir");
+print(len(entries) >= 2);        // true
+
+// === 7. File class: write + readline ===
+print("=== File class ===");
+var f = fs.File("/tmp/taro_fs_class.txt", "w");
+f.write("line1\nline2\nline3");
+f.close();
+
+var g = fs.File("/tmp/taro_fs_class.txt", "r");
+print(g.readline());
+print(g.readline());
+print(g.readline());
+print(g.readline() == nil);      // true (EOF)
+g.close();
+
+// === 8. File class: seek + tell ===
+print("=== seek + tell ===");
+var s = fs.File("/tmp/taro_fs_class.txt", "r");
+print(s.tell());                 // 0
+s.seek(6);
+print(s.tell());                 // 6
+s.close();
+
+// === 9. File class: __str__ ===
+print("=== __str__ ===");
+var h = fs.File("/tmp/taro_fs_class.txt", "r");
+print(str(h));                   // <File path='...' mode='r' status=open>
+h.close();
+print(str(h));                   // <File path='...' mode='r' status=closed>
+
+// === 10. Import as expression ===
+print("=== import as expression ===");
+var m = import "std/fs";
+m.write("/tmp/taro_fs_expr.txt", "expression import");
+print(m.read("/tmp/taro_fs_expr.txt"));
+
+// cleanup
+fs.remove("/tmp/taro_fs_class.txt");
+fs.remove("/tmp/taro_fs_expr.txt");
+fs.remove("/tmp/taro_fs_testdir/a.txt");
+fs.remove("/tmp/taro_fs_testdir/b.txt");
+fs.remove("/tmp/taro_fs_testdir");
+
+print("done");

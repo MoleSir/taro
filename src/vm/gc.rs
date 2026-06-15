@@ -35,6 +35,11 @@ impl VirtualMachine {
             self.obj_heap.mark_object(*obj);
         }
 
+        // mark extra GC roots (used by import to keep importing state alive)
+        for &handle in &self.extra_gc_roots {
+            self.obj_heap.mark_object(handle);
+        }
+
         // mark builtin class handles (always reachable)
         self.obj_heap.mark_object(self.obj_heap.nil_class);
         self.obj_heap.mark_object(self.obj_heap.int_class);
@@ -43,6 +48,7 @@ impl VirtualMachine {
         self.obj_heap.mark_object(self.obj_heap.string_class);
         self.obj_heap.mark_object(self.obj_heap.list_class);
         self.obj_heap.mark_object(self.obj_heap.dict_class);
+        self.obj_heap.mark_object(self.obj_heap.module_class);
 
         // mark singleton bool instances (always reachable)
         self.obj_heap.mark_object(self.obj_heap.true_instance);

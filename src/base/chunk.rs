@@ -193,6 +193,10 @@ impl Chunk {
             Instruction::IndexSet => {
                 self.write_op(ByteCode::IndexSet);
             }
+            Instruction::Import(file_path) => {
+                let handle = heap.alloc_string_instance(file_path);
+                self.write_const_op(ByteCode::Import, handle);
+            }
         }
     }
 
@@ -328,6 +332,10 @@ impl Chunk {
             }
             ByteCode::IndexGet => Ok(Instruction::IndexGet),
             ByteCode::IndexSet => Ok(Instruction::IndexSet),
+            ByteCode::Import => {
+                let file_path = self.read_string_constant(ip, heap)?;
+                Ok(Instruction::Import(file_path))
+            }
         }
     }
 

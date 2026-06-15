@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::LazyLock};
 
 use crate::{Chunk, ShrString};
-use super::{NativeFn, Method, Object, ObjectBoundMethod, ObjectNativeFn, ObjectClass, ObjectClosure, ObjectFunction, ObjectInstance, ObjectInstanceData, ObjectUpvalue};
+use super::{NativeFunc, Method, Object, ObjectBoundMethod, ObjectNativeFn, ObjectClass, ObjectClosure, ObjectFunction, ObjectInstance, ObjectInstanceData, ObjectUpvalue};
 
 /// Static nil object — backing for `ObjectHandle::NIL`.
 static NIL_OBJECT: LazyLock<Object> = LazyLock::new(|| {
@@ -38,6 +38,7 @@ pub struct ObjectHeap {
     pub string_class: ObjectHandle,
     pub list_class: ObjectHandle,
     pub dict_class: ObjectHandle,
+    pub module_class: ObjectHandle,
 
     /// Singleton instances for `true` and `false` so repeated use of
     /// boolean literals doesn't allocate.
@@ -66,6 +67,7 @@ impl ObjectHeap {
             string_class: ObjectHandle::NIL,
             list_class: ObjectHandle::NIL,
             dict_class: ObjectHandle::NIL,
+            module_class: ObjectHandle::NIL,
             true_instance: ObjectHandle::NIL,
             false_instance: ObjectHandle::NIL,
         };
@@ -77,6 +79,7 @@ impl ObjectHeap {
         heap.string_class = heap.alloc_class("String");
         heap.list_class = heap.alloc_class("List");
         heap.dict_class = heap.alloc_class("Dict");
+        heap.module_class = heap.alloc_class("Module");
 
         // Allocate singleton bool instances (after bool_class exists).
         heap.true_instance = heap.alloc_instance(heap.bool_class, ObjectInstanceData::Bool(true));
@@ -106,7 +109,7 @@ impl ObjectHeap {
         self.alloc(obj)
     }
 
-    pub fn alloc_native_fn(&mut self, name: impl Into<ShrString>, function: NativeFn) -> ObjectHandle {
+    pub fn alloc_native_fn(&mut self, name: impl Into<ShrString>, function: NativeFunc) -> ObjectHandle {
         let obj = ObjectNativeFn::new(name, function);
         self.alloc(obj)
     }
@@ -278,6 +281,36 @@ impl ObjectHeap {
     impl_instance_data_getter!(list, List, Vec<ObjectHandle>, "list");
     impl_instance_data_getter!(dict, Dict, Vec<(ObjectHandle, ObjectHandle)>, "dict");
     impl_instance_data_getter!(fields, Fields, std::collections::HashMap<ShrString, ObjectHandle>, "fields");
+
+    /// Return a mutable reference to the native data stored in `handle`,
+    /// downcast to `T`.  Returns `None` if the handle is not an Instance
+    /// with `Native` data.
+    ///
+    /// The caller must ensure that `T` matches the concrete type originally
+    /// stored via [`NativeObject::new`](super::NativeObject::new).
+    pub fn get_native_mut<T: 'static>(&mut self, handle: ObjectHandle) -> Option<&mut T> {
+        let inst = self.get_instance_mut(handle)?;
+        match &mut inst.data {
+            ObjectInstanceData::Native(native) => {
+                // SAFETY: the downcast is sound as long as the caller
+                // passes the same T that was used at construction time.
+                Some(unsafe { native.downcast_mut::<T>() })
+            }
+            _ => None,
+        }
+    }
+
+    /// Return a shared reference to the native data stored in `handle`,
+    /// downcast to `T`.
+    pub fn get_native_ref<T: 'static>(&self, handle: ObjectHandle) -> Option<&T> {
+        let inst = self.get_instance(handle)?;
+        match &inst.data {
+            ObjectInstanceData::Native(native) => {
+                Some(unsafe { native.downcast_ref::<T>() })
+            }
+            _ => None,
+        }
+    }
 }
 
 impl ObjectHeap {
@@ -350,6 +383,9 @@ impl ObjectHeap {
                     match &instance.data {
                         ObjectInstanceData::Nil | ObjectInstanceData::Bool(_) | ObjectInstanceData::Integer(_) | ObjectInstanceData::Float(_) => {
                             // leaf types — no heap references
+                        }
+                        ObjectInstanceData::Native(_) => {
+                            // Native data owns no ObjectHandle references.
                         }
                         ObjectInstanceData::String(_s) => {
                             // ShrString is internally Arc'd — no ObjectHandle refs

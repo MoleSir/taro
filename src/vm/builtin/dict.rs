@@ -1,23 +1,14 @@
-use crate::{ObjectInstanceData, ObjectHandle};
+use crate::{NativeFunc, ObjectHandle, ObjectInstanceData};
 use crate::vm::{ExecuteError, ExecuteResult, VirtualMachine};
-use super::utils::top_args;
 
 impl VirtualMachine {
-    pub fn dict_not(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
-        if arg_count != 1 {
-            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
-        }
-        let args = top_args(self, arg_count);
-        let entries = self.get_dict_instance(args[0])?;
+    pub fn dict_not(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let entries = self.get_dict_instance(receiver)?;
         Ok(self.obj_heap.alloc_bool_instance(entries.is_empty()))
     }
 
-    pub fn dict_str(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
-        if arg_count != 1 {
-            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
-        }
-        let args = top_args(self, arg_count);
-        let entries = self.get_dict_instance(args[0])?.clone();
+    pub fn dict_str(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let entries = self.get_dict_instance(receiver)?.clone();
         let mut result = String::from("{");
         let mut first = true;
         for &(k, v) in &entries {
@@ -31,31 +22,18 @@ impl VirtualMachine {
         Ok(self.obj_heap.alloc_string_instance(result.into()))
     }
 
-    pub fn dict_bool(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
-        if arg_count != 1 {
-            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
-        }
-        let args = top_args(self, arg_count);
-        let entries = self.get_dict_instance(args[0])?;
+    pub fn dict_bool(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let entries = self.get_dict_instance(receiver)?;
         Ok(self.obj_heap.alloc_bool_instance(!entries.is_empty()))
     }
 
-    pub fn dict_len(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
-        if arg_count != 1 {
-            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
-        }
-        let args = top_args(self, arg_count);
-        let entries = self.get_dict_instance(args[0])?;
+    pub fn dict_len(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let entries = self.get_dict_instance(receiver)?;
         Ok(self.obj_heap.alloc_integer_instance(entries.len() as i64))
     }
 
-    pub fn dict_getitem(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
-        if arg_count != 2 {
-            Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: arg_count.saturating_sub(1) })?;
-        }
-        let args = top_args(self, arg_count);
-        let entries = self.get_dict_instance(args[0]).cloned()?;
-        let key = args[1];
+    pub fn dict_getitem(&mut self, receiver: ObjectHandle, key: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let entries = self.get_dict_instance(receiver).cloned()?;
         for &(k, v) in &entries {
             let eq = self.__eq__(k, key)?;
             if self.__bool__(eq)? {
@@ -65,15 +43,7 @@ impl VirtualMachine {
         Err(ExecuteError::KeyNotFound)
     }
 
-    pub fn dict_setitem(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
-        if arg_count != 3 {
-            Err(ExecuteError::ArgumentCountMismatch { expected: 2, got: arg_count.saturating_sub(1) })?;
-        }
-        let args = top_args(self, arg_count);
-        let receiver = args[0];
-        let key = args[1];
-        let value = args[2];
-
+    pub fn dict_setitem(&mut self, receiver: ObjectHandle, key: ObjectHandle, value: ObjectHandle) -> ExecuteResult<ObjectHandle> {
         // Clone entries, remove existing key if present, push new.
         let entries = self.get_dict_instance(receiver).cloned()?;
         let mut new_entries = entries;
@@ -96,14 +66,9 @@ impl VirtualMachine {
         }
         Ok(value)
     }
+
     /// `dict.get(key)` — get a value by key, returning nil if not found.
-    pub fn dict_get(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
-        if arg_count != 2 {
-            Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: arg_count.saturating_sub(1) })?;
-        }
-        let args = top_args(self, arg_count);
-        let receiver = args[0];
-        let key = args[1];
+    pub fn dict_get(&mut self, receiver: ObjectHandle, key: ObjectHandle) -> ExecuteResult<ObjectHandle> {
         let entries = self.get_dict_instance(receiver).cloned()?;
         for &(k, v) in &entries {
             let eq_result = self.__eq__(k, key)?;
@@ -115,37 +80,19 @@ impl VirtualMachine {
     }
 
     /// `dict.keys()` — return a list of all keys.
-    pub fn dict_keys(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
-        if arg_count != 1 {
-            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
-        }
-        let args = top_args(self, arg_count);
-        let receiver = args[0];
+    pub fn dict_keys(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
         let keys = self.get_dict_instance(receiver)?.iter().map(|&(k, _)| k).collect();
         Ok(self.obj_heap.alloc_list_instance(keys))
     }
 
     /// `dict.values()` — return a list of all values.
-    pub fn dict_values(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
-        if arg_count != 1 {
-            Err(ExecuteError::ArgumentCountMismatch { expected: 0, got: arg_count.saturating_sub(1) })?;
-        }
-        let args = top_args(self, arg_count);
-        let receiver = args[0];
+    pub fn dict_values(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
         let values = self.get_dict_instance(receiver)?.iter().map(|&(_, v)| v).collect();
-
         Ok(self.obj_heap.alloc_list_instance(values))
     }
 
     /// `dict.pop(key)` — remove a key and return its value.
-    pub fn dict_pop(&mut self, arg_count: usize) -> ExecuteResult<ObjectHandle> {
-        if arg_count != 2 {
-            Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: arg_count.saturating_sub(1) })?;
-        }
-        let args = top_args(self, arg_count);
-        let receiver = args[0];
-        let key = args[1];
-
+    pub fn dict_pop(&mut self, receiver: ObjectHandle, key: ObjectHandle) -> ExecuteResult<ObjectHandle> {
         // Clone entries, find key, remove, write back.
         let entries = self.get_dict_instance(receiver).cloned()?;
 
@@ -175,15 +122,15 @@ impl VirtualMachine {
 
     pub fn register_dict_builtins(&mut self) {
         let dc = self.obj_heap.dict_class;
-        self.reg_native_method(dc, "__not__", VirtualMachine::dict_not);
-        self.reg_native_method(dc, "__str__", VirtualMachine::dict_str);
-        self.reg_native_method(dc, "__bool__", VirtualMachine::dict_bool);
-        self.reg_native_method(dc, "__len__", VirtualMachine::dict_len);
-        self.reg_native_method(dc, "__getitem__", VirtualMachine::dict_getitem);
-        self.reg_native_method(dc, "__setitem__", VirtualMachine::dict_setitem);
-        self.reg_native_method(dc, "get", VirtualMachine::dict_get);
-        self.reg_native_method(dc, "keys", VirtualMachine::dict_keys);
-        self.reg_native_method(dc, "values", VirtualMachine::dict_values);
-        self.reg_native_method(dc, "pop", VirtualMachine::dict_pop);
+        self.register_native_method(dc, "__not__",     NativeFunc::a1(VirtualMachine::dict_not));
+        self.register_native_method(dc, "__str__",     NativeFunc::a1(VirtualMachine::dict_str));
+        self.register_native_method(dc, "__bool__",    NativeFunc::a1(VirtualMachine::dict_bool));
+        self.register_native_method(dc, "__len__",     NativeFunc::a1(VirtualMachine::dict_len));
+        self.register_native_method(dc, "__getitem__", NativeFunc::a2(VirtualMachine::dict_getitem));
+        self.register_native_method(dc, "__setitem__", NativeFunc::a3(VirtualMachine::dict_setitem));
+        self.register_native_method(dc, "get",         NativeFunc::a2(VirtualMachine::dict_get));
+        self.register_native_method(dc, "keys",        NativeFunc::a1(VirtualMachine::dict_keys));
+        self.register_native_method(dc, "values",      NativeFunc::a1(VirtualMachine::dict_values));
+        self.register_native_method(dc, "pop",         NativeFunc::a2(VirtualMachine::dict_pop));
     }
 }

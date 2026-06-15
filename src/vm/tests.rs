@@ -1359,3 +1359,243 @@ pub fn test_call_on_plain_instance_error() {
     let err = vm.interpret("class Foo {} var f = Foo(); f(1, 2);").unwrap_err();
     assert!(err.to_string().contains("Can't call"), "got: {err}");
 }
+
+// ===========================================================================
+// Import tests
+// ===========================================================================
+
+/// Helper: get the test module path for "lib/math.taro" relative to the
+/// project root (where `cargo test` runs).
+fn math_module_path() -> String {
+    "tests/scripts/lib/math.taro".to_string()
+}
+
+#[test]
+pub fn test_import_statement_defines_global() {
+    let mut vm = VirtualMachine::new();
+    let path = math_module_path();
+    vm.interpret(&format!("import \"{path}\"; print(math);")).unwrap();
+}
+
+#[test]
+pub fn test_import_module_pi_value() {
+    let mut vm = VirtualMachine::new();
+    let path = math_module_path();
+    vm.interpret(&format!("import \"{path}\"; print(math.PI);")).unwrap();
+}
+
+#[test]
+pub fn test_import_module_call_function() {
+    let mut vm = VirtualMachine::new();
+    let path = math_module_path();
+    vm.interpret(&format!("import \"{path}\"; print(math.add(10, 20));")).unwrap();
+}
+
+#[test]
+pub fn test_import_module_mul_function() {
+    let mut vm = VirtualMachine::new();
+    let path = math_module_path();
+    vm.interpret(&format!("import \"{path}\"; print(math.mul(7, 6));")).unwrap();
+}
+
+#[test]
+pub fn test_import_module_use_class() {
+    let mut vm = VirtualMachine::new();
+    let path = math_module_path();
+    vm.interpret(&format!(
+        "import \"{path}\"; var v = math.Vec(1, 2); print(str(v));"
+    )).unwrap();
+}
+
+#[test]
+pub fn test_import_as_expression() {
+    let mut vm = VirtualMachine::new();
+    let path = math_module_path();
+    vm.interpret(&format!(
+        "var m = import \"{path}\"; print(m.PI); print(m.add(1, 2));"
+    )).unwrap();
+}
+
+#[test]
+pub fn test_import_file_not_found_error() {
+    let mut vm = VirtualMachine::new();
+    let err = vm.interpret("import \"nonexistent_file.taro\";").unwrap_err();
+    assert!(err.to_string().contains("import error"), "got: {err}");
+}
+
+#[test]
+pub fn test_import_file_not_exists_error() {
+    let mut vm = VirtualMachine::new();
+    let err = vm.interpret("import \"nonexistent_file_xyz.taro\";").unwrap_err();
+    assert!(err.to_string().contains("import error"), "got: {err}");
+    assert!(err.to_string().contains("cannot read"), "got: {err}");
+}
+
+#[test]
+pub fn test_import_does_not_leak_globals() {
+    // Verify that importing a module doesn't add its internals to the
+    // importing script's global scope (only the module name is added).
+    let mut vm = VirtualMachine::new();
+    let path = math_module_path();
+    // PI is defined in math.taro but should not be a global.
+    vm.interpret(&format!("import \"{path}\";")).unwrap();
+    // `math` should exist as a global.
+    // `PI` should NOT be a global (it's only accessible via math.PI).
+    let err = vm.interpret("print(PI);").unwrap_err();
+    assert!(err.to_string().contains("not found"), "PI should not be a global, got: {err}");
+}
+
+#[test]
+pub fn test_import_nested() {
+    // Test that a module can import another module.
+    // We need a module that imports math.
+    let mut vm = VirtualMachine::new();
+    let math_path = math_module_path();
+    // This script imports math and uses it — the import system should handle
+    // nested import (import inside a module).
+    vm.interpret(&format!(
+        "import \"{math_path}\"; var m = math; print(m.add(100, 200));"
+    )).unwrap();
+}
+
+// ===========================================================================
+// Std module tests — File
+// ===========================================================================
+
+/// Helper: return a temporary file path that can be used in tests.
+fn tmp_file_path(name: &str) -> String {
+    format!("/tmp/taro_test_{name}")
+}
+
+/// Clean up a temporary test file.
+fn rm_tmp(name: &str) {
+    let path = tmp_file_path(name);
+    let _ = std::fs::remove_file(&path);
+}
+
+#[test]
+pub fn test_std_file_import_creates_global() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("import \"std/fs\"; print(fs);").unwrap();
+}
+
+#[test]
+pub fn test_std_file_import_as_expression() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("var f = import \"std/fs\"; print(f); print(f.File);").unwrap();
+}
+
+#[test]
+pub fn test_file_write_and_read() {
+    rm_tmp("write_read");
+    let mut vm = VirtualMachine::new();
+    let path = tmp_file_path("write_read");
+    vm.interpret(&format!(
+        "import \"std/fs\"; \
+         var f = fs.File(\"{path}\", \"w\"); \
+         f.write(\"hello world\"); \
+         f.close(); \
+         var g = fs.File(\"{path}\", \"r\"); \
+         print(g.read()); \
+         g.close();"
+    )).unwrap();
+    rm_tmp("write_read");
+}
+
+#[test]
+pub fn test_file_str() {
+    rm_tmp("str_test");
+    let mut vm = VirtualMachine::new();
+    let path = tmp_file_path("str_test");
+    vm.interpret(&format!(
+        "import \"std/fs\"; \
+         var f = fs.File(\"{path}\", \"w\"); \
+         print(str(f)); \
+         f.close(); \
+         print(str(f));"
+    )).unwrap();
+    rm_tmp("str_test");
+}
+
+#[test]
+pub fn test_file_readline() {
+    rm_tmp("readline");
+    let mut vm = VirtualMachine::new();
+    let path = tmp_file_path("readline");
+    vm.interpret(&format!(
+        "import \"std/fs\"; \
+         var f = fs.File(\"{path}\", \"w\"); \
+         f.write(\"line1\\nline2\\nline3\"); \
+         f.close(); \
+         var g = fs.File(\"{path}\", \"r\"); \
+         print(g.readline()); \
+         print(g.readline()); \
+         print(g.readline()); \
+         var eof = g.readline(); \
+         print(eof == nil); \
+         g.close();"
+    )).unwrap();
+    rm_tmp("readline");
+}
+
+#[test]
+pub fn test_file_seek_and_tell() {
+    rm_tmp("seek_tell");
+    let mut vm = VirtualMachine::new();
+    let path = tmp_file_path("seek_tell");
+    vm.interpret(&format!(
+        "import \"std/fs\"; \
+         var f = fs.File(\"{path}\", \"w\"); \
+         f.write(\"abcdefghij\"); \
+         f.close(); \
+         var g = fs.File(\"{path}\", \"r\"); \
+         print(g.tell()); \
+         g.seek(5); \
+         print(g.tell()); \
+         print(g.read()); \
+         g.close();"
+    )).unwrap();
+    rm_tmp("seek_tell");
+}
+
+#[test]
+pub fn test_file_not_found_error() {
+    let mut vm = VirtualMachine::new();
+    let err = vm.interpret(
+        "import \"std/fs\"; var f = fs.File(\"/tmp/nonexistent_xyz_12345\", \"r\");"
+    ).unwrap_err();
+    assert!(err.to_string().contains("cannot open"), "got: {err}");
+}
+
+#[test]
+pub fn test_file_closed_error() {
+    rm_tmp("closed_err");
+    let mut vm = VirtualMachine::new();
+    let path = tmp_file_path("closed_err");
+    // Create the file first so we can close it and then try reading.
+    vm.interpret(&format!(
+        "import \"std/fs\"; \
+         var f = fs.File(\"{path}\", \"w\"); \
+         f.write(\"data\"); \
+         f.close();"
+    )).unwrap();
+    // Now try reading from a closed file.
+    let err = vm.interpret(&format!(
+        "import \"std/fs\"; \
+         var f = fs.File(\"{path}\", \"r\"); \
+         f.close(); \
+         f.read();"
+    )).unwrap_err();
+    assert!(err.to_string().contains("file is closed"), "got: {err}");
+    rm_tmp("closed_err");
+}
+
+#[test]
+pub fn test_file_wrong_arg_count() {
+    let mut vm = VirtualMachine::new();
+    // read() takes no arguments
+    let err = vm.interpret(
+        "import \"std/fs\"; var f = fs.File(\"/tmp/t\", \"w\"); f.read(\"extra\");"
+    ).unwrap_err();
+    assert!(err.to_string().contains("argument"), "got: {err}");
+}

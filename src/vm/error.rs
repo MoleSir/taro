@@ -94,4 +94,7 @@ pub enum ExecuteError {
 
     #[error("unsupport method call '{0}' for {1}")]
     UnsupportedMethodCall(&'static str, &'static str),
+
+    #[error("import error: {0}")]
+    ImportError(String),
 }   

@@ -54,6 +54,7 @@ pub enum ByteCode {
     BuildDict,
     IndexGet,
     IndexSet,
+    Import,
 }
 
 /// Descriptor for a single upvalue captured by a closure.
@@ -127,4 +128,6 @@ pub enum Instruction {
     BuildDict(usize),
     IndexGet,
     IndexSet,
+
+    Import(ShrString),
 }
