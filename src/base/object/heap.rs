@@ -39,6 +39,9 @@ pub struct ObjectHeap {
     pub list_class: ObjectHandle,
     pub dict_class: ObjectHandle,
     pub module_class: ObjectHandle,
+    /// Class handle for `net.Socket` — stored here so `Server.accept()` can
+    /// create new Socket instances without needing access to the net module.
+    pub socket_class: ObjectHandle,
 
     /// Singleton instances for `true` and `false` so repeated use of
     /// boolean literals doesn't allocate.
@@ -68,6 +71,7 @@ impl ObjectHeap {
             list_class: ObjectHandle::NIL,
             dict_class: ObjectHandle::NIL,
             module_class: ObjectHandle::NIL,
+            socket_class: ObjectHandle::NIL,
             true_instance: ObjectHandle::NIL,
             false_instance: ObjectHandle::NIL,
         };
@@ -302,7 +306,7 @@ impl ObjectHeap {
 
     /// Return a shared reference to the native data stored in `handle`,
     /// downcast to `T`.
-    pub fn get_native_ref<T: 'static>(&self, handle: ObjectHandle) -> Option<&T> {
+    pub fn get_native<T: 'static>(&self, handle: ObjectHandle) -> Option<&T> {
         let inst = self.get_instance(handle)?;
         match &inst.data {
             ObjectInstanceData::Native(native) => {

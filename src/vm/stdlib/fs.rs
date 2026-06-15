@@ -14,15 +14,6 @@ struct FileData {
     mode: String,
 }
 
-fn native_mut<'vm, T: 'static>(
-    vm: &'vm mut VirtualMachine,
-    handle: ObjectHandle,
-) -> ExecuteResult<&'vm mut T> {
-    vm.obj_heap
-        .get_native_mut::<T>(handle)
-        .ok_or_else(|| ExecuteError::IoError("file is closed".into()))
-}
-
 // =============================================================================
 //  Module creation
 // =============================================================================
@@ -133,7 +124,7 @@ impl VirtualMachine {
     }
 
     fn fs_file_read(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
-        let reader = native_mut::<FileData>(self, receiver)?.reader.as_mut()
+        let reader = self.get_native_mut::<FileData>(receiver)?.reader.as_mut()
             .ok_or_else(|| ExecuteError::IoError("file is closed".into()))?;
         let mut buf = String::new();
         reader.read_to_string(&mut buf)
@@ -143,7 +134,7 @@ impl VirtualMachine {
 
     fn fs_file_write(&mut self, receiver: ObjectHandle, text: ObjectHandle) -> ExecuteResult<ObjectHandle> {
         let text = self.get_string_instance(text)?.clone();
-        let reader = native_mut::<FileData>(self, receiver)?.reader.as_mut()
+        let reader = self.get_native_mut::<FileData>(receiver)?.reader.as_mut()
             .ok_or_else(|| ExecuteError::IoError("file is closed".into()))?;
         reader.get_mut().write_all(text.as_bytes())
             .map_err(|e| ExecuteError::IoError(format!("write error: {}", e)))?;
@@ -151,7 +142,7 @@ impl VirtualMachine {
     }
 
     fn fs_file_readline(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
-        let reader = native_mut::<FileData>(self, receiver)?.reader.as_mut()
+        let reader = self.get_native_mut::<FileData>(receiver)?.reader.as_mut()
             .ok_or_else(|| ExecuteError::IoError("file is closed".into()))?;
         let mut line = String::new();
         let n = reader.read_line(&mut line)
@@ -165,13 +156,13 @@ impl VirtualMachine {
     }
 
     fn fs_file_close(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
-        native_mut::<FileData>(self, receiver)?.reader = None;
+        self.get_native_mut::<FileData>(receiver)?.reader = None;
         Ok(ObjectHandle::NIL)
     }
 
     fn fs_file_seek(&mut self, receiver: ObjectHandle, pos: ObjectHandle) -> ExecuteResult<ObjectHandle> {
         let pos = *self.get_integer_instance(pos)?;
-        let reader = native_mut::<FileData>(self, receiver)?.reader.as_mut()
+        let reader = self.get_native_mut::<FileData>(receiver)?.reader.as_mut()
             .ok_or_else(|| ExecuteError::IoError("file is closed".into()))?;
         reader.seek(std::io::SeekFrom::Start(pos as u64))
             .map_err(|e| ExecuteError::IoError(format!("seek error: {}", e)))?;
@@ -179,7 +170,7 @@ impl VirtualMachine {
     }
 
     fn fs_file_tell(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
-        let reader = native_mut::<FileData>(self, receiver)?.reader.as_mut()
+        let reader = self.get_native_mut::<FileData>(receiver)?.reader.as_mut()
             .ok_or_else(|| ExecuteError::IoError("file is closed".into()))?;
         let pos = reader.stream_position()
             .map_err(|e| ExecuteError::IoError(format!("tell error: {}", e)))?;
@@ -188,7 +179,7 @@ impl VirtualMachine {
 
     fn fs_file_str(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
         let (is_open, path, mode) =
-            if let Some(d) = self.obj_heap.get_native_ref::<FileData>(receiver) {
+            if let Some(d) = self.obj_heap.get_native::<FileData>(receiver) {
                 (d.reader.is_some(), d.path.clone(), d.mode.clone())
             } else {
                 (false, "?".into(), "?".into())

@@ -2,6 +2,8 @@
 - [x] list
 - [x] dict(TODO: all value as key??)
 - [x] import
-- [ ] std 
+- [x] std
   - [x] fs
   - [x] math
+  - [x] random
+  - [x] net

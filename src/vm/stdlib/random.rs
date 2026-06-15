@@ -65,7 +65,7 @@ impl VirtualMachine {
         let minv = self.random_as_i64(min, "randint")?;
         let maxv = self.random_as_i64(max, "randint")?;
         if minv > maxv {
-            return Err(ExecuteError::ImportError(
+            return Err(ExecuteError::RandomError(
                 format!("randint: min ({minv}) must be <= max ({maxv})")
             ));
         }
@@ -81,7 +81,7 @@ impl VirtualMachine {
         let minv = self.random_as_f64(min, "uniform")?;
         let maxv = self.random_as_f64(max, "uniform")?;
         if minv > maxv {
-            return Err(ExecuteError::ImportError(
+            return Err(ExecuteError::RandomError(
                 format!("uniform: min ({minv}) must be <= max ({maxv})")
             ));
         }
@@ -101,7 +101,7 @@ impl VirtualMachine {
                 ExecuteError::BinaryOpTypeMismatch("choice", "list", self.value_type_name(seq))
             })?;
             if list.is_empty() {
-                return Err(ExecuteError::ImportError("choice: list is empty".into()));
+                return Err(ExecuteError::RandomError("choice: list is empty".into()));
             }
             list.len()
         };

@@ -14,44 +14,6 @@ impl VirtualMachine {
         Ok(ObjectHandle::NIL)
     }
 
-    pub fn str(&mut self, arg: ObjectHandle) -> ExecuteResult<ObjectHandle> {
-        let s = self.__str__(arg)?;
-        Ok(self.obj_heap.alloc_string_instance(s))
-    }
-
-    pub fn bool(&mut self, arg: ObjectHandle) -> ExecuteResult<ObjectHandle> {
-        let b = self.__bool__(arg)?;
-        Ok(self.obj_heap.alloc_bool_instance(b))
-    }
-
-    pub fn len(&mut self, arg: ObjectHandle) -> ExecuteResult<ObjectHandle> {
-        let n = self.__len__(arg)?;
-        Ok(self.obj_heap.alloc_integer_instance(n))
-    }
-
-    pub fn int(&mut self, arg: ObjectHandle) -> ExecuteResult<ObjectHandle> {
-        let n = self.__int__(arg)?;
-        Ok(self.obj_heap.alloc_integer_instance(n))
-    }
-
-    pub fn float(&mut self, arg: ObjectHandle) -> ExecuteResult<ObjectHandle> {
-        let n = self.__float__(arg)?;
-        Ok(self.obj_heap.alloc_float_instance(n))
-    }
-
-    /// `type(value)` — for Instance, return the class object;
-    /// otherwise the type name string.
-    pub fn typeof_val(&mut self, arg: ObjectHandle) -> ExecuteResult<ObjectHandle> {
-        let obj = self.obj_heap.get(arg);
-        match obj {
-            Object::Instance(inst) => return Ok(inst.class),
-            _ => {
-                let name = self.value_type_name(arg);
-                Ok(self.obj_heap.alloc_string_instance(name.into()))
-            }
-        }
-    }
-
     /// `input()` or `input("prompt")` — read a line from stdin.
     pub fn input(&mut self, args: &[ObjectHandle]) -> ExecuteResult<ObjectHandle> {
         if let Some(&prompt) = args.first() {
@@ -121,6 +83,31 @@ impl VirtualMachine {
         Ok(self.obj_heap.alloc_float_instance(dur.as_secs_f64()))
     }
 
+    pub fn len(&mut self, arg: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let n = self.__len__(arg)?;
+        Ok(self.obj_heap.alloc_integer_instance(n))
+    }
+
+    pub fn str(&mut self, arg: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let s = self.__str__(arg)?;
+        Ok(self.obj_heap.alloc_string_instance(s))
+    }
+
+    pub fn bool(&mut self, arg: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let b = self.__bool__(arg)?;
+        Ok(self.obj_heap.alloc_bool_instance(b))
+    }
+
+    pub fn int(&mut self, arg: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let n = self.__int__(arg)?;
+        Ok(self.obj_heap.alloc_integer_instance(n))
+    }
+
+    pub fn float(&mut self, arg: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let n = self.__float__(arg)?;
+        Ok(self.obj_heap.alloc_float_instance(n))
+    }
+
     /// list
     pub fn list(&mut self, args: &[ObjectHandle]) -> ExecuteResult<ObjectHandle> {
         Ok(self.obj_heap.alloc_list_instance(args.to_vec()))
@@ -129,5 +116,23 @@ impl VirtualMachine {
     /// dict
     pub fn dict(&mut self) -> ExecuteResult<ObjectHandle> {
         Ok(self.obj_heap.alloc_dict_instance(vec![]))
+    }
+
+    pub fn exit(&mut self, arg: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let n = self.__int__(arg)?;
+        std::process::exit(n as i32)
+    }
+
+    /// `type(value)` — for Instance, return the class object;
+    /// otherwise the type name string.
+    pub fn typeof_val(&mut self, arg: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let obj = self.obj_heap.get(arg);
+        match obj {
+            Object::Instance(inst) => return Ok(inst.class),
+            _ => {
+                let name = self.value_type_name(arg);
+                Ok(self.obj_heap.alloc_string_instance(name.into()))
+            }
+        }
     }
 }

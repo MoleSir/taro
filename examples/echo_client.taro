@@ -1,0 +1,31 @@
+// echo_client.taro — Connects to the echo server and prints the reply.
+//
+// Run (after starting echo_server.taro in another terminal):
+//   taro examples/echo_client.taro
+//
+// Customise the message:
+//   taro -e 'import "std/net"; ...'   (see the inline tests below)
+
+import "std/net";
+
+// ---- configuration ----
+var host = "127.0.0.1";
+var port = 8080;
+var message = "Hello from Taro!";
+
+// ---- connect & exchange ----
+print("Connecting to " + host + ":" + str(port) + "...");
+var sock = net.Socket();
+sock.connect(host, port);
+print("Connected: " + str(sock));
+
+// Send a message.
+sock.send(message);
+print("Sent: " + message);
+
+// Read the echo response.
+var reply = sock.recv(1024);
+print("Reply: " + reply);
+
+sock.close();
+print("Done.");

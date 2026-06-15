@@ -816,4 +816,17 @@ impl VirtualMachine {
     impl_getters!(list_instance, Vec<ObjectHandle>);
     impl_getters!(dict_instance, Vec<(ObjectHandle, ObjectHandle)>);
     impl_getters!(fields_instance, std::collections::HashMap<ShrString, ObjectHandle>);
+
+    pub fn get_native_mut<T: 'static>(&mut self, handle: ObjectHandle) -> ExecuteResult<&mut T> {
+        let found = self.value_type_name(handle);
+        self.obj_heap
+            .get_native_mut::<T>(handle)
+            .ok_or_else(|| ExecuteError::TypeMismatch { expected: "native", found } )
+    }
+
+    pub fn get_native<T: 'static>(&self, handle: ObjectHandle) -> ExecuteResult<&T> {
+        self.obj_heap
+            .get_native::<T>(handle)
+            .ok_or_else(|| ExecuteError::TypeMismatch { expected: "native", found: self.value_type_name(handle) } )
+    }
 }

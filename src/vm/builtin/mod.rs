@@ -22,17 +22,19 @@ impl VirtualMachine {
 
         // ---- global native functions ----
         self.register_native_fn("print", NativeFunction::var(VirtualMachine::print));
-        self.register_native_fn("str",   NativeFunction::a1(VirtualMachine::str));
-        self.register_native_fn("bool",  NativeFunction::a1(VirtualMachine::bool));
         self.register_native_fn("len",   NativeFunction::a1(VirtualMachine::len));
-        self.register_native_fn("int",   NativeFunction::a1(VirtualMachine::int));
-        self.register_native_fn("float", NativeFunction::a1(VirtualMachine::float));
         self.register_native_fn("type",  NativeFunction::a1(VirtualMachine::typeof_val));
         self.register_native_fn("input", NativeFunction::var(VirtualMachine::input));
         self.register_native_fn("abs",   NativeFunction::a1(VirtualMachine::abs));
         self.register_native_fn("min",   NativeFunction::var(VirtualMachine::min));
         self.register_native_fn("max",   NativeFunction::var(VirtualMachine::max));
         self.register_native_fn("clock", NativeFunction::a0(VirtualMachine::clock));
+        self.register_native_fn("exit", NativeFunction::a1(VirtualMachine::exit));
+
+        self.register_native_fn("int",   NativeFunction::a1(VirtualMachine::int));
+        self.register_native_fn("float", NativeFunction::a1(VirtualMachine::float));
+        self.register_native_fn("str",   NativeFunction::a1(VirtualMachine::str));
+        self.register_native_fn("bool",  NativeFunction::a1(VirtualMachine::bool));
         self.register_native_fn("list",  NativeFunction::var(VirtualMachine::list));
         self.register_native_fn("dict",  NativeFunction::a0(VirtualMachine::dict));
     }

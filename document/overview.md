@@ -345,8 +345,10 @@ Module globals do not leak — `PI` is only accessible via `math.PI`.
 
 | Module | Description |
 |--------|-------------|
-| `std/math` | Constants, trig, logarithms, rounding, angle conversion |
-| `std/fs`   | File I/O — `File` class + standalone convenience functions |
+| `std/math`   | Constants, trig, logarithms, rounding, angle conversion |
+| `std/fs`     | File I/O — `File` class + standalone convenience functions |
+| `std/random` | Random numbers, randint, uniform, choice, shuffle |
+| `std/net`    | TCP networking — `Socket` client + `Server` listener |
 
 ### `std/math`
 
@@ -418,3 +420,72 @@ print(str(g));                          // <File path='...' mode='r' status=clos
 ```
 
 File modes: `"r"` (read), `"w"` (write/create), `"a"` (append).
+
+### `std/random`
+
+```taro
+import "std/random";
+
+// Random float in [0, 1)
+print(random.random());
+
+// Random integer in [min, max] inclusive
+print(random.randint(1, 6));          // e.g. 4
+
+// Random float in [min, max)
+print(random.uniform(0.0, 10.0));     // e.g. 7.234
+
+// Random element from a list
+var colors = ["red", "green", "blue"];
+print(random.choice(colors));         // e.g. "blue"
+
+// Shuffle a list in place
+random.shuffle(colors);
+print(colors);                        // e.g. ["blue", "red", "green"]
+```
+
+### `std/net`
+
+TCP networking with `Socket` (client) and `Server` (listener) classes.
+
+```taro
+import "std/net";
+
+// ---- TCP client ----
+var sock = net.Socket();
+sock.connect("httpbin.org", 80);
+sock.send("GET /get HTTP/1.0\r\nHost: httpbin.org\r\n\r\n");
+var data = sock.recv(4096);
+print(data);
+sock.close();
+
+// ---- TCP server ----
+var server = net.Server();
+server.bind(8080);                    // bind to 0.0.0.0:8080
+// server.bind("127.0.0.1", 8080);   // or specific host
+// server.bind("0.0.0.0:8080");      // or single string
+
+var client = server.accept();         // wait for a connection
+var msg = client.recv(1024);          // read up to 1024 bytes
+client.send("echo: " + msg);          // send reply
+client.close();
+server.close();
+```
+
+**Socket** methods:
+
+| Method | Description |
+|--------|-------------|
+| `sock.connect(host, port)` | Connect to a remote address. Also `sock.connect("host:port")`. |
+| `sock.send(data)` | Send a string. |
+| `sock.recv(bufsize)` | Receive up to `bufsize` bytes, return as string. |
+| `sock.close()` | Close the socket. |
+| `sock.settimeout(seconds)` | Set read timeout (float). |
+
+**Server** methods:
+
+| Method | Description |
+|--------|-------------|
+| `server.bind(port)` | Bind to `0.0.0.0:port`. Also `bind(host, port)` or `bind("host:port")`. |
+| `server.accept()` | Accept a connection, return a `Socket` instance. |
+| `server.close()` | Close the listener. |

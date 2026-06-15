@@ -42,8 +42,9 @@ src/
     ├── stdlib/               # Virtual std modules (no .taro file needed)
     │   ├── mod.rs            #   import_std_module dispatcher
     │   ├── fs.rs             #   std/fs — File class + standalone fs functions
-    │   ├── math.rs           #   std/math — trig, log, rounding, conversion functions + constants
-    |   └── random.rs         #   std/random
+    │   ├── math.rs           #   std/math — trig, log, rounding, conversion + constants
+    │   ├── net.rs            #   std/net — TCP Socket client + Server listener
+    │   └── random.rs         #   std/random — random numbers, randint, choice, shuffle
     └── tests.rs              # VM runtime tests (267 tests)
 
 tests/scripts/                # Integration test scripts
@@ -63,6 +64,9 @@ tests/scripts/                # Integration test scripts
 └── 21_std_math.taro         # std/math integration tests
 tests/scripts/lib/           # File-based modules used by import tests
 └── math.taro                #   Sample module (add, mul, PI, Vec class)
+examples/                    # Runnable example scripts
+├── echo_server.taro         #   TCP echo server using std/net
+└── echo_client.taro         #   TCP echo client using std/net
 ```
 
 ## Key design decisions
@@ -101,4 +105,4 @@ Mark-and-sweep, triggered when `bytes_allocated` exceeds `gc_threshold` (1 MiB).
 
 ### Error handling
 
-`ExecuteError` (27 variants) uses `thiserror::Error` with `#[error("...")]` for Display. A `context_error` derive from `thiserrorctx` adds context-tracking for better error messages. `InterpretError` wraps compile + runtime errors.
+`ExecuteError` (28 variants) uses `thiserror::Error` with `#[error("...")]` for Display. A `context_error` derive from `thiserrorctx` adds context-tracking for better error messages. `InterpretError` wraps compile + runtime errors.

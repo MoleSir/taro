@@ -97,4 +97,7 @@ pub enum ExecuteError {
 
     #[error("import error: {0}")]
     ImportError(String),
+
+    #[error("random error: {0}")]
+    RandomError(String),
 }   

@@ -1,0 +1,38 @@
+// echo_server.taro — A simple TCP echo server.
+//
+// Listens on port 8080.  For every accepted connection it reads
+// up to 1024 bytes, sends them back prefixed with "echo: ", then
+// closes the connection.  Press Ctrl-C to stop.
+//
+// Run:  taro examples/echo_server.taro
+//
+// Then test with:
+//   taro examples/echo_client.taro
+//   echo "hello" | nc localhost 8080
+
+import "std/net";
+
+var port = 8080;
+
+var server = net.Server();
+server.bind(port);
+print("Echo server listening on port " + str(port) + "...");
+
+// Handle connections in a loop.
+// In a real application you would likely spawn a thread / task here,
+// but this keeps the example simple and correct for a single client
+// at a time.
+while (true) {
+    print("Waiting for connection...");
+    var client = server.accept();
+    print("Accepted: " + str(client));
+
+    // Read whatever the client sends (up to 1 KiB).
+    var data = client.recv(1024);
+    print("Received: " + data);
+
+    // Echo it back.
+    client.send("echo: " + data);
+    client.close();
+    print("Connection closed.");
+}

@@ -1,5 +1,6 @@
 mod fs;
 mod math;
+mod net;
 mod random;
 
 use super::{ExecuteError, ExecuteResult, VirtualMachine};
@@ -15,6 +16,7 @@ impl VirtualMachine {
         match module_name {
             "fs" => self.create_fs_module(),
             "math" => self.create_math_module(),
+            "net" => self.create_net_module(),
             "random" => self.create_random_module(),
             _ => Err(ExecuteError::ImportError(format!(
                 "unknown std module '{module_name}'"
