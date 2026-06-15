@@ -100,4 +100,7 @@ pub enum ExecuteError {
 
     #[error("random error: {0}")]
     RandomError(String),
+
+    #[error("net error: {0}")]
+    NetError(String),
 }   

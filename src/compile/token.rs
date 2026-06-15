@@ -41,7 +41,9 @@ pub enum TokenKind {
     // Keywords.
     And,
     As,
+    Break,
     Class,
+    Continue,
     Else,
     Extends,
     False,

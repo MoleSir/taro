@@ -186,7 +186,9 @@ impl<'a> Scanner<'a> {
         match lexeme {
             "and" => TokenKind::And,
             "as" => TokenKind::As,
+            "break" => TokenKind::Break,
             "class" => TokenKind::Class,
+            "continue" => TokenKind::Continue,
             "else" => TokenKind::Else,
             "extends" => TokenKind::Extends,
             "false" => TokenKind::False,
@@ -560,7 +562,9 @@ mod tests {
         let keywords = [
             ("and", TokenKind::And),
             ("as", TokenKind::As),
+            ("break", TokenKind::Break),
             ("class", TokenKind::Class),
+            ("continue", TokenKind::Continue),
             ("else", TokenKind::Else),
             ("extends", TokenKind::Extends),
             ("false", TokenKind::False),

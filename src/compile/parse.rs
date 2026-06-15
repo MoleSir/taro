@@ -100,14 +100,16 @@ fn get_rule(kind: TokenKind) -> ParseRule {
         // Keywords ----------------------------------------------------------
         TokenKind::And          => ParseRule::new(None, Some(Parser::and), Prec::And),
         TokenKind::As           => ParseRule::NONE,
-        TokenKind::Import       => ParseRule::new(Some(Parser::import_expr), None, Prec::Call),
+        TokenKind::Break        => ParseRule::NONE,
         TokenKind::Class        => ParseRule::NONE,
+        TokenKind::Continue     => ParseRule::NONE,
         TokenKind::Else         => ParseRule::NONE,
         TokenKind::Extends      => ParseRule::NONE,
         TokenKind::False        => ParseRule::new(Some(Parser::literal), None, Prec::None),
         TokenKind::For          => ParseRule::NONE,
         TokenKind::Fun          => ParseRule::NONE,
         TokenKind::If           => ParseRule::NONE,
+        TokenKind::Import       => ParseRule::new(Some(Parser::import_expr), None, Prec::Call),
         TokenKind::Nil          => ParseRule::new(Some(Parser::literal), None, Prec::None),
         TokenKind::Or           => ParseRule::new(None, Some(Parser::or), Prec::Or),
         TokenKind::Return       => ParseRule::NONE,
@@ -174,12 +176,28 @@ pub struct Parser<'a> {
     units:        Vec<CompilationUnit>,
     /// Index into `units` for the innermost function being compiled.
     current_unit: usize,
+    /// Stack of active loop contexts.  Non-empty when parsing the body of a
+    /// `while` or `for` loop — `break` / `continue` consult the top-most entry.
+    loop_stack:   Vec<LoopContext>,
 }
 
 /// Result of resolving a variable name to a local slot or upvalue.
 enum LocalAccess {
     Local(usize),
     Upvalue(usize),
+}
+
+/// Tracks state for the innermost enclosing loop, so that `break` and
+/// `continue` statements inside the loop body know where to jump.
+struct LoopContext {
+    /// Bytecode position to jump to on `continue`.
+    /// - `while`: position of the condition expression.
+    /// - `for` with increment: position of the increment expression.
+    /// - `for` without increment: position of the condition (or body start).
+    continue_target: usize,
+    /// Bytecode addresses of `Jump(0)` placeholder operands emitted for
+    /// `break` statements.  Patched after the loop body is fully compiled.
+    break_patches: Vec<usize>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -216,6 +234,12 @@ pub enum ParseReason {
 
     #[error("Can't return from top-level code.")]
     ReturnInTop,
+
+    #[error("'break' outside of loop")]
+    BreakOutsideLoop,
+
+    #[error("'continue' outside of loop")]
+    ContinueOutsideLoop,
 }
 
 #[derive(Debug)]
@@ -311,6 +335,7 @@ impl<'a> Parser<'a> {
             errors: vec![],
             units: vec![unit],
             current_unit: 0,
+            loop_stack: vec![],
         }
     }
 
@@ -323,6 +348,7 @@ impl<'a> Parser<'a> {
             errors: vec![],
             units: vec![unit],
             current_unit: 0,
+            loop_stack: vec![],
         }
     }
 
@@ -520,6 +546,10 @@ impl<'a> Parser<'a> {
             self.parse_block()?;
             self.end_scope();
             Ok(())
+        } else if self.match_token(TokenKind::Break) {
+            self.parse_break_statement()
+        } else if self.match_token(TokenKind::Continue) {
+            self.parse_continue_statement()
         } else {
             self.parse_expression_statement()
         }
@@ -544,6 +574,10 @@ impl<'a> Parser<'a> {
         } else {
             String::new()
         };
+
+        // Save the current loop stack — functions cannot see enclosing loops.
+        // break/continue inside a nested function should always error.
+        let saved_loop_stack = std::mem::take(&mut self.loop_stack);
 
         // Push a new compilation unit for the nested function.
         let enclosing = self.current_unit;
@@ -578,6 +612,9 @@ impl<'a> Parser<'a> {
         let upvalues = self.cur_unit().upvalues.clone();
         let inner_function = self.finish_compilation_unit();
         self.emit(Instruction::Closure { function: inner_function, upvalues });
+
+        // Restore the enclosing function's loop stack.
+        self.loop_stack = saved_loop_stack;
 
         Ok(())
     }
@@ -625,6 +662,37 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
+    fn parse_break_statement(&mut self) -> ParseResult<()> {
+        if self.loop_stack.is_empty() {
+            bail_error_at_previous!(self, ParseReason::BreakOutsideLoop);
+        }
+
+        // Emit a forward Jump(0) placeholder.  The offset will be patched
+        // once the loop body is fully compiled and we know the exit position.
+        let jump_addr = self.emit_jump(false); // Jump(0)
+        self.loop_stack.last_mut().unwrap().break_patches.push(jump_addr);
+
+        self.consume(TokenKind::Semicolon, "Expect ';' after 'break'.")?;
+        Ok(())
+    }
+
+    fn parse_continue_statement(&mut self) -> ParseResult<()> {
+        if self.loop_stack.is_empty() {
+            bail_error_at_previous!(self, ParseReason::ContinueOutsideLoop);
+        }
+
+        // Jump back to the loop's continue target (condition or increment).
+        let target = self.loop_stack.last().unwrap().continue_target;
+        let offset = self.cur_unit().chunk.codes.len() - target + 3;
+        if offset > u16::MAX as usize {
+            record_error_at_current!(self, ParseReason::TooMuchCodeToJumpOver(offset));
+        }
+        self.emit(Instruction::Loop(offset));
+
+        self.consume(TokenKind::Semicolon, "Expect ';' after 'continue'.")?;
+        Ok(())
+    }
+
     fn parse_for_statement(&mut self) -> ParseResult<()> {
         self.begin_scope();
 
@@ -665,8 +733,19 @@ impl<'a> Parser<'a> {
             self.patch_jump(body_jump)?;
         }
 
+        // Push loop context so break/continue inside the body know where to jump.
+        // At this point `loop_start` already equals `increment_start` when an
+        // increment clause exists (see the `loop_start = increment_start` above),
+        // or the condition / body-start position otherwise.
+        self.loop_stack.push(LoopContext {
+            continue_target: loop_start,
+            break_patches: Vec::new(),
+        });
+
         // while statement
         self.parse_statement()?;
+
+        let ctx = self.loop_stack.pop().unwrap();
 
         self.emit_loop(loop_start)?;
 
@@ -677,6 +756,12 @@ impl<'a> Parser<'a> {
         }
 
         self.end_scope();
+
+        // Patch all break-jump placeholders to jump to the current position
+        // (just past the end_scope cleanup and exit Pop).
+        for &jump_addr in &ctx.break_patches {
+            self.patch_jump(jump_addr)?;
+        }
 
         Ok(())
     }
@@ -690,12 +775,28 @@ impl<'a> Parser<'a> {
 
         let exit_jump = self.emit_jump(true);
         self.emit(Instruction::Pop);
+
+        // Push loop context so break/continue inside the body know where to jump.
+        self.loop_stack.push(LoopContext {
+            continue_target: loop_start,
+            break_patches: Vec::new(),
+        });
+
         self.parse_statement()?;
+
+        let ctx = self.loop_stack.pop().unwrap();
 
         self.emit_loop(loop_start)?;
 
         self.patch_jump(exit_jump)?;
         self.emit(Instruction::Pop);
+
+        // Patch all break-jump placeholders to jump to just after the loop's
+        // exit Pop — i.e. right past the entire loop.
+        for &jump_addr in &ctx.break_patches {
+            self.patch_jump(jump_addr)?;
+        }
+
         Ok(())
     }
 
@@ -1294,6 +1395,7 @@ impl<'a> Parser<'a> {
             match self.peek().kind {
                 TokenKind::Class | TokenKind::Fun | TokenKind::Import | TokenKind::Var |
                 TokenKind::For | TokenKind::If | TokenKind::While |
+                TokenKind::Break | TokenKind::Continue |
                 TokenKind::Return => {
                     return;
                 }

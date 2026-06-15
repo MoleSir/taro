@@ -109,10 +109,10 @@ impl VirtualMachine {
         };
 
         let stream = TcpStream::connect(&addr)
-            .map_err(|e| ExecuteError::IoError(format!("cannot connect to '{}': {}", addr, e)))?;
+            .map_err(|e| ExecuteError::NetError(format!("cannot connect to '{}': {}", addr, e)))?;
 
         let inst = self.obj_heap.get_instance_mut(self_handle)
-            .ok_or_else(|| ExecuteError::IoError("not a Socket instance".into()))?;
+            .ok_or_else(|| ExecuteError::NetError("not a Socket instance".into()))?;
         inst.data = ObjectInstanceData::Native(
             SocketData { stream: Some(stream), peer_addr: addr }.into_native(),
         );
@@ -128,9 +128,9 @@ impl VirtualMachine {
     fn net_socket_send(&mut self, receiver: ObjectHandle, data: ObjectHandle) -> ExecuteResult<ObjectHandle> {
         let text = self.get_string_instance(data)?.clone();
         let stream = self.get_native_mut::<SocketData>(receiver)?.stream.as_mut()
-            .ok_or_else(|| ExecuteError::IoError("socket is closed".into()))?;
+            .ok_or_else(|| ExecuteError::NetError("socket is closed".into()))?;
         stream.write_all(text.as_bytes())
-            .map_err(|e| ExecuteError::IoError(format!("send error: {}", e)))?;
+            .map_err(|e| ExecuteError::NetError(format!("send error: {}", e)))?;
         Ok(ObjectHandle::NIL)
     }
 
@@ -142,15 +142,15 @@ impl VirtualMachine {
     fn net_socket_recv(&mut self, receiver: ObjectHandle, bufsize: ObjectHandle) -> ExecuteResult<ObjectHandle> {
         let n = *self.get_integer_instance(bufsize)?;
         if n <= 0 || n > 65536 {
-            return Err(ExecuteError::IoError(format!(
+            return Err(ExecuteError::NetError(format!(
                 "recv: bufsize must be 1..65536, got {}", n
             )));
         }
         let stream = self.get_native_mut::<SocketData>(receiver)?.stream.as_mut()
-            .ok_or_else(|| ExecuteError::IoError("socket is closed".into()))?;
+            .ok_or_else(|| ExecuteError::NetError("socket is closed".into()))?;
         let mut buf = vec![0u8; n as usize];
         let read = stream.read(&mut buf)
-            .map_err(|e| ExecuteError::IoError(format!("recv error: {}", e)))?;
+            .map_err(|e| ExecuteError::NetError(format!("recv error: {}", e)))?;
         buf.truncate(read);
         let s = String::from_utf8_lossy(&buf).to_string();
         Ok(self.obj_heap.alloc_string_instance(ShrString::new_string(&s)))
@@ -183,7 +183,7 @@ impl VirtualMachine {
         let data = self.get_native_mut::<SocketData>(receiver)?;
         if let Some(ref stream) = data.stream {
             stream.set_read_timeout(Some(dur))
-                .map_err(|e| ExecuteError::IoError(format!("settimeout: {}", e)))?;
+                .map_err(|e| ExecuteError::NetError(format!("settimeout: {}", e)))?;
         }
         Ok(ObjectHandle::NIL)
     }
@@ -231,10 +231,10 @@ impl VirtualMachine {
         };
 
         let listener = TcpListener::bind(&addr)
-            .map_err(|e| ExecuteError::IoError(format!("cannot bind '{}': {}", addr, e)))?;
+            .map_err(|e| ExecuteError::NetError(format!("cannot bind '{}': {}", addr, e)))?;
 
         let inst = self.obj_heap.get_instance_mut(self_handle)
-            .ok_or_else(|| ExecuteError::IoError("not a Server instance".into()))?;
+            .ok_or_else(|| ExecuteError::NetError("not a Server instance".into()))?;
         inst.data = ObjectInstanceData::Native(
             ServerData { listener: Some(listener), bind_addr: addr }.into_native(),
         );
@@ -249,9 +249,9 @@ impl VirtualMachine {
     /// `server.accept()` — accept a connection, return a Socket instance.
     fn net_server_accept(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
         let listener = self.get_native_mut::<ServerData>(receiver)?.listener.as_mut()
-            .ok_or_else(|| ExecuteError::IoError("server is closed".into()))?;
+            .ok_or_else(|| ExecuteError::NetError("server is closed".into()))?;
         let (stream, peer_addr) = listener.accept()
-            .map_err(|e| ExecuteError::IoError(format!("accept error: {}", e)))?;
+            .map_err(|e| ExecuteError::NetError(format!("accept error: {}", e)))?;
         let peer_str = peer_addr.to_string();
 
         // Create a Socket instance using the cached socket_class.

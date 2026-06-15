@@ -125,6 +125,21 @@ while (i < 5) {
 for (var i = 0; i < 10; i = i + 1) {
     print(i);
 }
+
+// Break — exit the loop early
+for (var i = 0; i < 10; i = i + 1) {
+    if (i == 3) { break; }
+    print(i);          // 0, 1, 2
+}
+
+// Continue — skip the rest of the current iteration
+// In for loops, the increment clause still runs
+var sum = 0;
+for (var i = 0; i < 5; i = i + 1) {
+    if (i == 2) { continue; }
+    sum = sum + i;
+}
+print(sum);            // 0 + 1 + 3 + 4 = 8
 ```
 
 ## Logical operators

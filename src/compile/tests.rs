@@ -1047,3 +1047,102 @@ fn test_empty_dict_bytecode() {
 fn test_dict_colon_required() {
     assert_err("var d = {\"a\" 1};");
 }
+
+// ------------------------------------------------------------------------
+//  Break / Continue — compiler tests
+// ------------------------------------------------------------------------
+
+#[test]
+fn test_while_break_emits_jump() {
+    let c = codes("while (true) { break; }");
+    // Should contain Jump (for break) and JumpIfFalse (for while exit)
+    assert!(c.iter().any(|&b| b == ByteCode::Jump as u8));
+    assert!(c.iter().any(|&b| b == ByteCode::JumpIfFalse as u8));
+}
+
+#[test]
+fn test_while_continue_emits_loop() {
+    let c = codes("while (true) { continue; }");
+    // Should contain 2 Loop instructions: one for continue, one for back-edge
+    let loop_count = c.iter().filter(|&&b| b == ByteCode::Loop as u8).count();
+    assert_eq!(loop_count, 2);
+}
+
+#[test]
+fn test_for_break_emits_jump() {
+    let c = codes("for (;;) { break; }");
+    assert!(c.iter().any(|&b| b == ByteCode::Jump as u8));
+}
+
+#[test]
+fn test_for_continue_to_increment() {
+    let c = codes("for (var i = 0; i < 10; i = i + 1) { continue; }");
+    // With full for-loop clauses there should be 4 Loop instructions:
+    // - 1 from the increment-back-to-condition
+    // - 1 from the body-back-to-increment
+    // - 1 from the continue statement itself
+    let loop_count = c.iter().filter(|&&b| b == ByteCode::Loop as u8).count();
+    assert_eq!(loop_count, 3);
+}
+
+#[test]
+fn test_for_break_with_full_clauses() {
+    let c = codes("for (var i = 0; i < 10; i = i + 1) { break; }");
+    assert!(c.iter().any(|&b| b == ByteCode::Jump as u8));
+    assert!(c.iter().any(|&b| b == ByteCode::Loop as u8));
+    assert!(c.iter().any(|&b| b == ByteCode::JumpIfFalse as u8));
+}
+
+#[test]
+fn test_break_outside_loop_error() {
+    assert_err("break;");
+}
+
+#[test]
+fn test_continue_outside_loop_error() {
+    assert_err("continue;");
+}
+
+#[test]
+fn test_break_inside_function_inside_while_is_error() {
+    // break inside a nested function should NOT see the enclosing while loop.
+    assert_err("while (true) { fun f() { break; } }");
+}
+
+#[test]
+fn test_continue_inside_function_inside_while_is_error() {
+    // continue inside a nested function should NOT see the enclosing while loop.
+    assert_err("while (true) { fun f() { continue; } }");
+}
+
+#[test]
+fn test_break_inside_if_inside_while() {
+    // break inside an if statement inside a while loop — valid.
+    let c = codes("while (true) { if (true) { break; } }");
+    assert!(c.iter().any(|&b| b == ByteCode::Jump as u8));
+}
+
+#[test]
+fn test_break_inside_nested_while() {
+    let c = codes("while (true) { while (true) { break; } }");
+    // Inner break should be a Jump, and outer while still has Loop + JumpIfFalse
+    assert!(c.iter().any(|&b| b == ByteCode::Jump as u8));
+    assert!(c.iter().any(|&b| b == ByteCode::Loop as u8));
+}
+
+#[test]
+fn test_continue_in_for_without_increment() {
+    let c = codes("for (var i = 0; i < 10;) { continue; }");
+    // Without increment, continue goes back to the condition.
+    // One Loop for back-edge + one Loop for continue = 2 total.
+    let loop_count = c.iter().filter(|&&b| b == ByteCode::Loop as u8).count();
+    assert_eq!(loop_count, 2);
+}
+
+#[test]
+fn test_break_in_for_without_condition() {
+    let c = codes("for (;;) { break; }");
+    // Infinite for with break — should have Jump but no JumpIfFalse.
+    assert!(c.iter().any(|&b| b == ByteCode::Jump as u8));
+    assert!(!c.iter().any(|&b| b == ByteCode::JumpIfFalse as u8));
+}
