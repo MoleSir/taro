@@ -1,10 +1,16 @@
-use crate::{NativeFunction, ObjectHandle};
+use crate::{ToNativeData, NativeFunction, ObjectHandle};
 use crate::vm::{ExecuteError, ExecuteResult, VirtualMachine};
 
 /// Native state for a string iterator (iterates Unicode characters).
 struct StringIterator {
     string_handle: ObjectHandle,
     byte_index: usize,
+}
+
+impl ToNativeData for StringIterator {
+    fn mark_inner_object(&self, heap: &mut crate::ObjectHeap) {
+        heap.mark_object(self.string_handle);
+    }
 }
 
 macro_rules! string_cmp_op {
@@ -88,16 +94,9 @@ impl VirtualMachine {
 
     pub fn string_iter(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
         let iter = StringIterator { string_handle: receiver, byte_index: 0 };
-        let native = crate::NativeObject::new_with_trace(
-            iter,
-            |ptr, mark| {
-                let iter = unsafe { &*(ptr as *const StringIterator) };
-                mark(iter.string_handle);
-            },
-        );
         Ok(self.obj_heap.alloc_instance(
             self.obj_heap.string_iter_class,
-            crate::ObjectInstanceData::Native(native),
+            crate::ObjectInstanceData::Native(crate::NativeData::new(iter)),
         ))
     }
 
@@ -136,10 +135,8 @@ impl VirtualMachine {
         self.register_native_method(sc, "__getitem__",  NativeFunction::a2(VirtualMachine::string_getitem));
         self.register_native_method(sc, "len",          NativeFunction::a1(VirtualMachine::string_len));
 
-        // Iterator protocol — __iter__ on String returns a StringIterator.
         self.register_native_method(sc, "__iter__", NativeFunction::a1(VirtualMachine::string_iter));
 
-        // StringIterator: __next__ returns the next character, or IterEnd.
         let sic = self.obj_heap.string_iter_class;
         self.register_native_method(sic, "__iter__", NativeFunction::a1(|_vm, receiver| Ok(receiver)));
         self.register_native_method(sic, "__next__", NativeFunction::a1(VirtualMachine::string_iter_next));

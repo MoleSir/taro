@@ -3,7 +3,7 @@ use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::time::Duration;
 
-use crate::{NativeFunction, ObjectHandle, ObjectInstanceData, ShrString, ToNative};
+use crate::{ToNativeData, NativeFunction, NativeData, ObjectHandle, ObjectInstanceData, ShrString};
 use crate::vm::{ExecuteError, ExecuteResult, VirtualMachine};
 
 // =============================================================================
@@ -15,10 +15,14 @@ struct SocketData {
     peer_addr: String,
 }
 
+impl ToNativeData for SocketData {}
+
 struct ServerData {
     listener: Option<TcpListener>,
     bind_addr: String,
 }
+
+impl ToNativeData for ServerData {}
 
 // =============================================================================
 //  Module creation
@@ -114,7 +118,7 @@ impl VirtualMachine {
         let inst = self.obj_heap.get_instance_mut(self_handle)
             .ok_or_else(|| ExecuteError::NetError("not a Socket instance".into()))?;
         inst.data = ObjectInstanceData::Native(
-            SocketData { stream: Some(stream), peer_addr: addr }.into_native(),
+            NativeData::new(SocketData { stream: Some(stream), peer_addr: addr }),
         );
 
         Ok(self_handle)
@@ -236,7 +240,7 @@ impl VirtualMachine {
         let inst = self.obj_heap.get_instance_mut(self_handle)
             .ok_or_else(|| ExecuteError::NetError("not a Server instance".into()))?;
         inst.data = ObjectInstanceData::Native(
-            ServerData { listener: Some(listener), bind_addr: addr }.into_native(),
+            NativeData::new(ServerData { listener: Some(listener), bind_addr: addr }),
         );
 
         Ok(self_handle)
@@ -257,7 +261,7 @@ impl VirtualMachine {
         // Create a Socket instance using the cached socket_class.
         let socket_class = self.obj_heap.socket_class;
         Ok(self.obj_heap.alloc_instance(socket_class, ObjectInstanceData::Native(
-            SocketData { stream: Some(stream), peer_addr: peer_str }.into_native(),
+            NativeData::new(SocketData { stream: Some(stream), peer_addr: peer_str }),
         )))
     }
 

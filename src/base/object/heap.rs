@@ -313,30 +313,21 @@ impl ObjectHeap {
 
     /// Return a mutable reference to the native data stored in `handle`,
     /// downcast to `T`.  Returns `None` if the handle is not an Instance
-    /// with `Native` data.
-    ///
-    /// The caller must ensure that `T` matches the concrete type originally
-    /// stored via [`NativeObject::new`](super::NativeObject::new).
-    pub fn get_native_mut<T: 'static>(&mut self, handle: ObjectHandle) -> Option<&mut T> {
+    /// with `Native` data, or if the concrete type doesn't match `T`.
+    pub fn get_native_mut<T: super::ToNativeData>(&mut self, handle: ObjectHandle) -> Option<&mut T> {
         let inst = self.get_instance_mut(handle)?;
         match &mut inst.data {
-            ObjectInstanceData::Native(native) => {
-                // SAFETY: the downcast is sound as long as the caller
-                // passes the same T that was used at construction time.
-                Some(unsafe { native.downcast_mut::<T>() })
-            }
+            ObjectInstanceData::Native(native) => native.downcast_mut::<T>(),
             _ => None,
         }
     }
 
     /// Return a shared reference to the native data stored in `handle`,
     /// downcast to `T`.
-    pub fn get_native<T: 'static>(&self, handle: ObjectHandle) -> Option<&T> {
+    pub fn get_native<T: super::ToNativeData>(&self, handle: ObjectHandle) -> Option<&T> {
         let inst = self.get_instance(handle)?;
         match &inst.data {
-            ObjectInstanceData::Native(native) => {
-                Some(unsafe { native.downcast_ref::<T>() })
-            }
+            ObjectInstanceData::Native(native) => native.downcast_ref::<T>(),
             _ => None,
         }
     }
@@ -410,14 +401,9 @@ impl ObjectHeap {
                 Object::Instance(instance) => {
                     self.mark_object(instance.class);
                     match &instance.data {
-                        ObjectInstanceData::Nil | ObjectInstanceData::IterEnd | ObjectInstanceData::Bool(_) | ObjectInstanceData::Integer(_) | ObjectInstanceData::Float(_) => {
-                            // leaf types — no heap references
-                        }
+                        ObjectInstanceData::Nil | ObjectInstanceData::IterEnd | ObjectInstanceData::Bool(_) | ObjectInstanceData::Integer(_) | ObjectInstanceData::Float(_) => {}
                         ObjectInstanceData::Native(native) => {
-                            // Trace any ObjectHandle references inside the
-                            // native data (e.g. iterators referencing their
-                            // source collection).
-                            native.trace(&mut |h| self.mark_object(h));
+                            native.mark_inner_object(self);
                         }
                         ObjectInstanceData::String(_s) => {
                             // ShrString is internally Arc'd — no ObjectHandle refs

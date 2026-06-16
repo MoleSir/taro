@@ -1,10 +1,16 @@
-use crate::{NativeFunction, ObjectHandle, ObjectInstanceData};
+use crate::{ToNativeData, NativeFunction, ObjectHandle, ObjectInstanceData};
 use crate::vm::{ExecuteError, ExecuteResult, VirtualMachine};
 
 /// Native state for a dict-key iterator.
 struct DictKeyIterator {
     dict_handle: ObjectHandle,
     index: usize,
+}
+
+impl ToNativeData for DictKeyIterator {
+    fn mark_inner_object(&self, heap: &mut crate::ObjectHeap) {
+        heap.mark_object(self.dict_handle);
+    }
 }
 
 impl VirtualMachine {
@@ -130,16 +136,9 @@ impl VirtualMachine {
 
     pub fn dict_iter(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
         let iter = DictKeyIterator { dict_handle: receiver, index: 0 };
-        let native = crate::NativeObject::new_with_trace(
-            iter,
-            |ptr, mark| {
-                let iter = unsafe { &*(ptr as *const DictKeyIterator) };
-                mark(iter.dict_handle);
-            },
-        );
         Ok(self.obj_heap.alloc_instance(
             self.obj_heap.dict_iter_class,
-            crate::ObjectInstanceData::Native(native),
+            crate::ObjectInstanceData::Native(crate::NativeData::new(iter)),
         ))
     }
 
@@ -172,11 +171,8 @@ impl VirtualMachine {
         self.register_native_method(dc, "values",      NativeFunction::a1(VirtualMachine::dict_values));
         self.register_native_method(dc, "pop",         NativeFunction::a2(VirtualMachine::dict_pop));
         self.register_native_method(dc, "len",         NativeFunction::a1(VirtualMachine::dict_len));
-
-        // Iterator protocol — __iter__ on Dict returns a DictKeyIterator.
         self.register_native_method(dc, "__iter__", NativeFunction::a1(VirtualMachine::dict_iter));
 
-        // DictKeyIterator: __next__ returns the next key, or IterEnd.
         let dic = self.obj_heap.dict_iter_class;
         self.register_native_method(dic, "__iter__", NativeFunction::a1(|_vm, receiver| Ok(receiver)));
         self.register_native_method(dic, "__next__", NativeFunction::a1(VirtualMachine::dict_iter_next));

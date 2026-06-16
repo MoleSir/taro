@@ -1,10 +1,16 @@
-use crate::{NativeFunction, ObjectHandle};
+use crate::{ToNativeData, NativeFunction, ObjectHandle};
 use crate::vm::{ExecuteError, ExecuteResult, VirtualMachine};
 
 /// Native state for a list iterator.
 struct ListIterator {
     list_handle: ObjectHandle,
     index: usize,
+}
+
+impl ToNativeData for ListIterator {
+    fn mark_inner_object(&self, heap: &mut crate::ObjectHeap) {
+        heap.mark_object(self.list_handle);
+    }
 }
 
 impl VirtualMachine {
@@ -117,16 +123,9 @@ impl VirtualMachine {
 
     pub fn list_iter(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
         let iter = ListIterator { list_handle: receiver, index: 0 };
-        let native = crate::NativeObject::new_with_trace(
-            iter,
-            |ptr, mark| {
-                let iter = unsafe { &*(ptr as *const ListIterator) };
-                mark(iter.list_handle);
-            },
-        );
         Ok(self.obj_heap.alloc_instance(
             self.obj_heap.list_iter_class,
-            crate::ObjectInstanceData::Native(native),
+            crate::ObjectInstanceData::Native(crate::NativeData::new(iter)),
         ))
     }
 
@@ -163,10 +162,8 @@ impl VirtualMachine {
         self.register_native_method(lc, "len",         NativeFunction::a1(VirtualMachine::list_len));
         self.register_native_method(lc, "extend",      NativeFunction::a2(VirtualMachine::list_extend));
 
-        // Iterator protocol — __iter__ on List returns a ListIterator.
         self.register_native_method(lc, "__iter__", NativeFunction::a1(VirtualMachine::list_iter));
 
-        // ListIterator: __next__ returns the next element, or IterEnd.
         let lic = self.obj_heap.list_iter_class;
         self.register_native_method(lic, "__iter__", NativeFunction::a1(|_vm, receiver| Ok(receiver)));
         self.register_native_method(lic, "__next__", NativeFunction::a1(VirtualMachine::list_iter_next));

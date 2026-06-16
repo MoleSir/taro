@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Seek, Write};
 
-use crate::{NativeFunction, ObjectHandle, ObjectInstanceData, ShrString, ToNative};
+use crate::{ToNativeData, NativeFunction, NativeData, ObjectHandle, ObjectInstanceData, ShrString};
 use crate::vm::{ExecuteError, ExecuteResult, VirtualMachine};
 
 // =============================================================================
@@ -13,6 +13,8 @@ struct FileData {
     path: String,
     mode: String,
 }
+
+impl ToNativeData for FileData {}
 
 // =============================================================================
 //  Module creation
@@ -117,7 +119,7 @@ impl VirtualMachine {
         let inst = self.obj_heap.get_instance_mut(self_handle)
             .ok_or_else(|| ExecuteError::IoError("not a File instance".into()))?;
         inst.data = ObjectInstanceData::Native(
-            FileData { reader: Some(BufReader::new(file)), path, mode }.into_native(),
+            NativeData::new(FileData { reader: Some(BufReader::new(file)), path, mode }),
         );
 
         Ok(self_handle)

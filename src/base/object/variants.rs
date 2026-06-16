@@ -1,7 +1,8 @@
+use std::any::Any;
 use std::collections::HashMap;
 
 use crate::{vm::{ExecuteResult, VirtualMachine}, ShrString};
-use super::ObjectHandle;
+use super::{ObjectHandle, ObjectHeap};
 
 // ========================================================================== //
 //                    Method (unified user + native)
@@ -140,106 +141,61 @@ pub enum ObjectInstanceData {
     List(Vec<ObjectHandle>),
     Dict(Vec<(ObjectHandle, ObjectHandle)>),
     Fields(HashMap<ShrString, ObjectHandle>),
-    /// Type-erased native Rust data, created via [`NativeObject::new`] or
-    /// [`ToNative::into_native`].  Resources are automatically freed on GC
-    /// sweep or heap destruction — no VM side-table needed.
-    Native(NativeObject),
+    /// Type-erased native Rust data, created via [`NativeData::new`].
+    /// Resources are automatically freed on GC sweep or heap destruction
+    /// thanks to [`ToNativeData`]'s vtable — no manual memory management.
+    Native(NativeData),
 }
 
-impl Drop for ObjectInstanceData {
-    fn drop(&mut self) {
-        if let ObjectInstanceData::Native(native) = self {
-            native.drop_inner();
-        }
-    }
-}
-
-/// Type-erased heap allocation owned by a Taro object.
+/// Trait for native Rust data stored inside a Taro object via
+/// [`NativeData`].  Implies `Any` so the concrete type can be recovered
+/// safely with [`NativeData::downcast_ref`] / [`NativeData::downcast_mut`].
 ///
-/// # Memory safety
-/// The inner pointer is always `Box::into_raw` of some `T: 'static`.  The
-/// `drop_fn` reconstructs and drops that `Box<T>`.  The unsafe pointer casts
-/// are confined to the constructor and the `downcast_*` methods.
-pub struct NativeObject {
-    ptr: *mut (),
-    drop_fn: fn(*mut ()),
-    /// Optional GC trace callback — called with the native data pointer and
-    /// a `mark_object` function so the native data can mark any embedded
-    /// `ObjectHandle` values.
-    trace_fn: Option<fn(*const (), mark_fn: &mut dyn FnMut(ObjectHandle))>,
+/// `Send + Sync` are required because `Object` is stored in `LazyLock`
+/// statics.  The VM is single-threaded, so these bounds are harmless.
+pub trait ToNativeData: Any + Send + Sync {
+    /// Called during GC marking.  Override to mark any [`ObjectHandle`]
+    /// references held by this native data.
+    fn mark_inner_object(&self, _heap: &mut ObjectHeap) {}
 }
 
-impl NativeObject {
-    /// Create a [`NativeObject`] from any `'static` type, without GC tracing.
-    pub fn new<T: 'static>(data: T) -> Self {
-        NativeObject {
-            ptr: Box::into_raw(Box::new(data)) as *mut (),
-            drop_fn: |p| unsafe { drop(Box::from_raw(p as *mut T)) },
-            trace_fn: None,
-        }
+impl dyn ToNativeData {
+    pub fn downcast_ref<T: ToNativeData>(&self) -> Option<&T> {
+        (self as &dyn Any).downcast_ref::<T>()
     }
+    pub fn downcast_mut<T: ToNativeData>(&mut self) -> Option<&mut T> {
+        (self as &mut dyn Any).downcast_mut::<T>()
+    }
+}
 
-    /// Create a [`NativeObject`] with a GC trace callback.  The callback
-    /// receives a pointer to the native data and a function that marks
-    /// `ObjectHandle` values reachable.
-    pub fn new_with_trace<T: 'static>(
-        data: T,
-        trace: fn(*const (), mark_fn: &mut dyn FnMut(ObjectHandle)),
-    ) -> Self {
-        NativeObject {
-            ptr: Box::into_raw(Box::new(data)) as *mut (),
-            drop_fn: |p| unsafe { drop(Box::from_raw(p as *mut T)) },
-            trace_fn: Some(trace),
-        }
+/// Type-erased native Rust value stored inline in a Taro object.
+pub struct NativeData {
+    data: Box<dyn ToNativeData>,
+}
+
+impl NativeData {
+    /// Create a [`NativeData`] from any type implementing [`ToNativeData`].
+    pub fn new<T: ToNativeData>(data: T) -> Self {
+        NativeData { data: Box::new(data) }
     }
 
     /// Call the GC trace callback (if any) to mark embedded handles.
-    pub fn trace(&self, mark: &mut dyn FnMut(ObjectHandle)) {
-        if let Some(trace_fn) = self.trace_fn {
-            trace_fn(self.ptr, mark);
-        }
-    }
-
-    /// Downcast to a mutable reference of the stored type.
-    ///
-    /// # Safety
-    /// `T` must match the concrete type that was originally stored.
-    pub unsafe fn downcast_mut<T: 'static>(&mut self) -> &mut T {
-        unsafe { &mut *(self.ptr as *mut T) }
+    pub fn mark_inner_object(&self, heap: &mut ObjectHeap) {
+        self.data.mark_inner_object(heap);
     }
 
     /// Downcast to a shared reference of the stored type.
-    ///
-    /// # Safety
-    /// `T` must match the concrete type that was originally stored.
-    pub unsafe fn downcast_ref<T: 'static>(&self) -> &T {
-        unsafe { &*(self.ptr as *const T) }
+    /// Returns `None` if `T` doesn't match the concrete type.
+    pub fn downcast_ref<T: ToNativeData>(&self) -> Option<&T> {
+        self.data.as_ref().downcast_ref::<T>()
     }
 
-    /// Call the destructor and mark the pointer as consumed (null).
-    fn drop_inner(&mut self) {
-        if !self.ptr.is_null() {
-            (self.drop_fn)(self.ptr);
-            self.ptr = std::ptr::null_mut();
-        }
+    /// Downcast to a mutable reference of the stored type.
+    /// Returns `None` if `T` doesn't match the concrete type.
+    pub fn downcast_mut<T: ToNativeData>(&mut self) -> Option<&mut T> {
+        self.data.as_mut().downcast_mut::<T>()
     }
 }
-
-/// `ToNative` converts any `'static` value into a [`NativeObject`].
-///
-/// Blanket-implemented for all `T: 'static`.
-pub trait ToNative: 'static + Sized {
-    fn into_native(self) -> NativeObject {
-        NativeObject::new(self)
-    }
-}
-
-impl<T: 'static> ToNative for T {}
-
-// Raw pointers are !Send + !Sync by default, but our VM is single-threaded
-// and NativeObject is never shared across threads.
-unsafe impl Send for NativeObject {}
-unsafe impl Sync for NativeObject {}
 
 pub struct ObjectInstance {
     pub class: ObjectHandle,
