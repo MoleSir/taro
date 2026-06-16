@@ -1,6 +1,12 @@
 use crate::{NativeFunction, ObjectHandle};
 use crate::vm::{ExecuteError, ExecuteResult, VirtualMachine};
 
+/// Native state for a string iterator (iterates Unicode characters).
+struct StringIterator {
+    string_handle: ObjectHandle,
+    byte_index: usize,
+}
+
 macro_rules! string_cmp_op {
     ($name:ident, $op:expr, $op_name:literal) => {
         pub fn $name(&mut self, lhs: ObjectHandle, rhs: ObjectHandle) -> ExecuteResult<ObjectHandle> {
@@ -78,6 +84,40 @@ impl VirtualMachine {
         Ok(self.obj_heap.alloc_string_instance(ch.into()))
     }
 
+    // ---- iteration protocol ----
+
+    pub fn string_iter(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let iter = StringIterator { string_handle: receiver, byte_index: 0 };
+        let native = crate::NativeObject::new_with_trace(
+            iter,
+            |ptr, mark| {
+                let iter = unsafe { &*(ptr as *const StringIterator) };
+                mark(iter.string_handle);
+            },
+        );
+        Ok(self.obj_heap.alloc_instance(
+            self.obj_heap.string_iter_class,
+            crate::ObjectInstanceData::Native(native),
+        ))
+    }
+
+    pub fn string_iter_next(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let string_handle = {
+            let iter = self.get_native::<StringIterator>(receiver)?;
+            iter.string_handle
+        };
+        let s = self.get_string_instance(string_handle)?.clone();
+        let iter = self.get_native_mut::<StringIterator>(receiver)?;
+        let remaining = &s.as_str()[iter.byte_index..];
+        if let Some(ch) = remaining.chars().next() {
+            let char_str: String = ch.into();
+            iter.byte_index += char_str.len();
+            Ok(self.obj_heap.alloc_string_instance(char_str.into()))
+        } else {
+            Ok(ObjectHandle::ITER_END)
+        }
+    }
+
     pub fn register_string_builtins(&mut self) {
         let sc = self.obj_heap.string_class;
         self.register_native_method(sc, "__not__",      NativeFunction::a1(VirtualMachine::string_not));
@@ -95,5 +135,13 @@ impl VirtualMachine {
         self.register_native_method(sc, "__len__",      NativeFunction::a1(VirtualMachine::string_len));
         self.register_native_method(sc, "__getitem__",  NativeFunction::a2(VirtualMachine::string_getitem));
         self.register_native_method(sc, "len",          NativeFunction::a1(VirtualMachine::string_len));
+
+        // Iterator protocol — __iter__ on String returns a StringIterator.
+        self.register_native_method(sc, "__iter__", NativeFunction::a1(VirtualMachine::string_iter));
+
+        // StringIterator: __next__ returns the next character, or IterEnd.
+        let sic = self.obj_heap.string_iter_class;
+        self.register_native_method(sic, "__iter__", NativeFunction::a1(|_vm, receiver| Ok(receiver)));
+        self.register_native_method(sic, "__next__", NativeFunction::a1(VirtualMachine::string_iter_next));
     }
 }

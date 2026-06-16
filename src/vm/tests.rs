@@ -2040,3 +2040,100 @@ pub fn test_continue_respects_increment_in_for() {
         print(count);
     ").unwrap();
 }
+
+// ------------------------------------------------------------------------
+//  For-in — VM tests
+// ------------------------------------------------------------------------
+
+#[test]
+fn test_for_in_list() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        var acc = \"\";
+        for x in [1, 2, 3] { acc = acc + str(x); }
+        print(acc);
+    ").unwrap();
+}
+
+#[test]
+fn test_for_in_string() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        var acc = \"\";
+        for c in \"ab\" { acc = acc + c; }
+        print(acc);
+    ").unwrap();
+}
+
+#[test]
+fn test_for_in_empty_list() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        var count = 0;
+        for x in [] { count = count + 1; }
+        print(count);  // 0
+    ").unwrap();
+}
+
+#[test]
+fn test_for_in_break() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        var acc = \"\";
+        for x in [1, 2, 3, 4] {
+            if (x > 2) { break; }
+            acc = acc + str(x);
+        }
+        print(acc);  // \"12\"
+    ").unwrap();
+}
+
+#[test]
+fn test_for_in_continue() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        var acc = \"\";
+        for x in [1, 2, 3] {
+            if (x == 2) { continue; }
+            acc = acc + str(x);
+        }
+        print(acc);  // \"13\"
+    ").unwrap();
+}
+
+#[test]
+fn test_for_in_dict_keys() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        var count = 0;
+        for k in {\"a\": 1, \"b\": 2} { count = count + 1; }
+        print(count);  // 2
+    ").unwrap();
+}
+
+#[test]
+fn test_for_in_nested() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        var acc = 0;
+        for x in [1, 2] {
+            for y in [10, 20] { acc = acc + x + y; }
+        }
+        print(acc);  // 1+10 + 1+20 + 2+10 + 2+20 = 66
+    ").unwrap();
+}
+
+#[test]
+fn test_iter_end_global() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        print(str(IterEnd));  // IterEnd
+    ").unwrap();
+}
+
+#[test]
+fn test_non_iterable_error() {
+    let mut vm = VirtualMachine::new();
+    let result = vm.interpret("for x in 42 {}");
+    assert!(result.is_err());
+}

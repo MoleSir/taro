@@ -8,13 +8,21 @@ static NIL_OBJECT: LazyLock<Object> = LazyLock::new(|| {
     Object::Instance(ObjectInstance::new(ObjectHandle::NIL, ObjectInstanceData::Nil))
 });
 
+/// Static IterEnd object — backing for `ObjectHandle::ITER_END`.
+static ITER_END_OBJECT: LazyLock<Object> = LazyLock::new(|| {
+    Object::Instance(ObjectInstance::new(ObjectHandle::ITER_END, ObjectInstanceData::IterEnd))
+});
+
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ObjectHandle(pub usize);
 
 /// Sentinel handle representing nil — no heap allocation needed.
 impl ObjectHandle {
     pub const NIL: Self = ObjectHandle(0);
+    pub const ITER_END: Self = ObjectHandle(1);
+
     pub fn is_nil(self) -> bool { self.0 == 0 }
+    pub fn is_iter_end(self) -> bool { self.0 == 1 }
 }
 
 pub struct ObjectHeap {
@@ -47,14 +55,19 @@ pub struct ObjectHeap {
     /// boolean literals doesn't allocate.
     pub true_instance: ObjectHandle,
     pub false_instance: ObjectHandle,
+
+    /// Class handles for built-in iterator types.
+    pub list_iter_class: ObjectHandle,
+    pub string_iter_class: ObjectHandle,
+    pub dict_iter_class: ObjectHandle,
 }
 
 impl ObjectHeap {
     pub fn new() -> Self {
-        // Slot 0 is reserved for nil sentinel.
-        let objects = vec![None];
-        let marked = vec![false];
-        
+        // Slots 0 and 1 are reserved for nil and IterEnd sentinels.
+        let objects = vec![None, None];
+        let marked = vec![false, false];
+
         let mut heap = Self {
             objects,
             marked,
@@ -74,6 +87,9 @@ impl ObjectHeap {
             socket_class: ObjectHandle::NIL,
             true_instance: ObjectHandle::NIL,
             false_instance: ObjectHandle::NIL,
+            list_iter_class: ObjectHandle::NIL,
+            string_iter_class: ObjectHandle::NIL,
+            dict_iter_class: ObjectHandle::NIL,
         };
 
         heap.nil_class = heap.alloc_class("Nil");
@@ -84,6 +100,9 @@ impl ObjectHeap {
         heap.list_class = heap.alloc_class("List");
         heap.dict_class = heap.alloc_class("Dict");
         heap.module_class = heap.alloc_class("Module");
+        heap.list_iter_class = heap.alloc_class("ListIterator");
+        heap.string_iter_class = heap.alloc_class("StringIterator");
+        heap.dict_iter_class = heap.alloc_class("DictIterator");
 
         // Allocate singleton bool instances (after bool_class exists).
         heap.true_instance = heap.alloc_instance(heap.bool_class, ObjectInstanceData::Bool(true));
@@ -231,12 +250,18 @@ impl ObjectHeap {
         if handle.is_nil() {
             return &NIL_OBJECT;
         }
+        if handle.is_iter_end() {
+            return &ITER_END_OBJECT;
+        }
         self.objects[handle.0].as_ref().expect("Dangling handle accessed!")
     }
 
     pub fn get_mut(&mut self, handle: ObjectHandle) -> &mut Object {
         if handle.is_nil() {
             panic!("Cannot mutate nil object");
+        }
+        if handle.is_iter_end() {
+            panic!("Cannot mutate IterEnd object");
         }
         self.objects[handle.0].as_mut().expect("Dangling handle accessed!")
     }
@@ -337,7 +362,7 @@ impl ObjectHeap {
     }
 
     pub fn mark_object(&mut self, handle: ObjectHandle) {
-        if handle.is_nil() {
+        if handle.is_nil() || handle.is_iter_end() {
             return;
         }
         let index = handle.0;
@@ -385,11 +410,14 @@ impl ObjectHeap {
                 Object::Instance(instance) => {
                     self.mark_object(instance.class);
                     match &instance.data {
-                        ObjectInstanceData::Nil | ObjectInstanceData::Bool(_) | ObjectInstanceData::Integer(_) | ObjectInstanceData::Float(_) => {
+                        ObjectInstanceData::Nil | ObjectInstanceData::IterEnd | ObjectInstanceData::Bool(_) | ObjectInstanceData::Integer(_) | ObjectInstanceData::Float(_) => {
                             // leaf types — no heap references
                         }
-                        ObjectInstanceData::Native(_) => {
-                            // Native data owns no ObjectHandle references.
+                        ObjectInstanceData::Native(native) => {
+                            // Trace any ObjectHandle references inside the
+                            // native data (e.g. iterators referencing their
+                            // source collection).
+                            native.trace(&mut |h| self.mark_object(h));
                         }
                         ObjectInstanceData::String(_s) => {
                             // ShrString is internally Arc'd — no ObjectHandle refs
@@ -440,7 +468,8 @@ impl ObjectHeap {
     }
 
     pub fn sweep(&mut self) {
-        for i in 1..self.objects.len() {
+        // Skip slots 0 (nil) and 1 (IterEnd) — they are reserved sentinels.
+        for i in 2..self.objects.len() {
             if self.objects[i].is_some() {
                 if self.marked[i] {
                     self.marked[i] = false;

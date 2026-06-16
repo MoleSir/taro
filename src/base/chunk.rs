@@ -197,6 +197,15 @@ impl Chunk {
                 let handle = heap.alloc_string_instance(file_path);
                 self.write_const_op(ByteCode::Import, handle);
             }
+
+            // ---- iteration ----
+            Instruction::IterEnd => self.write_op(ByteCode::IterEnd),
+            Instruction::ForInIter => self.write_op(ByteCode::ForInIter),
+            Instruction::ForInNext(offset) => {
+                assert!(offset <= u16::MAX as usize, "Too much code to jump over.");
+                self.write_op(ByteCode::ForInNext);
+                self.write_u16(offset as u16);
+            }
         }
     }
 
@@ -335,6 +344,14 @@ impl Chunk {
             ByteCode::Import => {
                 let file_path = self.read_string_constant(ip, heap)?;
                 Ok(Instruction::Import(file_path))
+            }
+
+            // ---- iteration ----
+            ByteCode::IterEnd => Ok(Instruction::IterEnd),
+            ByteCode::ForInIter => Ok(Instruction::ForInIter),
+            ByteCode::ForInNext => {
+                let offset = self.read_u16(ip)?;
+                Ok(Instruction::ForInNext(offset as usize))
             }
         }
     }

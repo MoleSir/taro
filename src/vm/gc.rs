@@ -49,6 +49,9 @@ impl VirtualMachine {
         self.obj_heap.mark_object(self.obj_heap.list_class);
         self.obj_heap.mark_object(self.obj_heap.dict_class);
         self.obj_heap.mark_object(self.obj_heap.module_class);
+        self.obj_heap.mark_object(self.obj_heap.list_iter_class);
+        self.obj_heap.mark_object(self.obj_heap.string_iter_class);
+        self.obj_heap.mark_object(self.obj_heap.dict_iter_class);
 
         // mark singleton bool instances (always reachable)
         self.obj_heap.mark_object(self.obj_heap.true_instance);

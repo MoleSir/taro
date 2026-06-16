@@ -50,6 +50,7 @@ pub enum TokenKind {
     For,
     Fun,
     If,
+    In,
     Import,
     Nil,
     Or,

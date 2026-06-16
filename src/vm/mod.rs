@@ -552,6 +552,29 @@ impl VirtualMachine {
                 self.push_stack(module);
                 return Ok(());
             }
+
+            // ---- iteration ----
+            Instruction::IterEnd => {
+                self.push_stack(ObjectHandle::ITER_END);
+            }
+
+            Instruction::ForInIter => {
+                let iterable = self.pop_stack()?;
+                let iterator = self.__iter__(iterable)?;
+                self.push_stack(iterator);
+            }
+
+            Instruction::ForInNext(offset) => {
+                let iterator = self.peek_stack(0)?;
+                let result = self.__next__(iterator)?;
+                // dispatch_magic internally pushes/pops receiver; the iterator
+                // on the stack (pushed by GetLocal) is untouched.
+                if result.is_iter_end() {
+                    ip += offset as usize;
+                } else {
+                    self.push_stack(result);
+                }
+            }
         }
 
         self.frame_mut()?.ip = ip;

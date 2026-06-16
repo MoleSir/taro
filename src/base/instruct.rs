@@ -55,6 +55,10 @@ pub enum ByteCode {
     IndexGet,
     IndexSet,
     Import,
+
+    IterEnd,
+    ForInIter,
+    ForInNext,
 }
 
 /// Descriptor for a single upvalue captured by a closure.
@@ -130,4 +134,8 @@ pub enum Instruction {
     IndexSet,
 
     Import(ShrString),
+
+    IterEnd,
+    ForInIter,
+    ForInNext(usize),
 }

@@ -109,6 +109,7 @@ fn get_rule(kind: TokenKind) -> ParseRule {
         TokenKind::For          => ParseRule::NONE,
         TokenKind::Fun          => ParseRule::NONE,
         TokenKind::If           => ParseRule::NONE,
+        TokenKind::In           => ParseRule::NONE,
         TokenKind::Import       => ParseRule::new(Some(Parser::import_expr), None, Prec::Call),
         TokenKind::Nil          => ParseRule::new(Some(Parser::literal), None, Prec::None),
         TokenKind::Or           => ParseRule::new(None, Some(Parser::or), Prec::Or),
@@ -697,6 +698,11 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_for_statement(&mut self) -> ParseResult<()> {
+        // Distinguish C-style `for (...)` from `for x in iterable`.
+        if !self.check(TokenKind::LeftParen) {
+            return self.parse_for_in();
+        }
+
         self.begin_scope();
 
         self.consume(TokenKind::LeftParen, "Expect '(' after 'for'.")?;
@@ -767,6 +773,81 @@ impl<'a> Parser<'a> {
         }
 
         Ok(())
+    }
+
+    /// `for <identifier> in <expression> <statement>`
+    fn parse_for_in(&mut self) -> ParseResult<()> {
+        // Loop variable name.
+        self.consume(TokenKind::Identifier, "Expect loop variable name.")?;
+        let var_name = ShrString::new_string(self.previous().lexeme);
+
+        self.consume(TokenKind::In, "Expect 'in' after loop variable.")?;
+
+        // Evaluate the iterable and call __iter__.  The iterator object
+        // pushed by ForInIter becomes the first new local.
+        self.parse_expression()?;                // stack: [iterable]
+        self.emit(Instruction::ForInIter);       // stack: [iterator]
+
+        // Open a scope for the two locals.  Slot 0 is reserved for the
+        // closure (`CompilationUnit::new`), so the iterator gets the next
+        // available index.
+        self.begin_scope();
+
+        let iterator_slot = self.cur_unit().locals.len();
+        self.add_local("__iter__".into())?;
+        self.mark_local_initialized();
+
+        // Loop variable.  Push Nil as initial value.
+        self.emit(Instruction::Nil);
+        let var_slot = self.cur_unit().locals.len();
+        self.add_local(var_name)?;
+        self.mark_local_initialized();
+
+        // ---- loop header ----
+        let loop_start = self.cur_unit().chunk.codes.len();
+
+        // Push iterator copy, call __next__.
+        self.emit(Instruction::GetLocal(iterator_slot));
+        let exit_jump = self.emit_for_in_next(); // ForInNext(0) placeholder
+
+        // Store element into the loop variable, then discard the two
+        // temporary copies (ForInNext push + GetLocal copy).
+        self.emit(Instruction::SetLocal(var_slot));
+        self.emit(Instruction::Pop);             // discard ForInNext push
+        self.emit(Instruction::Pop);             // discard GetLocal copy
+
+        // ---- loop body ----
+        self.loop_stack.push(LoopContext {
+            continue_target: loop_start,
+            break_patches: Vec::new(),
+        });
+
+        self.parse_statement()?;
+
+        let ctx = self.loop_stack.pop().unwrap();
+
+        self.emit_loop(loop_start)?;
+
+        // ---- exit (IterEnd path) ----
+        self.patch_jump(exit_jump)?;
+        // The GetLocal copy is still on the stack.
+        self.emit(Instruction::Pop);
+
+        self.end_scope();                        // pops both locals
+
+        // Patch all break-jump placeholders.
+        for &jump_addr in &ctx.break_patches {
+            self.patch_jump(jump_addr)?;
+        }
+
+        Ok(())
+    }
+
+    /// Emit `ForInNext(0)` and return the address of the jump-offset field
+    /// that must be patched later.
+    fn emit_for_in_next(&mut self) -> usize {
+        self.emit(Instruction::ForInNext(0));
+        self.cur_unit().chunk.codes.len() - 2
     }
 
     fn parse_while_statement(&mut self) -> ParseResult<()> {
@@ -891,11 +972,12 @@ impl<'a> Parser<'a> {
 
         loop {
             let next_rule = get_rule(self.peek().kind);
-            if precedence > next_rule.precedence {
+            if precedence > next_rule.precedence || next_rule.infix.is_none() {
                 break;
             }
             self.advance();
 
+            // SAFETY: we just checked infix.is_some() above
             if let Some(infix_fn) = next_rule.infix {
                 infix_fn(self, can_assign)?;
             }

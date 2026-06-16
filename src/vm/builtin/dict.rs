@@ -1,6 +1,12 @@
 use crate::{NativeFunction, ObjectHandle, ObjectInstanceData};
 use crate::vm::{ExecuteError, ExecuteResult, VirtualMachine};
 
+/// Native state for a dict-key iterator.
+struct DictKeyIterator {
+    dict_handle: ObjectHandle,
+    index: usize,
+}
+
 impl VirtualMachine {
     pub fn dict_not(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
         let entries = self.get_dict_instance(receiver)?;
@@ -120,6 +126,39 @@ impl VirtualMachine {
         }
     }
 
+    // ---- iteration protocol ----
+
+    pub fn dict_iter(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let iter = DictKeyIterator { dict_handle: receiver, index: 0 };
+        let native = crate::NativeObject::new_with_trace(
+            iter,
+            |ptr, mark| {
+                let iter = unsafe { &*(ptr as *const DictKeyIterator) };
+                mark(iter.dict_handle);
+            },
+        );
+        Ok(self.obj_heap.alloc_instance(
+            self.obj_heap.dict_iter_class,
+            crate::ObjectInstanceData::Native(native),
+        ))
+    }
+
+    pub fn dict_iter_next(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let dict_handle = {
+            let iter = self.get_native::<DictKeyIterator>(receiver)?;
+            iter.dict_handle
+        };
+        let entries = self.get_dict_instance(dict_handle)?.clone();
+        let iter = self.get_native_mut::<DictKeyIterator>(receiver)?;
+        if iter.index < entries.len() {
+            let key = entries[iter.index].0;
+            iter.index += 1;
+            Ok(key)
+        } else {
+            Ok(ObjectHandle::ITER_END)
+        }
+    }
+
     pub fn register_dict_builtins(&mut self) {
         let dc = self.obj_heap.dict_class;
         self.register_native_method(dc, "__not__",     NativeFunction::a1(VirtualMachine::dict_not));
@@ -133,5 +172,13 @@ impl VirtualMachine {
         self.register_native_method(dc, "values",      NativeFunction::a1(VirtualMachine::dict_values));
         self.register_native_method(dc, "pop",         NativeFunction::a2(VirtualMachine::dict_pop));
         self.register_native_method(dc, "len",         NativeFunction::a1(VirtualMachine::dict_len));
+
+        // Iterator protocol — __iter__ on Dict returns a DictKeyIterator.
+        self.register_native_method(dc, "__iter__", NativeFunction::a1(VirtualMachine::dict_iter));
+
+        // DictKeyIterator: __next__ returns the next key, or IterEnd.
+        let dic = self.obj_heap.dict_iter_class;
+        self.register_native_method(dic, "__iter__", NativeFunction::a1(|_vm, receiver| Ok(receiver)));
+        self.register_native_method(dic, "__next__", NativeFunction::a1(VirtualMachine::dict_iter_next));
     }
 }

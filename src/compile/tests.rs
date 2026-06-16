@@ -1203,3 +1203,34 @@ fn test_break_in_for_without_condition() {
     assert!(c.iter().any(|&b| b == ByteCode::Jump as u8));
     assert!(!c.iter().any(|&b| b == ByteCode::JumpIfFalse as u8));
 }
+
+// ------------------------------------------------------------------------
+//  For-in — compiler tests
+// ------------------------------------------------------------------------
+
+#[test]
+fn test_for_in_emits_forin_iter_and_next() {
+    let c = codes("for x in [1] {}");
+    assert!(c.iter().any(|&b| b == ByteCode::ForInIter as u8));
+    assert!(c.iter().any(|&b| b == ByteCode::ForInNext as u8));
+}
+
+#[test]
+fn test_for_in_missing_in_is_error() {
+    let mut obj_heap = ObjectHeap::new();
+    match compile("for x [1] {}", &mut obj_heap) {
+        Err(CompileError::Parse(errors)) => {
+            assert!(errors.iter().any(|e| matches!(e.reason, ParseReason::ExpectedToken(_))));
+        }
+        _ => panic!("expected parse error for missing 'in'"),
+    }
+}
+
+#[test]
+fn test_for_in_string_literal() {
+    let (chunk, _) = compile_with_heap("for c in \"ab\" {}");
+    // Should compile successfully — verify ForInIter and ForInNext present.
+    let codes = &chunk.codes;
+    assert!(codes.iter().any(|&b| b == ByteCode::ForInIter as u8));
+    assert!(codes.iter().any(|&b| b == ByteCode::ForInNext as u8));
+}

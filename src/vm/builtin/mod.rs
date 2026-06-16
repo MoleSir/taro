@@ -37,6 +37,9 @@ impl VirtualMachine {
         self.register_native_fn("bool",  NativeFunction::a1(VirtualMachine::bool));
         self.register_native_fn("list",  NativeFunction::var(VirtualMachine::list));
         self.register_native_fn("dict",  NativeFunction::a0(VirtualMachine::dict));
+
+        // IterEnd sentinel — signals end of iteration in __next__.
+        self.globals.insert("IterEnd".into(), ObjectHandle::ITER_END);
     }
 
     pub fn register_builtins_class_method(&mut self) {

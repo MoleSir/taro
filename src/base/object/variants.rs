@@ -130,6 +130,9 @@ impl ObjectClass {
 
 pub enum ObjectInstanceData {
     Nil,
+    /// Sentinel signalling the end of iteration — analogous to Python's
+    /// `StopIteration` but carried as a value rather than an exception.
+    IterEnd,
     Bool(bool),
     Integer(i64),
     Float(f64),
@@ -160,16 +163,40 @@ impl Drop for ObjectInstanceData {
 pub struct NativeObject {
     ptr: *mut (),
     drop_fn: fn(*mut ()),
+    /// Optional GC trace callback — called with the native data pointer and
+    /// a `mark_object` function so the native data can mark any embedded
+    /// `ObjectHandle` values.
+    trace_fn: Option<fn(*const (), mark_fn: &mut dyn FnMut(ObjectHandle))>,
 }
 
 impl NativeObject {
-    /// Create a [`NativeObject`] from any `'static` type.
-    ///
-    /// The destructor is set up automatically to free the allocation.
+    /// Create a [`NativeObject`] from any `'static` type, without GC tracing.
     pub fn new<T: 'static>(data: T) -> Self {
         NativeObject {
             ptr: Box::into_raw(Box::new(data)) as *mut (),
             drop_fn: |p| unsafe { drop(Box::from_raw(p as *mut T)) },
+            trace_fn: None,
+        }
+    }
+
+    /// Create a [`NativeObject`] with a GC trace callback.  The callback
+    /// receives a pointer to the native data and a function that marks
+    /// `ObjectHandle` values reachable.
+    pub fn new_with_trace<T: 'static>(
+        data: T,
+        trace: fn(*const (), mark_fn: &mut dyn FnMut(ObjectHandle)),
+    ) -> Self {
+        NativeObject {
+            ptr: Box::into_raw(Box::new(data)) as *mut (),
+            drop_fn: |p| unsafe { drop(Box::from_raw(p as *mut T)) },
+            trace_fn: Some(trace),
+        }
+    }
+
+    /// Call the GC trace callback (if any) to mark embedded handles.
+    pub fn trace(&self, mark: &mut dyn FnMut(ObjectHandle)) {
+        if let Some(trace_fn) = self.trace_fn {
+            trace_fn(self.ptr, mark);
         }
     }
 

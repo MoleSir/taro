@@ -262,9 +262,12 @@ impl VirtualMachine {
     // ================================================================================== //
 
     pub fn __str__(&mut self, handle: ObjectHandle) -> ExecuteResult<ShrString> {
-        // nil is a special case — it has no class to dispatch to.
+        // Singletons that don't have a regular class to dispatch to.
         if handle.is_nil() {
             return Ok("nil".into());
+        }
+        if handle.is_iter_end() {
+            return Ok("IterEnd".into());
         }
         let object = self.obj_heap.get(handle);
         match object {
@@ -291,9 +294,12 @@ impl VirtualMachine {
     }
 
     pub fn __bool__(&mut self, handle: ObjectHandle) -> ExecuteResult<bool> {
-        // nil is falsy.
+        // nil is falsy; everything else (including IterEnd) is truthy.
         if handle.is_nil() {
             return Ok(false);
+        }
+        if handle.is_iter_end() {
+            return Ok(true);
         }
         let object = self.obj_heap.get(handle);
         match object {
@@ -410,6 +416,9 @@ impl VirtualMachine {
         if handle.is_nil() {
             return "nil";
         }
+        if handle.is_iter_end() {
+            return "IterEnd";
+        }
         let object = self.obj_heap.get(handle);
         match object {
             Object::Instance(inst) => {
@@ -418,6 +427,7 @@ impl VirtualMachine {
                 use crate::ObjectInstanceData;
                 match &inst.data {
                     ObjectInstanceData::Nil => "nil",
+                    ObjectInstanceData::IterEnd => "IterEnd",
                     ObjectInstanceData::Bool(_) => "boolean",
                     ObjectInstanceData::Integer(_) => "integer",
                     ObjectInstanceData::Float(_) => "float",
@@ -435,5 +445,32 @@ impl VirtualMachine {
             Object::Function(_) => "function",
             Object::Upvalue(_) => "upvalue",
         }
+    }
+
+    // ================================================================================== //
+    //           __iter__ / __next__ — iteration protocol
+    // ================================================================================== //
+
+    /// Call `__iter__` on `iterable`, returning an iterator object.
+    pub fn __iter__(&mut self, iterable: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        if !matches!(self.obj_heap.get(iterable), Object::Instance(_)) {
+            return Err(ExecuteError::UnexpectedType(
+                "iterable",
+                self.value_type_name(iterable),
+            ));
+        }
+        self.dispatch_magic(iterable, "__iter__", &[])
+    }
+
+    /// Call `__next__` on `iterator`, returning the next element or
+    /// `ObjectHandle::ITER_END` when exhausted.
+    pub fn __next__(&mut self, iterator: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        if !matches!(self.obj_heap.get(iterator), Object::Instance(_)) {
+            return Err(ExecuteError::UnexpectedType(
+                "iterator",
+                self.value_type_name(iterator),
+            ));
+        }
+        self.dispatch_magic(iterator, "__next__", &[])
     }
 }

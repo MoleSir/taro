@@ -1,6 +1,12 @@
 use crate::{NativeFunction, ObjectHandle};
 use crate::vm::{ExecuteError, ExecuteResult, VirtualMachine};
 
+/// Native state for a list iterator.
+struct ListIterator {
+    list_handle: ObjectHandle,
+    index: usize,
+}
+
 impl VirtualMachine {
     pub fn list_not(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
         let items = self.get_list_instance(receiver)?;
@@ -107,6 +113,40 @@ impl VirtualMachine {
         Ok(ObjectHandle::NIL)
     }
 
+    // ---- iteration protocol ----
+
+    pub fn list_iter(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let iter = ListIterator { list_handle: receiver, index: 0 };
+        let native = crate::NativeObject::new_with_trace(
+            iter,
+            |ptr, mark| {
+                let iter = unsafe { &*(ptr as *const ListIterator) };
+                mark(iter.list_handle);
+            },
+        );
+        Ok(self.obj_heap.alloc_instance(
+            self.obj_heap.list_iter_class,
+            crate::ObjectInstanceData::Native(native),
+        ))
+    }
+
+    pub fn list_iter_next(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let list_handle = {
+            let iter = self.get_native::<ListIterator>(receiver)?;
+            iter.list_handle
+        };
+        // Read the items first, then update the index.
+        let items = self.get_list_instance(list_handle)?.clone();
+        let iter = self.get_native_mut::<ListIterator>(receiver)?;
+        if iter.index < items.len() {
+            let value = items[iter.index];
+            iter.index += 1;
+            Ok(value)
+        } else {
+            Ok(ObjectHandle::ITER_END)
+        }
+    }
+
     pub fn register_list_builtins(&mut self) {
         let lc = self.obj_heap.list_class;
         self.register_native_method(lc, "__not__",     NativeFunction::a1(VirtualMachine::list_not));
@@ -122,5 +162,13 @@ impl VirtualMachine {
         self.register_native_method(lc, "pop",         NativeFunction::a1(VirtualMachine::list_pop));
         self.register_native_method(lc, "len",         NativeFunction::a1(VirtualMachine::list_len));
         self.register_native_method(lc, "extend",      NativeFunction::a2(VirtualMachine::list_extend));
+
+        // Iterator protocol — __iter__ on List returns a ListIterator.
+        self.register_native_method(lc, "__iter__", NativeFunction::a1(VirtualMachine::list_iter));
+
+        // ListIterator: __next__ returns the next element, or IterEnd.
+        let lic = self.obj_heap.list_iter_class;
+        self.register_native_method(lic, "__iter__", NativeFunction::a1(|_vm, receiver| Ok(receiver)));
+        self.register_native_method(lic, "__next__", NativeFunction::a1(VirtualMachine::list_iter_next));
     }
 }
