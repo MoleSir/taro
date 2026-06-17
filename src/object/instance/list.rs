@@ -153,19 +153,20 @@ impl ObjectList {
     }
 
     pub fn iter_next(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
-        let list_handle = {
+        let (list_handle, idx) = {
             let iter = vm.get_native::<ListIterator>(receiver)?;
-            iter.list_handle
+            (iter.list_handle, iter.index)
         };
-        let items = vm.get_list_instance(list_handle)?.clone();
-        let iter = vm.get_native_mut::<ListIterator>(receiver)?;
-        if iter.index < items.len() {
-            let value = items[iter.index];
-            iter.index += 1;
-            Ok(value)
-        } else {
-            Ok(ObjectHandle::ITER_END)
+        let items = vm.get_list_instance(list_handle)?;
+        if idx >= items.len() {
+            return Ok(ObjectHandle::ITER_END);
         }
+        let value = items[idx];
+        // NLL drops `items` reference here; the &mut self borrow below is
+        // now exclusive, allowing the index update.
+        let iter = vm.get_native_mut::<ListIterator>(receiver)?;
+        iter.index = idx + 1;
+        Ok(value)
     }
 }
 

@@ -126,20 +126,26 @@ impl ObjectString {
     }
 
     pub fn iter_next(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
-        let string_handle = {
+        let (string_handle, byte_index) = {
             let iter = vm.get_native::<StringIterator>(receiver)?;
-            iter.string_handle
+            (iter.string_handle, iter.byte_index)
         };
-        let s = vm.get_string_instance(string_handle)?.clone();
+        // Borrow the string immutably to extract the next character, then
+        // drop the borrow before mutably updating byte_index in the iterator.
+        let (char_str, char_len) = {
+            let s = vm.get_string_instance(string_handle)?;
+            let remaining = &s.as_str()[byte_index..];
+            if let Some(ch) = remaining.chars().next() {
+                let cs: String = ch.into();
+                let len = cs.len();
+                (cs, len)
+            } else {
+                return Ok(ObjectHandle::ITER_END);
+            }
+        };
         let iter = vm.get_native_mut::<StringIterator>(receiver)?;
-        let remaining = &s.as_str()[iter.byte_index..];
-        if let Some(ch) = remaining.chars().next() {
-            let char_str: String = ch.into();
-            iter.byte_index += char_str.len();
-            Ok(vm.obj_heap.alloc_string_instance(char_str.into()))
-        } else {
-            Ok(ObjectHandle::ITER_END)
-        }
+        iter.byte_index += char_len;
+        Ok(vm.obj_heap.alloc_string_instance(char_str.into()))
     }
 }
 

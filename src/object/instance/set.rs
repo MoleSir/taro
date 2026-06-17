@@ -11,14 +11,19 @@ use super::ObjectHeap;
 // ========================================================================== //
 
 /// Native state for a set-key iterator.
+///
+/// Items are collected eagerly at iterator-creation time so that each
+/// `__next__` call is O(1) — no per-step re-collection or cloning.
 struct SetKeyIterator {
-    set_handle: ObjectHandle,
+    items: Vec<ObjectHandle>,
     index: usize,
 }
 
 impl ToNativeData for SetKeyIterator {
     fn mark_inner_object(&self, heap: &mut ObjectHeap) {
-        heap.mark_object(self.set_handle);
+        for &item in &self.items {
+            heap.mark_object(item);
+        }
     }
 }
 
@@ -160,29 +165,22 @@ impl ObjectSet {
     // ---- iteration protocol ----
 
     pub fn __iter__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
-        let iter = SetKeyIterator { set_handle: receiver, index: 0 };
+        let items: Vec<ObjectHandle> = vm.get_set_instance(receiver)?
+            .values()
+            .flat_map(|b| b.iter().copied())
+            .collect();
         Ok(vm.obj_heap.alloc_instance(
             vm.obj_heap.set_iter_class,
-            ObjectInstanceData::Native(NativeData::new(iter)),
+            ObjectInstanceData::Native(NativeData::new(SetKeyIterator { items, index: 0 })),
         ))
     }
 
     pub fn iter_next(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
-        let set_handle = {
-            let iter = vm.get_native::<SetKeyIterator>(receiver)?;
-            iter.set_handle
-        };
-
-        let keys: Vec<ObjectHandle> = vm.get_set_instance(set_handle)?
-            .values()
-            .flat_map(|b| b.iter().copied())
-            .collect();
-
         let iter = vm.get_native_mut::<SetKeyIterator>(receiver)?;
-        if iter.index < keys.len() {
-            let key = keys[iter.index];
+        if iter.index < iter.items.len() {
+            let item = iter.items[iter.index];
             iter.index += 1;
-            Ok(key)
+            Ok(item)
         } else {
             Ok(ObjectHandle::ITER_END)
         }

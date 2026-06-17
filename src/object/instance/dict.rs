@@ -9,14 +9,19 @@ use super::ObjectHeap;
 // ========================================================================== //
 
 /// Native state for a dict-key iterator.
+///
+/// Keys are collected eagerly at iterator-creation time so that each
+/// `__next__` call is O(1) — no per-step re-collection or cloning.
 struct DictKeyIterator {
-    dict_handle: ObjectHandle,
+    keys: Vec<ObjectHandle>,
     index: usize,
 }
 
 impl ToNativeData for DictKeyIterator {
     fn mark_inner_object(&self, heap: &mut ObjectHeap) {
-        heap.mark_object(self.dict_handle);
+        for &key in &self.keys {
+            heap.mark_object(key);
+        }
     }
 }
 
@@ -189,27 +194,20 @@ impl ObjectDict {
     // ---- iteration protocol ----
 
     pub fn __iter__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
-        let iter = DictKeyIterator { dict_handle: receiver, index: 0 };
+        let keys: Vec<ObjectHandle> = vm.get_dict_instance(receiver)?
+            .values()
+            .flat_map(|b| b.iter().map(|&(k, _)| k))
+            .collect();
         Ok(vm.obj_heap.alloc_instance(
             vm.obj_heap.dict_iter_class,
-            ObjectInstanceData::Native(NativeData::new(iter)),
+            ObjectInstanceData::Native(NativeData::new(DictKeyIterator { keys, index: 0 })),
         ))
     }
 
     pub fn iter_next(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
-        let dict_handle = {
-            let iter = vm.get_native::<DictKeyIterator>(receiver)?;
-            iter.dict_handle
-        };
-
-        let keys: Vec<ObjectHandle> = vm.get_dict_instance(dict_handle)?
-            .values()
-            .flat_map(|b| b.iter().map(|&(k, _)| k))
-            .collect();
-
         let iter = vm.get_native_mut::<DictKeyIterator>(receiver)?;
-        if iter.index < keys.len() {
-            let key = keys[iter.index];
+        if iter.index < iter.keys.len() {
+            let key = iter.keys[iter.index];
             iter.index += 1;
             Ok(key)
         } else {
