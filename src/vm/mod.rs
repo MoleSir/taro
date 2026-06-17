@@ -97,31 +97,39 @@ impl VirtualMachine {
     /// globals, then return a module object containing the top-level
     /// definitions (everything except the builtins).
     pub fn import_module(&mut self, path: &str) -> ExecuteResult<ObjectHandle> {
-        // 0. Virtual std/ modules — no file on disk.
+        // Virtual std/ modules — no file on disk.
         if let Some(module_name) = path.strip_prefix("std/") {
             return self.import_std_module(module_name);
         }
 
-        // 1. Read file content.
+        // Read file content.
         let source = std::fs::read_to_string(path)
             .map_err(|e| ExecuteError::ImportError(format!("cannot read '{path}': {e}")))?;
 
-        // 2. Compile the module source (uses local scope so nested functions
-        //    capture module-level names as upvalues).
-        let function = crate::compile::compile_module(&source, &mut self.obj_heap)
-            .map_err(|e| ExecuteError::ImportError(format!("compile error in '{path}': {e:?}")))?;
+        self.import_source_module(&source, path)
+    }
 
-        // 3. Save current VM execution state.
+    /// Compile `source` as a module and execute it in an isolated scope,
+    /// returning a module object with the top-level definitions.
+    ///
+    /// `display_name` is used only in error messages.
+    fn import_source_module(&mut self, source: &str, display_name: &str) -> ExecuteResult<ObjectHandle> {
+        // 1. Compile the module source (uses local scope so nested functions
+        //    capture module-level names as upvalues).
+        let function = crate::compile::compile_module(source, &mut self.obj_heap)
+            .map_err(|e| ExecuteError::ImportError(format!("compile error in '{display_name}': {e:?}")))?;
+
+        // 2. Save current VM execution state.
         let saved_frames = std::mem::take(&mut self.frames);
         let saved_stack = std::mem::take(&mut self.stack);
         let saved_globals = std::mem::take(&mut self.globals);
         let saved_upvalues = std::mem::take(&mut self.open_upvalues);
         let saved_gc_threshold = self.gc_threshold;
 
-        // 4. Prevent GC from running while saved state is unreachable from VM roots.
+        // 3. Prevent GC from running while saved state is unreachable from VM roots.
         self.gc_threshold = usize::MAX;
 
-        // 5. Populate extra_gc_roots so the GC (which always runs in test /
+        // 4. Populate extra_gc_roots so the GC (which always runs in test /
         //    gc-stress mode) keeps the importing script's state alive while the
         //    module executes.
         self.extra_gc_roots.clear();
@@ -134,19 +142,19 @@ impl VirtualMachine {
         }
         self.extra_gc_roots.extend_from_slice(&saved_upvalues);
 
-        // 6. Set up fresh globals with builtins only (module top-level
+        // 5. Set up fresh globals with builtins only (module top-level
         //    definitions use locals, but builtin functions like `print` still
         //    need to be accessible as globals).
         self.register_builtins();
 
-        // 7. Execute the module function.
+        // 6. Execute the module function.
         let result = self.interpret_function(function);
 
-        // 8. The module function returns a dict containing its top-level
+        // 7. The module function returns a dict containing its top-level
         //    definitions.  Grab it from the stack before restoring state.
         let exports_dict = self.pop_stack().unwrap_or(ObjectHandle::NIL);
 
-        // 9. Restore original VM state.
+        // 8. Restore original VM state.
         self.frames = saved_frames;
         self.stack = saved_stack;
         self.open_upvalues = saved_upvalues;
@@ -154,12 +162,12 @@ impl VirtualMachine {
         self.gc_threshold = saved_gc_threshold;
         self.extra_gc_roots.clear();
 
-        // 10. Propagate execution errors.
+        // 9. Propagate execution errors.
         result.map_err(|e| {
-            ExecuteError::ImportError(format!("error in module '{path}': {e}"))
+            ExecuteError::ImportError(format!("error in module '{display_name}': {e}"))
         })?;
 
-        // 11. Convert the dict into a fields instance.
+        // 10. Convert the dict into a fields instance.
         let exports: HashMap<ShrString, ObjectHandle> = if let Some(entries) = self.obj_heap.get_dict_instance(exports_dict) {
             entries.values().flat_map(|bucket| bucket.iter().map(|&(k, v)| {
                 let key = self.obj_heap.get_string_instance(k)
@@ -171,7 +179,7 @@ impl VirtualMachine {
             HashMap::new()
         };
 
-        // 12. Create module object with exported names as fields.
+        // 11. Create module object with exported names as fields.
         let module = self.obj_heap.alloc_fields_instance(self.obj_heap.module_class, exports);
         Ok(module)
     }
@@ -593,6 +601,10 @@ impl VirtualMachine {
     pub fn import_std_module(&mut self, module_name: &str) -> ExecuteResult<ObjectHandle> {
         match module_name {
             "fs" => self.create_fs_module(),
+            "itertools" => {
+                let source = include_str!("../std/itertools.taro");
+                self.import_source_module(source, "std/itertools")
+            }
             "json" => self.create_json_module(),
             "math" => self.create_math_module(),
             "net" => self.create_net_module(),

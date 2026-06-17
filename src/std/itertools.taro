@@ -1,0 +1,326 @@
+// itertools — pure-taro lazy iterator utilities.
+//
+// Usage:  import "std/itertools" as it;
+//
+// All lazy iterators implement the iteration protocol:
+//   __iter__() → self
+//   __next__() → next value, or IterEnd when exhausted
+//
+// They work directly in for-in loops and compose with each other.
+//
+// Note: is_iter_end() is a builtin that checks for the IterEnd sentinel.
+// The expression `item == IterEnd` does NOT work because IterEnd is not
+// an Instance and taro's __eq__ magic dispatch requires both operands
+// to be Instances.
+
+// ==========================================================================
+//  Lazy iterator classes
+// ==========================================================================
+
+/// `map(fn, source)` — apply fn to each element.
+class MapIter {
+    fun __init__(self, fn, source) {
+        self.fn = fn;
+        self.inner = source.__iter__();
+    }
+    fun __iter__(self) { return self; }
+    fun __next__(self) {
+        var item = self.inner.__next__();
+        if (is_iter_end(item)) { return IterEnd; }
+        return self.fn(item);
+    }
+}
+
+/// `filter(fn, source)` — keep elements where fn(elem) is truthy.
+class FilterIter {
+    fun __init__(self, fn, source) {
+        self.fn = fn;
+        self.inner = source.__iter__();
+    }
+    fun __iter__(self) { return self; }
+    fun __next__(self) {
+        var item = self.inner.__next__();
+        while (!is_iter_end(item)) {
+            if (self.fn(item)) { return item; }
+            item = self.inner.__next__();
+        }
+        return IterEnd;
+    }
+}
+
+/// `enumerate(source, start)` — yield [index, value] pairs.
+class EnumerateIter {
+    fun __init__(self, source, start) {
+        self.inner = source.__iter__();
+        self.index = start;
+    }
+    fun __iter__(self) { return self; }
+    fun __next__(self) {
+        var item = self.inner.__next__();
+        if (is_iter_end(item)) { return IterEnd; }
+        var pair = [self.index, item];
+        self.index = self.index + 1;
+        return pair;
+    }
+}
+
+/// `zip(left, right)` — pair elements from two iterables; stops at the
+/// shorter one.
+class ZipIter {
+    fun __init__(self, left, right) {
+        self.left = left.__iter__();
+        self.right = right.__iter__();
+    }
+    fun __iter__(self) { return self; }
+    fun __next__(self) {
+        var a = self.left.__next__();
+        if (is_iter_end(a)) { return IterEnd; }
+        var b = self.right.__next__();
+        if (is_iter_end(b)) { return IterEnd; }
+        return [a, b];
+    }
+}
+
+/// `chain(first, second)` — exhaust `first`, then `second`.
+class ChainIter {
+    fun __init__(self, first, second) {
+        self.first = first.__iter__();
+        self.second = second.__iter__();
+        self.on_first = true;
+    }
+    fun __iter__(self) { return self; }
+    fun __next__(self) {
+        if (self.on_first) {
+            var item = self.first.__next__();
+            if (!is_iter_end(item)) { return item; }
+            self.on_first = false;
+        }
+        return self.second.__next__();
+    }
+}
+
+/// `take(n, source)` — yield at most `n` elements.
+class TakeIter {
+    fun __init__(self, n, source) {
+        self.n = n;
+        self.inner = source.__iter__();
+    }
+    fun __iter__(self) { return self; }
+    fun __next__(self) {
+        if (self.n <= 0) { return IterEnd; }
+        self.n = self.n - 1;
+        return self.inner.__next__();
+    }
+}
+
+/// `drop(n, source)` — skip the first `n` elements.
+class DropIter {
+    fun __init__(self, n, source) {
+        self.inner = source.__iter__();
+        var i = 0;
+        var item = nil;  // declared outside loop (compiler slot-reuse bug)
+        while (i < n) {
+            item = self.inner.__next__();
+            if (is_iter_end(item)) { break; }
+            i = i + 1;
+        }
+    }
+    fun __iter__(self) { return self; }
+    fun __next__(self) {
+        return self.inner.__next__();
+    }
+}
+
+/// `flatten(source)` — yield elements from each inner iterable in turn.
+class FlattenIter {
+    fun __init__(self, source) {
+        self.outer = source.__iter__();
+        self.inner = nil;
+    }
+    fun __iter__(self) { return self; }
+    fun __next__(self) {
+        // Try the current inner iterator if we have one.
+        if (self.inner != nil) {
+            var item = self.inner.__next__();
+            if (!is_iter_end(item)) { return item; }
+            self.inner = nil;
+        }
+        // Advance to the next non-empty inner iterator.
+        // Declared outside the while loop to avoid compiler slot-reuse bug.
+        var sub = nil;
+        var item = nil;
+        while (self.inner == nil) {
+            sub = self.outer.__next__();
+            if (is_iter_end(sub)) { return IterEnd; }
+            self.inner = sub.__iter__();
+            item = self.inner.__next__();
+            if (!is_iter_end(item)) { return item; }
+            self.inner = nil;
+        }
+        return IterEnd;
+    }
+}
+
+/// `cycle(source)` — repeat an iterable endlessly.
+/// Must be stopped with `break`; returns IterEnd immediately for empty
+/// sources.
+class CycleIter {
+    fun __init__(self, source) {
+        self.source = source;
+        self.inner = source.__iter__();
+        self.started = false;
+    }
+    fun __iter__(self) { return self; }
+    fun __next__(self) {
+        var item = self.inner.__next__();
+        if (!is_iter_end(item)) {
+            self.started = true;
+            return item;
+        }
+        // Exhausted — restart if we ever yielded anything.
+        if (!self.started) { return IterEnd; }
+        self.inner = self.source.__iter__();
+        var item2 = self.inner.__next__();
+        if (is_iter_end(item2)) { return IterEnd; }
+        return item2;
+    }
+}
+
+/// `count(start, step)` — infinite arithmetic progression.
+/// Must be stopped with `break`.
+class CountIter {
+    fun __init__(self, start, step) {
+        self.current = start;
+        self.step = step;
+    }
+    fun __iter__(self) { return self; }
+    fun __next__(self) {
+        var val = self.current;
+        self.current = self.current + self.step;
+        return val;
+    }
+}
+
+/// `repeat(value, n)` — repeat `value` `n` times.
+/// Pass `n < 0` for infinite repetition (must be stopped with `break`).
+class RepeatIter {
+    fun __init__(self, value, n) {
+        self.value = value;
+        self.n = n;
+    }
+    fun __iter__(self) { return self; }
+    fun __next__(self) {
+        if (self.n == 0) { return IterEnd; }
+        if (self.n > 0) {
+            self.n = self.n - 1;
+        }
+        return self.value;
+    }
+}
+
+// ==========================================================================
+//  Constructor functions
+// ==========================================================================
+
+fun map(fn, source)         { return MapIter(fn, source); }
+fun filter(fn, source)      { return FilterIter(fn, source); }
+fun enumerate(source, start) { return EnumerateIter(source, start); }
+fun zip(left, right)        { return ZipIter(left, right); }
+fun chain(first, second)    { return ChainIter(first, second); }
+fun take(n, source)         { return TakeIter(n, source); }
+fun drop(n, source)         { return DropIter(n, source); }
+fun flatten(source)         { return FlattenIter(source); }
+fun cycle(source)           { return CycleIter(source); }
+fun count(start, step)      { return CountIter(start, step); }
+fun repeat(value, n)        { return RepeatIter(value, n); }
+
+// ==========================================================================
+//  Eager consumers
+// ==========================================================================
+
+/// `collect(iterable)` — collect all elements into a list.
+fun collect(iterable) {
+    var result = [];
+    for item in iterable {
+        result.append(item);
+    }
+    return result;
+}
+
+/// `reduce(fn, iterable, init)` — left fold.
+/// `fn(accumulator, element)` is called for each element.
+fun reduce(fn, iterable, init) {
+    var acc = init;
+    for item in iterable {
+        acc = fn(acc, item);
+    }
+    return acc;
+}
+
+/// `all(iterable)` — true if every element is truthy.
+fun all(iterable) {
+    for item in iterable {
+        if (!item) { return false; }
+    }
+    return true;
+}
+
+/// `any(iterable)` — true if any element is truthy.
+fun any(iterable) {
+    for item in iterable {
+        if (item) { return true; }
+    }
+    return false;
+}
+
+/// `find(iterable, fn)` — first element where `fn(elem)` is truthy, or nil.
+fun find(iterable, fn) {
+    for item in iterable {
+        if (fn(item)) { return item; }
+    }
+    return nil;
+}
+
+/// `nth(iterable, n)` — nth element (0-based), or nil if out of range.
+fun nth(iterable, n) {
+    var i = 0;
+    for item in iterable {
+        if (i == n) { return item; }
+        i = i + 1;
+    }
+    return nil;
+}
+
+/// `sorted(iterable, key)` — return a new sorted list.
+/// `key` is an optional key-extraction function; pass `nil` to compare
+/// elements directly.  Uses insertion sort (stable).
+///
+///     sorted([3,1,2], nil)          → [1,2,3]
+///     sorted(["ab","","xyz"], len)  → ["","ab","xyz"]
+fun sorted(iterable, key) {
+    var items = collect(iterable);
+    var n = len(items);
+    var i = 1;
+    // Declared outside inner while loop to avoid compiler slot-reuse bug
+    // when `var` is used inside a while-loop body.
+    var prev = nil;
+    var prev_key = nil;
+    while (i < n) {
+        var cur = items[i];
+        var cur_key = cur;
+        if (key != nil) { cur_key = key(cur); }
+        var j = i - 1;
+        while (j >= 0) {
+            prev = items[j];
+            prev_key = prev;
+            if (key != nil) { prev_key = key(prev); }
+            // Stop on prev_key <= cur_key (stable — don't swap equal keys).
+            if (!(cur_key < prev_key)) { break; }
+            items[j + 1] = prev;
+            j = j - 1;
+        }
+        items[j + 1] = cur;
+        i = i + 1;
+    }
+    return items;
+}

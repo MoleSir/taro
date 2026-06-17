@@ -308,6 +308,7 @@ Comparison fallback mechanism: `!=` works with only `__eq__`, `>=` works with on
 | `clock()` | Wall-clock time in seconds since Unix epoch (as float). |
 | `list(a, b, ...)` | Create a list from the given arguments (variadic). |
 | `dict()` | Create an empty dict. |
+| `is_iter_end(value)` | Return `true` if the value is the `IterEnd` sentinel (used to detect end of iteration in custom iterators). |
 
 ## Builtin methods
 
@@ -360,13 +361,14 @@ Module globals do not leak — `PI` is only accessible via `math.PI`.
 
 | Module | Description |
 |--------|-------------|
-| `std/math`   | Constants, trig, logarithms, rounding, angle conversion |
-| `std/fs`     | File I/O — `File` class + standalone convenience functions |
-| `std/random` | Random numbers, randint, uniform, choice, shuffle |
-| `std/net`    | TCP networking — `Socket` client + `Server` listener |
-| `std/os`     | Environment variables, process info, working directory, shell commands |
-| `std/time`   | Unix timestamp, sleep, structured UTC time |
-| `std/json`   | JSON encoding (serialize) and decoding (parse) |
+| `std/math`     | Constants, trig, logarithms, rounding, angle conversion |
+| `std/fs`       | File I/O — `File` class + standalone convenience functions |
+| `std/random`   | Random numbers, randint, uniform, choice, shuffle |
+| `std/net`      | TCP networking — `Socket` client + `Server` listener |
+| `std/os`       | Environment variables, process info, working directory, shell commands |
+| `std/time`     | Unix timestamp, sleep, structured UTC time |
+| `std/json`     | JSON encoding (serialize) and decoding (parse) |
+| `std/itertools`| Lazy iterators — map, filter, zip, chain, take, drop, …  (pure taro) |
 
 ### `std/math`
 
@@ -641,3 +643,96 @@ print(decoded["b"][1]);               // 3
 | `Set` → `[...]` (as array) | — |
 
 NaN and Infinity are encoded as `null` (JSON does not support them). Dict keys must be strings; non-string keys cause an error.
+
+### `std/itertools`
+
+Pure-taro lazy iterator library. All lazy iterators implement the iteration protocol
+(`__iter__` / `__next__`) and work directly in `for`-`in` loops. The library is implemented
+in taro itself (`src/std/itertools.taro`), compiled and executed at import time.
+
+```taro
+import "std/itertools" as it;
+
+// ---- Lazy iterators (work in for-in, compose with each other) ----
+it.map(fn, source)            // apply fn to each element
+it.filter(fn, source)         // keep elements where fn(elem) is truthy
+it.enumerate(source, start)   // yield [index, value] pairs
+it.zip(left, right)           // pair elements from two iterables; stops at shorter
+it.chain(first, second)       // exhaust first, then second
+it.take(n, source)            // yield at most n elements
+it.drop(n, source)            // skip the first n elements
+it.flatten(source)            // yield elements from each inner iterable
+it.cycle(source)              // repeat an iterable endlessly (use with `break`)
+it.count(start, step)         // infinite arithmetic progression (use with `break`)
+it.repeat(value, n)           // repeat value n times (n < 0 = infinite)
+
+// ---- Eager consumers ----
+it.collect(iterable)          // collect all elements into a list
+it.reduce(fn, iterable, init) // left fold
+it.all(iterable)              // true if every element is truthy (empty → true)
+it.any(iterable)              // true if any element is truthy (empty → false)
+it.find(iterable, fn)         // first element where fn(elem) is truthy, or nil
+it.nth(iterable, n)           // nth element (0-based), or nil if out of range
+it.sorted(iterable, key)      // new sorted list (insertion sort, stable);
+                              // pass `nil` for key to compare elements directly
+```
+
+| Lazy iterator | Description |
+|---------------|-------------|
+| `map(fn, source)` | Apply `fn` to each element. |
+| `filter(fn, source)` | Keep elements where `fn(elem)` is truthy. |
+| `enumerate(source, start)` | Yield `[index, value]` pairs. |
+| `zip(left, right)` | Pair elements from two iterables; stops at the shorter one. |
+| `chain(first, second)` | Exhaust `first`, then `second`. |
+| `take(n, source)` | Yield at most `n` elements. |
+| `drop(n, source)` | Skip the first `n` elements. |
+| `flatten(source)` | Yield elements from each inner iterable in turn (one level). |
+| `cycle(source)` | Repeat an iterable endlessly (empty source yields nothing). |
+| `count(start, step)` | Infinite arithmetic progression `start`, `start+step`, … |
+| `repeat(value, n)` | Repeat `value` `n` times (`n < 0` for infinite). |
+
+| Eager consumer | Description |
+|----------------|-------------|
+| `collect(iterable)` | Collect all elements into a list. |
+| `reduce(fn, iterable, init)` | Left fold: `fn(acc, elem)` for each element. |
+| `all(iterable)` | `true` if every element is truthy (empty → `true`). |
+| `any(iterable)` | `true` if any element is truthy (empty → `false`). |
+| `find(iterable, fn)` | First element where `fn(elem)` is truthy, or `nil`. |
+| `nth(iterable, n)` | Nth element (0-based), or `nil` if out of range. |
+| `sorted(iterable, key)` | Return a new sorted list. `key` is an optional extraction function (`nil` for identity). Uses stable insertion sort. |
+
+**Examples:**
+
+```taro
+import "std/itertools" as it;
+
+// Map and filter
+var squares = it.map(fun(x) { return x * x; }, [1, 2, 3]);
+print(it.collect(squares));                    // [1, 4, 9]
+
+// Composition pipeline
+var pipeline = it.take(2, it.map(fun(x) { return x * x; },
+                      it.filter(fun(x) { return x % 2 == 0; }, [1..6])));
+print(it.collect(pipeline));                   // [4, 16]
+
+// Zip and enumerate
+for pair in it.zip(["a", "b"], [1, 2]) {
+    print(pair);                               // ["a", 1], ["b", 2]
+}
+
+// Sorting
+print(it.sorted([3, 1, 4, 1, 5, 9], nil));    // [1, 1, 3, 4, 5, 9]
+print(it.sorted(["xyz", "a", "bc"], len));     // ["a", "bc", "xyz"]
+
+// Infinite + break
+var i = 0;
+for x in it.count(10, 3) {
+    print(x);                                  // 10, 13, 16, 19, 22
+    i = i + 1;
+    if (i >= 5) { break; }
+}
+```
+
+**Design note:** `item == IterEnd` does **not** work in taro because `IterEnd` is not
+an `Instance` and `__eq__` magic dispatch requires both operands to be Instances.
+Use the `is_iter_end(value)` builtin instead when writing custom iterators.

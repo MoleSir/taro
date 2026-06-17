@@ -30,18 +30,13 @@ src/
     ├── gc.rs                 # GC threshold & trigger
     ├── utils.rs              # VM utility helpers (get_args, value_type_name)
     ├── magic.rs              # Magic method bindings (__add__, __getitem__, …)
-    ├── builtin/              # Builtin method & standalone function implementations
-    │   ├── mod.rs            #   Registration dispatcher (register_builtins / register_builtins_class_method)
-    │   ├── bool.rs           #   Bool methods (__neg__, __add__, __sub__, __eq__, __str__, …)
-    │   ├── int.rs            #   Int arithmetic & comparison macros
-    │   ├── float.rs          #   Float arithmetic & comparison macros
-    │   ├── string.rs         #   String methods (__add__, __getitem__, __len__, __eq__, …)
-    │   ├── list.rs           #   List methods (append, pop, extend, __getitem__, __setitem__, __len__, …)
-    │   ├── dict.rs           #   Dict methods (get, pop, keys, values, __getitem__, __setitem__, __len__, …)
-    │   └── function.rs       #   Global functions (print, str, len, type, min, max, abs, input, clock)
+    ├── builtin.rs            # Global built-in functions & class registration
+    │                         #   (print, str, len, type, abs, min, max, input, clock,
+    │                         #    is_iter_end, int, float, bool, list, dict, set, exit)
     ├── std/                  # Virtual std modules (no .taro file needed)
     │   ├── mod.rs            #   import_std_module dispatcher
     │   ├── fs.rs             #   std/fs — File class + standalone fs functions
+    │   ├── itertools.taro    #   std/itertools — lazy iterators (pure taro)
     │   ├── json.rs           #   std/json — JSON encode/decode via serde_json
     │   ├── math.rs           #   std/math — trig, log, rounding, conversion + constants
     │   ├── net.rs            #   std/net — TCP Socket client + Server listener
@@ -68,7 +63,8 @@ tests/scripts/                # Integration test scripts
 ├── 22_std_random.taro       # std/random integration tests
 ├── 23_std_os.taro           # std/os integration tests
 ├── 24_std_time.taro         # std/time integration tests
-└── 25_std_json.taro         # std/json integration tests
+├── 25_std_json.taro         # std/json integration tests
+└── 26_std_itertools.taro    # std/itertools integration tests
 tests/scripts/lib/           # File-based modules used by import tests
 └── math.taro                #   Sample module (add, mul, PI, Vec class)
 examples/                    # Runnable example scripts

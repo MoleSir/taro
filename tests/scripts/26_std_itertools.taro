@@ -1,0 +1,123 @@
+// Std module tests — itertools (pure-taro lazy iterators)
+
+import "std/itertools" as it;
+
+// Helpers
+fun square(x) { return x * x; }
+fun is_even(x) { return x % 2 == 0; }
+fun gt2(x) { return x > 2; }
+fun gt10(x) { return x > 10; }
+fun add(a, b) { return a + b; }
+fun neg(x) { return -x; }
+
+// === 1. Import ===
+print("=== import ===");
+print(it != nil);  // true
+
+// === 2. map ===
+print("=== map ===");
+print(it.collect(it.map(square, [1, 2, 3])) == [1, 4, 9]);
+
+// === 3. filter ===
+print("=== filter ===");
+print(it.collect(it.filter(is_even, [1, 2, 3, 4, 5, 6])) == [2, 4, 6]);
+
+// === 4. enumerate ===
+print("=== enumerate ===");
+print(it.collect(it.enumerate(["a", "b", "c"], 0)) == [[0, "a"], [1, "b"], [2, "c"]]);
+print(it.collect(it.enumerate(["x"], 5)) == [[5, "x"]]);
+
+// === 5. zip ===
+print("=== zip ===");
+print(it.collect(it.zip([1, 2, 3], ["a", "b", "c"])) == [[1, "a"], [2, "b"], [3, "c"]]);
+print(it.collect(it.zip([1, 2], ["a", "b", "c"])) == [[1, "a"], [2, "b"]]);
+print(it.collect(it.zip([1, 2, 3], ["a"])) == [[1, "a"]]);
+
+// === 6. chain ===
+print("=== chain ===");
+print(it.collect(it.chain([1, 2], [3, 4, 5])) == [1, 2, 3, 4, 5]);
+print(it.collect(it.chain([], [1, 2, 3])) == [1, 2, 3]);
+print(it.collect(it.chain([1, 2], [])) == [1, 2]);
+
+// === 7. take ===
+print("=== take ===");
+print(it.collect(it.take(3, [10, 20, 30, 40, 50])) == [10, 20, 30]);
+print(it.collect(it.take(0, [1, 2, 3])) == []);
+print(it.collect(it.take(5, [1, 2])) == [1, 2]);
+
+// === 8. drop ===
+print("=== drop ===");
+print(it.collect(it.drop(2, [10, 20, 30, 40])) == [30, 40]);
+print(it.collect(it.drop(0, [1, 2, 3])) == [1, 2, 3]);
+print(it.collect(it.drop(5, [1, 2])) == []);
+
+// === 9. flatten ===
+print("=== flatten ===");
+print(it.collect(it.flatten([[1, 2], [3], [4, 5]])) == [1, 2, 3, 4, 5]);
+print(it.collect(it.flatten([[], [1], []])) == [1]);
+
+// === 10. count ===
+print("=== count ===");
+print(it.collect(it.take(4, it.count(10, 3))) == [10, 13, 16, 19]);
+
+// === 11. repeat ===
+print("=== repeat ===");
+print(it.collect(it.repeat("hi", 3)) == ["hi", "hi", "hi"]);
+print(it.collect(it.repeat(42, 0)) == []);
+
+// === 12. cycle ===
+print("=== cycle ===");
+print(it.collect(it.take(5, it.cycle([1, 2]))) == [1, 2, 1, 2, 1]);
+print(it.collect(it.take(0, it.cycle([1, 2]))) == []);
+
+// === 13. reduce ===
+print("=== reduce ===");
+print(it.reduce(add, [1, 2, 3, 4], 0) == 10);
+print(it.reduce(add, [1, 2, 3], 10) == 16);
+
+// === 14. all ===
+print("=== all ===");
+print(it.all([true, 1, "hi"]) == true);
+print(it.all([true, false, 1]) == false);
+print(it.all([]) == true);
+
+// === 15. any ===
+print("=== any ===");
+print(it.any([false, 0, nil]) == false);
+print(it.any([false, 0, 1]) == true);
+print(it.any([]) == false);
+
+// === 16. find ===
+print("=== find ===");
+print(it.find([1, 2, 3, 4], gt2) == 3);
+print(it.find([1, 2, 3], gt10) == nil);
+
+// === 17. nth ===
+print("=== nth ===");
+print(it.nth([10, 20, 30], 0) == 10);
+print(it.nth([10, 20, 30], 1) == 20);
+print(it.nth([10, 20, 30], 5) == nil);
+
+// === 18. sorted ===
+print("=== sorted ===");
+print(it.sorted([3, 1, 4, 1, 5, 9], nil) == [1, 1, 3, 4, 5, 9]);
+// Stable: equal keys keep original order.
+// sorted by length
+print(it.sorted(["xyz", "a", "bc", "defg"], len) == ["a", "bc", "xyz", "defg"]);
+// key function for descending
+print(it.sorted([3, 1, 4, 2], neg) == [4, 3, 2, 1]);
+
+// === 19. for-in over lazy iterator ===
+print("=== for-in ===");
+var acc = [];
+for x in it.map(square, [10, 20, 30]) {
+    acc.append(x);
+}
+print(acc == [100, 400, 900]);
+
+// === 20. composition ===
+print("=== composition ===");
+var pipeline = it.take(2, it.map(square, it.filter(is_even, [1, 2, 3, 4, 5, 6])));
+print(it.collect(pipeline) == [4, 16]);
+
+print("itertools done");

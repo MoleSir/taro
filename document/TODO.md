@@ -14,7 +14,7 @@
   - [x] time
   - [x] json
   - [ ] strutil
-  - [ ] itertools
+  - [x] itertools
   - [ ] path
   - [ ] logging
   - [ ] argparse

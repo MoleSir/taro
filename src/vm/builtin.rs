@@ -35,6 +35,9 @@ impl VirtualMachine {
 
         // IterEnd sentinel — signals end of iteration in __next__.
         self.globals.insert("IterEnd".into(), ObjectHandle::ITER_END);
+        self.register_native_fn("is_iter_end", NativeFunction::a1(VirtualMachine::is_iter_end));
+        self.register_native_fn("iter",   NativeFunction::a1(VirtualMachine::iter));
+        self.register_native_fn("next",   NativeFunction::a1(VirtualMachine::next));
     }
 
     pub(crate) fn register_native_method(&mut self, class_handle: ObjectHandle, name: &'static str, function: impl Into<NativeFunction>) {
@@ -139,6 +142,19 @@ impl VirtualMachine {
     pub fn len(&mut self, arg: ObjectHandle) -> ExecuteResult<ObjectHandle> {
         let n = self.__len__(arg)?;
         Ok(self.obj_heap.alloc_integer_instance(n))
+    }
+
+    /// `is_iter_end(value)` — return true if value is the iteration-end sentinel.
+    pub fn is_iter_end(&mut self, value: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        Ok(self.obj_heap.alloc_bool_instance(value.is_iter_end()))
+    }
+
+    pub fn next(&mut self, iterator: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        self.__next__(iterator)
+    }
+
+    pub fn iter(&mut self, iterator: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        self.__iter__(iterator)
     }
 
     pub fn str(&mut self, arg: ObjectHandle) -> ExecuteResult<ObjectHandle> {
