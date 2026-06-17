@@ -424,7 +424,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "taro"
+name = "taro-lang"
 version = "0.1.0"
 dependencies = [
  "anyhow",

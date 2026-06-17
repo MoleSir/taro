@@ -13,8 +13,8 @@ use std::io::{self, IsTerminal};
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use taro::compile::CompileError;
-use taro::vm::{InterpretError, VirtualMachine};
+use taro_lang::compile::CompileError;
+use taro_lang::vm::{ExecuteError, InterpretError, VirtualMachine};
 
 // ── constants ────────────────────────────────────────────────────────────────
 
@@ -255,7 +255,7 @@ fn run_command(code: &str) -> Result<(), InterpretError> {
 
 fn run_stdin() -> Result<(), InterpretError> {
     let source = io::read_to_string(io::stdin()).map_err(|e| {
-        InterpretError::Runtime(taro::vm::ExecuteError::IoError(format!(
+        InterpretError::Runtime(ExecuteError::IoError(format!(
             "failed to read stdin: {e}"
         )))
     })?;

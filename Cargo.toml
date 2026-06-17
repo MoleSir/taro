@@ -1,7 +1,11 @@
 [package]
-name = "taro"
+name = "taro-lang"
 version = "0.1.0"
 edition = "2024"
+description = "A dynamically-typed scripting language"
+repository = "https://github.com/MoleSir/taro"
+license-file = "LICENSE"
+keywords = [ "vm", "interpreter", "language" ]
 
 [[bin]]
 name = "taro"
