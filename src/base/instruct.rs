@@ -1,6 +1,5 @@
 use num_enum::TryFromPrimitive;
-
-use super::{ObjectHandle, ShrString};
+use crate::{ObjectHandle, ShrString};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, TryFromPrimitive)]
 #[repr(u8)]

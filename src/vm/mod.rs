@@ -1,6 +1,5 @@
 mod magic;
 mod builtin;
-mod stdlib;
 mod error;
 mod gc;
 mod utils;
@@ -64,7 +63,6 @@ impl VirtualMachine {
             extra_gc_roots: vec![],
         };
         vm.register_builtins();
-        vm.register_builtins_class_method();
         vm
     }
 
@@ -591,6 +589,23 @@ impl VirtualMachine {
 
         self.frame_mut()?.ip = ip;
         Ok(())
+    }
+
+    /// Handle virtual std module imports.
+    ///
+    /// Returns a module instance (Instance with Fields) containing the module's
+    /// exports — just like a real file-based module would.  The returned value
+    /// is indistinguishable from a compiled `.taro` module.
+    pub fn import_std_module(&mut self, module_name: &str) -> ExecuteResult<ObjectHandle> {
+        match module_name {
+            "fs" => self.create_fs_module(),
+            "math" => self.create_math_module(),
+            "net" => self.create_net_module(),
+            "random" => self.create_random_module(),
+            _ => Err(ExecuteError::ImportError(format!(
+                "unknown std module '{module_name}'"
+            ))),
+        }
     }
 
     /// Invoke a method on a receiver synchronously, running its bytecode

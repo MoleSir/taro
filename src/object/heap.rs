@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::LazyLock};
 
 use crate::{Chunk, ShrString};
-use super::{NativeFunction, Method, Object, ObjectBoundMethod, ObjectNativeFn, ObjectClass, ObjectClosure, ObjectFunction, ObjectInstance, ObjectInstanceData, ObjectUpvalue};
+use super::{NativeFunction, Method, Object, ObjectBoundMethod, ObjectNativeFn, ObjectClass, ObjectClosure, ObjectFunction, ObjectInstance, ObjectInstanceData, ObjectUpvalue, register_int_builtins, register_float_builtins, register_bool_builtins, register_string_builtins, register_list_builtins, register_dict_builtins, register_set_builtins};
 
 /// Static nil object — backing for `ObjectHandle::NIL`.
 static NIL_OBJECT: LazyLock<Object> = LazyLock::new(|| {
@@ -114,6 +114,15 @@ impl ObjectHeap {
         heap.true_instance = heap.alloc_instance(heap.bool_class, ObjectInstanceData::Bool(true));
         heap.false_instance = heap.alloc_instance(heap.bool_class, ObjectInstanceData::Bool(false));
 
+        // Register built-in class magic methods during heap init.
+        register_int_builtins(&mut heap);
+        register_float_builtins(&mut heap);
+        register_bool_builtins(&mut heap);
+        register_string_builtins(&mut heap);
+        register_list_builtins(&mut heap);
+        register_dict_builtins(&mut heap);
+        register_set_builtins(&mut heap);
+
         heap
     }
 }
@@ -138,8 +147,8 @@ impl ObjectHeap {
         self.alloc(obj)
     }
 
-    pub fn alloc_native_fn(&mut self, name: impl Into<ShrString>, function: NativeFunction) -> ObjectHandle {
-        let obj = ObjectNativeFn::new(name, function);
+    pub fn alloc_native_fn(&mut self, name: impl Into<ShrString>, function: impl Into<NativeFunction>) -> ObjectHandle {
+        let obj = ObjectNativeFn::new(name, function.into());
         self.alloc(obj)
     }
 
@@ -208,6 +217,13 @@ impl ObjectHeap {
     #[inline]
     pub fn alloc_set_instance(&mut self, items: HashMap<u64, Vec<ObjectHandle>>) -> ObjectHandle {
         self.alloc_instance(self.set_class, ObjectInstanceData::Set(items))
+    }
+
+    /// Register a native method on a builtin class.
+    pub fn register_native_method(&mut self, class_handle: ObjectHandle, name: &'static str, function: NativeFunction) {
+        let handle = self.alloc_native_fn(name, function);
+        let class = self.get_class_mut(class_handle).expect("class");
+        class.methods.insert(name.into(), Method::Native(handle));
     }
 
     fn alloc(&mut self, obj: impl Into<Object>) -> ObjectHandle {

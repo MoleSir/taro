@@ -1,4 +1,4 @@
-use super::{ByteCode, Instruction, Object, ObjectHandle, ObjectHeap, ObjectInstanceData, ShrString};
+use crate::{ByteCode, Instruction, Object, ObjectHandle, ObjectHeap, ObjectInstanceData, ShrString};
 
 // ========================================================================== //
 //  ChunkError

@@ -1,7 +1,9 @@
 mod variants;
 mod heap;
+mod instance;
 pub use variants::*;
 pub use heap::*;
+pub use instance::*;
 
 pub enum Object {
     Function(ObjectFunction),

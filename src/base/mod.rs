@@ -4,5 +4,3 @@ mod chunk;
 pub use chunk::*;
 mod string;
 pub use string::*;
-mod object;
-pub use object::*;
