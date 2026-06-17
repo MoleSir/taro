@@ -50,7 +50,7 @@ class TaroWeb {
         print("TaroWeb is running on http://127.0.0.1:" + str(port));
         print("Press Ctrl+C to stop.");
 
-        while (true) {
+        while true {
             var client = server.accept();
             var req_data = client.recv(1024);
             

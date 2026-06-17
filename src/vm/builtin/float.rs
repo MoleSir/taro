@@ -57,6 +57,32 @@ impl VirtualMachine {
         Err(ExecuteError::BinaryOpTypeMismatch("div", "float", self.value_type_name(rhs)))
     }
 
+    pub fn float_floordiv(&mut self, lhs: ObjectHandle, rhs: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let lhs_val = *self.get_float_instance(lhs)?;
+        if let Ok(rhs) = self.get_float_instance(rhs) {
+            if *rhs == 0.0 { return Err(ExecuteError::DivideByZero); }
+            return Ok(self.obj_heap.alloc_float_instance((lhs_val / *rhs).floor()));
+        }
+        if let Ok(rhs) = self.get_integer_instance(rhs) {
+            if *rhs == 0 { return Err(ExecuteError::DivideByZero); }
+            return Ok(self.obj_heap.alloc_float_instance((lhs_val / *rhs as f64).floor()));
+        }
+        Err(ExecuteError::BinaryOpTypeMismatch("floordiv", "float", self.value_type_name(rhs)))
+    }
+
+    pub fn float_mod(&mut self, lhs: ObjectHandle, rhs: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let lhs_val = *self.get_float_instance(lhs)?;
+        if let Ok(rhs) = self.get_float_instance(rhs) {
+            if *rhs == 0.0 { return Err(ExecuteError::DivideByZero); }
+            return Ok(self.obj_heap.alloc_float_instance(lhs_val.rem_euclid(*rhs)));
+        }
+        if let Ok(rhs) = self.get_integer_instance(rhs) {
+            if *rhs == 0 { return Err(ExecuteError::DivideByZero); }
+            return Ok(self.obj_heap.alloc_float_instance(lhs_val.rem_euclid(*rhs as f64)));
+        }
+        Err(ExecuteError::BinaryOpTypeMismatch("mod", "float", self.value_type_name(rhs)))
+    }
+
     pub fn float_neg(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
         let val = *self.get_float_instance(receiver)?;
         Ok(self.obj_heap.alloc_float_instance(-val))
@@ -77,6 +103,12 @@ impl VirtualMachine {
         Ok(self.obj_heap.alloc_bool_instance(val != 0.0))
     }
 
+    pub fn float_hash(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let val = *self.get_float_instance(receiver)?;
+        let hash = val.to_bits() as i64;
+        Ok(self.obj_heap.alloc_integer_instance(hash))
+    }
+
     pub fn float_int(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
         let val = *self.get_float_instance(receiver)?;
         Ok(self.obj_heap.alloc_integer_instance(val as i64))
@@ -94,7 +126,9 @@ impl VirtualMachine {
         self.register_native_method(fc, "__add__",   NativeFunction::a2(VirtualMachine::float_add));
         self.register_native_method(fc, "__sub__",   NativeFunction::a2(VirtualMachine::float_sub));
         self.register_native_method(fc, "__mul__",   NativeFunction::a2(VirtualMachine::float_mul));
-        self.register_native_method(fc, "__div__",   NativeFunction::a2(VirtualMachine::float_div));
+        self.register_native_method(fc, "__div__",      NativeFunction::a2(VirtualMachine::float_div));
+        self.register_native_method(fc, "__floordiv__", NativeFunction::a2(VirtualMachine::float_floordiv));
+        self.register_native_method(fc, "__mod__",      NativeFunction::a2(VirtualMachine::float_mod));
         self.register_native_method(fc, "__eq__",    NativeFunction::a2(VirtualMachine::float_eq));
         self.register_native_method(fc, "__ne__",    NativeFunction::a2(VirtualMachine::float_ne));
         self.register_native_method(fc, "__gt__",    NativeFunction::a2(VirtualMachine::float_gt));
@@ -103,6 +137,7 @@ impl VirtualMachine {
         self.register_native_method(fc, "__le__",    NativeFunction::a2(VirtualMachine::float_le));
         self.register_native_method(fc, "__str__",   NativeFunction::a1(VirtualMachine::float_str));
         self.register_native_method(fc, "__bool__",  NativeFunction::a1(VirtualMachine::float_bool));
+        self.register_native_method(fc, "__hash__",  NativeFunction::a1(VirtualMachine::float_hash));
         self.register_native_method(fc, "__int__",   NativeFunction::a1(VirtualMachine::float_int));
         self.register_native_method(fc, "__float__", NativeFunction::a1(VirtualMachine::float_float));
     }

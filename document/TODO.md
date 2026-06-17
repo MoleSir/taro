@@ -3,7 +3,7 @@
 - [x] dict(TODO: all value as key??)
 - [x] import
 - [x] break / continue
-- [ ] for-in (iterator)
+- [x] for-in (iterator)
 - [ ] source line in run time error
 - [x] std
   - [x] fs

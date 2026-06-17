@@ -163,12 +163,12 @@ impl VirtualMachine {
 
         // 11. Convert the dict into a fields instance.
         let exports: HashMap<ShrString, ObjectHandle> = if let Some(entries) = self.obj_heap.get_dict_instance(exports_dict) {
-            entries.iter().map(|(k, v)| {
-                let key = self.obj_heap.get_string_instance(*k)
+            entries.values().flat_map(|bucket| bucket.iter().map(|&(k, v)| {
+                let key = self.obj_heap.get_string_instance(k)
                     .cloned()
                     .unwrap_or_else(|| ShrString::new_str("?"));
-                (key, *v)
-            }).collect()
+                (key, v)
+            })).collect()
         } else {
             HashMap::new()
         };
@@ -268,6 +268,8 @@ impl VirtualMachine {
             Instruction::Sub => binary_op!(self, sub),
             Instruction::Mul => binary_op!(self, mul),
             Instruction::Div => binary_op!(self, div),
+            Instruction::Mod => binary_op!(self, mod),
+            Instruction::FloorDiv => binary_op!(self, floordiv),
             Instruction::Equal => binary_op!(self, eq),
             Instruction::NotEqual => binary_op!(self, ne),
             Instruction::Greater => binary_op!(self, gt),
@@ -522,15 +524,25 @@ impl VirtualMachine {
                 self.push_stack(list);
             }
             Instruction::BuildDict(count) => {
-                let mut items = vec![];
+                let mut map: HashMap<u64, Vec<(ObjectHandle, ObjectHandle)>> = HashMap::new();
                 for _ in 0..count {
                     let val = self.pop_stack()?;
                     let key = self.pop_stack()?;
-                    items.push((key, val));
+                    let hash = self.__hash__(key)?;
+                    map.entry(hash).or_default().push((key, val));
                 }
-                items.reverse();
-                let dict = self.obj_heap.alloc_dict_instance(items);
+                let dict = self.obj_heap.alloc_dict_instance(map);
                 self.push_stack(dict);
+            }
+            Instruction::BuildSet(count) => {
+                let mut map: HashMap<u64, Vec<ObjectHandle>> = HashMap::new();
+                for _ in 0..count {
+                    let item = self.pop_stack()?;
+                    let hash = self.__hash__(item)?;
+                    map.entry(hash).or_default().push(item);
+                }
+                let set = self.obj_heap.alloc_set_instance(map);
+                self.push_stack(set);
             }
             Instruction::IndexGet => {
                 let index = self.pop_stack()?;
@@ -837,8 +849,9 @@ impl VirtualMachine {
     impl_getters!(bool_instance, bool);
     impl_getters!(string_instance, ShrString);
     impl_getters!(list_instance, Vec<ObjectHandle>);
-    impl_getters!(dict_instance, Vec<(ObjectHandle, ObjectHandle)>);
-    impl_getters!(fields_instance, std::collections::HashMap<ShrString, ObjectHandle>);
+    impl_getters!(dict_instance, HashMap<u64, Vec<(ObjectHandle, ObjectHandle)>>);
+    impl_getters!(set_instance, HashMap<u64, Vec<ObjectHandle>>);
+    impl_getters!(fields_instance, HashMap<ShrString, ObjectHandle>);
 
     pub fn get_native_mut<T: crate::ToNativeData>(&mut self, handle: ObjectHandle) -> ExecuteResult<&mut T> {
         let found = self.value_type_name(handle);

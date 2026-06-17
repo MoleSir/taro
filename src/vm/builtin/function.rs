@@ -115,7 +115,7 @@ impl VirtualMachine {
 
     /// dict
     pub fn dict(&mut self) -> ExecuteResult<ObjectHandle> {
-        Ok(self.obj_heap.alloc_dict_instance(vec![]))
+        Ok(self.obj_heap.alloc_dict_instance(std::collections::HashMap::new()))
     }
 
     pub fn exit(&mut self, arg: ObjectHandle) -> ExecuteResult<ObjectHandle> {

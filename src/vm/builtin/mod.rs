@@ -9,6 +9,7 @@ mod float;
 mod string;
 mod list;
 mod dict;
+mod set;
 
 impl VirtualMachine {
     pub fn register_builtins(&mut self) {
@@ -18,6 +19,7 @@ impl VirtualMachine {
         self.register_builtin_class("String", self.obj_heap.string_class);
         self.register_builtin_class("List", self.obj_heap.list_class);
         self.register_builtin_class("Dict", self.obj_heap.dict_class);
+        self.register_builtin_class("Set", self.obj_heap.set_class);
         self.register_builtin_class("Bool", self.obj_heap.bool_class);
 
         // ---- global native functions ----
@@ -37,6 +39,7 @@ impl VirtualMachine {
         self.register_native_fn("bool",  NativeFunction::a1(VirtualMachine::bool));
         self.register_native_fn("list",  NativeFunction::var(VirtualMachine::list));
         self.register_native_fn("dict",  NativeFunction::a0(VirtualMachine::dict));
+        self.register_native_fn("set",   NativeFunction::var(VirtualMachine::set));
 
         // IterEnd sentinel — signals end of iteration in __next__.
         self.globals.insert("IterEnd".into(), ObjectHandle::ITER_END);
@@ -48,6 +51,7 @@ impl VirtualMachine {
         self.register_string_builtins();
         self.register_list_builtins();
         self.register_dict_builtins();
+        self.register_set_builtins();
         self.register_bool_builtins();
     }
 

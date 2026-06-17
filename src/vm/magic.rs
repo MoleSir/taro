@@ -148,6 +148,28 @@ impl VirtualMachine {
             .map_err(|e| self.remap_binary_error(e, "div", lhs, rhs))
     }
 
+    pub fn __mod__(&mut self, lhs: ObjectHandle, rhs: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        if !matches!(self.obj_heap.get(lhs), Object::Instance(_)) {
+            return Err(ExecuteError::BinaryOpTypeMismatch("mod", self.value_type_name(lhs), self.value_type_name(rhs)));
+        }
+        if !matches!(self.obj_heap.get(rhs), Object::Instance(_)) {
+            return Err(ExecuteError::BinaryOpTypeMismatch("mod", self.value_type_name(lhs), self.value_type_name(rhs)));
+        }
+        self.dispatch_magic(lhs, "__mod__", &[rhs])
+            .map_err(|e| self.remap_binary_error(e, "mod", lhs, rhs))
+    }
+
+    pub fn __floordiv__(&mut self, lhs: ObjectHandle, rhs: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        if !matches!(self.obj_heap.get(lhs), Object::Instance(_)) {
+            return Err(ExecuteError::BinaryOpTypeMismatch("floordiv", self.value_type_name(lhs), self.value_type_name(rhs)));
+        }
+        if !matches!(self.obj_heap.get(rhs), Object::Instance(_)) {
+            return Err(ExecuteError::BinaryOpTypeMismatch("floordiv", self.value_type_name(lhs), self.value_type_name(rhs)));
+        }
+        self.dispatch_magic(lhs, "__floordiv__", &[rhs])
+            .map_err(|e| self.remap_binary_error(e, "floordiv", lhs, rhs))
+    }
+
     // ================================================================================== //
     //           Comparison ops
     // ================================================================================== //
@@ -356,6 +378,39 @@ impl VirtualMachine {
     }
 
     // ================================================================================== //
+    //           __hash__ — hashing protocol
+    // ================================================================================== //
+
+    /// Return a hash for `handle`, suitable for use as a bucket key in Dict/Set.
+    ///
+    /// Each built-in type registers its own `__hash__` via its class methods.
+    /// Types that don't implement `__hash__` fall back to identity-based hashing
+    /// (`handle.0`), which is correct for mutable types (List, Dict, Set) and
+    /// for user-defined objects that don't override it.
+    pub fn __hash__(&mut self, handle: ObjectHandle) -> ExecuteResult<u64> {
+        // Sentinel handles without classes.
+        if handle.is_nil() {
+            return Ok(0);
+        }
+        if handle.is_iter_end() {
+            return Ok(1);
+        }
+        // Non-Instance types (Class, Closure, NativeFn, etc.) — identity hash.
+        if !matches!(self.obj_heap.get(handle), Object::Instance(_)) {
+            return Ok(handle.0 as u64);
+        }
+        // Instance types — dispatch to __hash__ class method.
+        match self.dispatch_magic(handle, "__hash__", &[]) {
+            Ok(result) => {
+                let h = self.get_integer_instance(result)?;
+                Ok(*h as u64)
+            }
+            Err(ExecuteError::NoImplementMethod(_, _)) => Ok(handle.0 as u64),
+            Err(other) => Err(other),
+        }
+    }
+
+    // ================================================================================== //
     //           Error remapping helpers
     // ================================================================================== //
 
@@ -434,6 +489,7 @@ impl VirtualMachine {
                     ObjectInstanceData::String(_) => "string",
                     ObjectInstanceData::List(_) => "list",
                     ObjectInstanceData::Dict(_) => "dict",
+                    ObjectInstanceData::Set(_) => "set",
                     ObjectInstanceData::Fields(_) => "instance",
                     ObjectInstanceData::Native(_) => "native object",
                 }

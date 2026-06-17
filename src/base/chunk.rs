@@ -66,6 +66,8 @@ impl Chunk {
             Instruction::Sub => self.write_op(ByteCode::Sub),
             Instruction::Mul => self.write_op(ByteCode::Mul),
             Instruction::Div => self.write_op(ByteCode::Div),
+            Instruction::Mod => self.write_op(ByteCode::Mod),
+            Instruction::FloorDiv => self.write_op(ByteCode::FloorDiv),
             Instruction::Equal => self.write_op(ByteCode::Equal),
             Instruction::NotEqual => self.write_op(ByteCode::NotEqual),
             Instruction::Greater => self.write_op(ByteCode::Greater),
@@ -187,6 +189,11 @@ impl Chunk {
                 self.write_op(ByteCode::BuildDict);
                 self.write_u16(count as u16);
             }
+            Instruction::BuildSet(count) => {
+                assert!(count < u16::MAX as usize, "Too much elements.");
+                self.write_op(ByteCode::BuildSet);
+                self.write_u16(count as u16);
+            }
             Instruction::IndexGet => {
                 self.write_op(ByteCode::IndexGet);
             }
@@ -228,6 +235,8 @@ impl Chunk {
             ByteCode::Sub => Ok(Instruction::Sub),
             ByteCode::Mul => Ok(Instruction::Mul),
             ByteCode::Div => Ok(Instruction::Div),
+            ByteCode::Mod => Ok(Instruction::Mod),
+            ByteCode::FloorDiv => Ok(Instruction::FloorDiv),
             ByteCode::Equal => Ok(Instruction::Equal),
             ByteCode::NotEqual => Ok(Instruction::NotEqual),
             ByteCode::Greater => Ok(Instruction::Greater),
@@ -338,6 +347,10 @@ impl Chunk {
             ByteCode::BuildDict => {
                 let count = self.read_u16(ip)?;
                 Ok(Instruction::BuildDict(count as usize))
+            }
+            ByteCode::BuildSet => {
+                let count = self.read_u16(ip)?;
+                Ok(Instruction::BuildSet(count as usize))
             }
             ByteCode::IndexGet => Ok(Instruction::IndexGet),
             ByteCode::IndexSet => Ok(Instruction::IndexSet),

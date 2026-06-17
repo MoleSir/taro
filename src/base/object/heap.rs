@@ -46,6 +46,7 @@ pub struct ObjectHeap {
     pub string_class: ObjectHandle,
     pub list_class: ObjectHandle,
     pub dict_class: ObjectHandle,
+    pub set_class: ObjectHandle,
     pub module_class: ObjectHandle,
     /// Class handle for `net.Socket` — stored here so `Server.accept()` can
     /// create new Socket instances without needing access to the net module.
@@ -60,6 +61,7 @@ pub struct ObjectHeap {
     pub list_iter_class: ObjectHandle,
     pub string_iter_class: ObjectHandle,
     pub dict_iter_class: ObjectHandle,
+    pub set_iter_class: ObjectHandle,
 }
 
 impl ObjectHeap {
@@ -83,6 +85,7 @@ impl ObjectHeap {
             string_class: ObjectHandle::NIL,
             list_class: ObjectHandle::NIL,
             dict_class: ObjectHandle::NIL,
+            set_class: ObjectHandle::NIL,
             module_class: ObjectHandle::NIL,
             socket_class: ObjectHandle::NIL,
             true_instance: ObjectHandle::NIL,
@@ -90,6 +93,7 @@ impl ObjectHeap {
             list_iter_class: ObjectHandle::NIL,
             string_iter_class: ObjectHandle::NIL,
             dict_iter_class: ObjectHandle::NIL,
+            set_iter_class: ObjectHandle::NIL,
         };
 
         heap.nil_class = heap.alloc_class("Nil");
@@ -99,10 +103,12 @@ impl ObjectHeap {
         heap.string_class = heap.alloc_class("String");
         heap.list_class = heap.alloc_class("List");
         heap.dict_class = heap.alloc_class("Dict");
+        heap.set_class = heap.alloc_class("Set");
         heap.module_class = heap.alloc_class("Module");
         heap.list_iter_class = heap.alloc_class("ListIterator");
         heap.string_iter_class = heap.alloc_class("StringIterator");
         heap.dict_iter_class = heap.alloc_class("DictIterator");
+        heap.set_iter_class = heap.alloc_class("SetIterator");
 
         // Allocate singleton bool instances (after bool_class exists).
         heap.true_instance = heap.alloc_instance(heap.bool_class, ObjectInstanceData::Bool(true));
@@ -195,8 +201,13 @@ impl ObjectHeap {
     }
 
     #[inline]
-    pub fn alloc_dict_instance(&mut self, items: Vec<(ObjectHandle, ObjectHandle)>) -> ObjectHandle {
+    pub fn alloc_dict_instance(&mut self, items: HashMap<u64, Vec<(ObjectHandle, ObjectHandle)>>) -> ObjectHandle {
         self.alloc_instance(self.dict_class, ObjectInstanceData::Dict(items))
+    }
+
+    #[inline]
+    pub fn alloc_set_instance(&mut self, items: HashMap<u64, Vec<ObjectHandle>>) -> ObjectHandle {
+        self.alloc_instance(self.set_class, ObjectInstanceData::Set(items))
     }
 
     fn alloc(&mut self, obj: impl Into<Object>) -> ObjectHandle {
@@ -308,8 +319,9 @@ impl ObjectHeap {
     impl_instance_data_getter!(bool, Bool, bool, "bool");
     impl_instance_data_getter!(string, String, ShrString, "string");
     impl_instance_data_getter!(list, List, Vec<ObjectHandle>, "list");
-    impl_instance_data_getter!(dict, Dict, Vec<(ObjectHandle, ObjectHandle)>, "dict");
-    impl_instance_data_getter!(fields, Fields, std::collections::HashMap<ShrString, ObjectHandle>, "fields");
+    impl_instance_data_getter!(dict, Dict, HashMap<u64, Vec<(ObjectHandle, ObjectHandle)>>, "dict");
+    impl_instance_data_getter!(set, Set, HashMap<u64, Vec<ObjectHandle>>, "set");
+    impl_instance_data_getter!(fields, Fields, HashMap<ShrString, ObjectHandle>, "fields");
 
     /// Return a mutable reference to the native data stored in `handle`,
     /// downcast to `T`.  Returns `None` if the handle is not an Instance
@@ -414,9 +426,18 @@ impl ObjectHeap {
                             }
                         }
                         ObjectInstanceData::Dict(entries) => {
-                            for &(k, v) in entries {
-                                self.mark_object(k);
-                                self.mark_object(v);
+                            for bucket in entries.values() {
+                                for &(k, v) in bucket {
+                                    self.mark_object(k);
+                                    self.mark_object(v);
+                                }
+                            }
+                        }
+                        ObjectInstanceData::Set(entries) => {
+                            for bucket in entries.values() {
+                                for v in bucket {
+                                    self.mark_object(*v);
+                                }
                             }
                         }
                         ObjectInstanceData::Fields(fields) => {

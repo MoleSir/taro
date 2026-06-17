@@ -1,10 +1,10 @@
 // Control flow — if/else, while, for.
 
 print("=== if / else ===");
-if (true) {
+if true {
     print("then-branch");
 }
-if (false) {
+if false {
     print("never");
 } else {
     print("else-branch");
@@ -12,10 +12,10 @@ if (false) {
 
 print("=== if with condition ===");
 var x = 5;
-if (x > 3) {
+if x > 3 {
     print("x > 3");
 }
-if (x < 3) {
+if x < 3 {
     print("never");
 } else {
     print("x >= 3");
@@ -23,22 +23,22 @@ if (x < 3) {
 
 print("=== nested if ===");
 var y = 10;
-if (x < y) {
-    if (y > 5) {
+if x < y {
+    if y > 5 {
         print("nested true");
     }
 }
 
 print("=== while loop ===");
 var i = 0;
-while (i < 3) {
+while i < 3 {
     print(i);
     i = i + 1;
 }
 
 print("=== while with condition ===");
 var n = 5;
-while (n > 0) {
+while n > 0 {
     print(n);
     n = n - 1;
 }

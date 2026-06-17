@@ -81,6 +81,8 @@ fn get_rule(kind: TokenKind) -> ParseRule {
         TokenKind::Semicolon    => ParseRule::NONE,
         TokenKind::Slash        => ParseRule::new(None, Some(Parser::binary), Prec::Factor),
         TokenKind::Star         => ParseRule::new(None, Some(Parser::binary), Prec::Factor),
+        TokenKind::Percent      => ParseRule::new(None, Some(Parser::binary), Prec::Factor),
+        TokenKind::TildeSlash   => ParseRule::new(None, Some(Parser::binary), Prec::Factor),
 
         // One- or two-character tokens --------------------------------------
         TokenKind::Bang         => ParseRule::new(Some(Parser::unary), None, Prec::None),
@@ -751,8 +753,11 @@ impl<'a> Parser<'a> {
             break_patches: Vec::new(),
         });
 
-        // while statement
-        self.parse_statement()?;
+        // Require braces for the body.
+        self.consume(TokenKind::LeftBrace, "Expect '{' after for clauses.")?;
+        self.begin_scope();
+        self.parse_block()?;
+        self.end_scope();
 
         let ctx = self.loop_stack.pop().unwrap();
 
@@ -822,7 +827,11 @@ impl<'a> Parser<'a> {
             break_patches: Vec::new(),
         });
 
-        self.parse_statement()?;
+        // Require braces for the body.
+        self.consume(TokenKind::LeftBrace, "Expect '{' after 'in' expression.")?;
+        self.begin_scope();
+        self.parse_block()?;
+        self.end_scope();
 
         let ctx = self.loop_stack.pop().unwrap();
 
@@ -853,9 +862,11 @@ impl<'a> Parser<'a> {
     fn parse_while_statement(&mut self) -> ParseResult<()> {
         let loop_start = self.cur_unit().chunk.codes.len();
 
-        self.consume(TokenKind::LeftParen, "Expect '(' after 'while'.")?;
+        // Parse condition expression (no parentheses — Rust‑style).
         self.parse_expression()?;
-        self.consume(TokenKind::RightParen, "Expect ')' after condition.")?;
+
+        // Require braces for the body.
+        self.consume(TokenKind::LeftBrace, "Expect '{' after while condition.")?;
 
         let exit_jump = self.emit_jump(true);
         self.emit(Instruction::Pop);
@@ -866,7 +877,10 @@ impl<'a> Parser<'a> {
             break_patches: Vec::new(),
         });
 
-        self.parse_statement()?;
+        // Parse body block.
+        self.begin_scope();
+        self.parse_block()?;
+        self.end_scope();
 
         let ctx = self.loop_stack.pop().unwrap();
 
@@ -885,25 +899,39 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_if_statement(&mut self) -> ParseResult<()> {
-        self.consume(TokenKind::LeftParen, "Expect '(' after 'if'.")?;
+        // Parse condition expression (no parentheses — Rust‑style).
         self.parse_expression()?;
-        self.consume(TokenKind::RightParen, "Expect ')' after condition.")?;
 
-        // write jump inst, but keep jump pos as 0, save the jump pos index
+        // Require braces for the then-branch.
+        self.consume(TokenKind::LeftBrace, "Expect '{' after if condition.")?;
+
+        // Jump to else / end if the condition is false.
         let then_jump = self.emit_jump(true);
         self.emit(Instruction::Pop);
 
-        // consume if code
-        self.parse_statement()?;
+        // Parse then-block.
+        self.begin_scope();
+        self.parse_block()?;
+        self.end_scope();
 
+        // Jump past the else-branch after executing the then-block.
         let else_jump = self.emit_jump(false);
 
-        // now we can insert jump pos
+        // Patch the then-jump: when the condition is false, jump here.
         self.patch_jump(then_jump)?;
         self.emit(Instruction::Pop);
 
+        // else / else-if chain.
         if self.match_token(TokenKind::Else) {
-            self.parse_statement()?;
+            if self.match_token(TokenKind::If) {
+                // `else if` — recurse without requiring extra braces.
+                self.parse_if_statement()?;
+            } else {
+                self.consume(TokenKind::LeftBrace, "Expect '{' after else.")?;
+                self.begin_scope();
+                self.parse_block()?;
+                self.end_scope();
+            }
         }
         self.patch_jump(else_jump)?;
 
@@ -1148,6 +1176,8 @@ impl<'a> Parser<'a> {
             TokenKind::Minus        => parser.emit(Instruction::Sub),
             TokenKind::Star         => parser.emit(Instruction::Mul),
             TokenKind::Slash        => parser.emit(Instruction::Div),
+            TokenKind::Percent      => parser.emit(Instruction::Mod),
+            TokenKind::TildeSlash   => parser.emit(Instruction::FloorDiv),
             TokenKind::EqualEqual   => parser.emit(Instruction::Equal),
             TokenKind::BangEqual    => parser.emit(Instruction::NotEqual),
             TokenKind::Less         => parser.emit(Instruction::Less),
@@ -1221,30 +1251,48 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
+    /// Parse `{k: v, ...}` (dict) or `{a, b, ...}` (set).
+    /// `{}` is always an empty dict (Python convention).
     fn dict_literal(parser: &mut Parser<'_>, _can_assign: bool) -> ParseResult<()> {
-        if !parser.check(TokenKind::RightBrace) {
-            let mut count = 0;
-            loop {
+        // Empty braces → empty dict.
+        if parser.check(TokenKind::RightBrace) {
+            parser.consume(TokenKind::RightBrace, "Expect '}' after dict literal.")?;
+            parser.emit(Instruction::BuildDict(0));
+            return Ok(());
+        }
+
+        // Parse the first expression — this pushes one value onto the stack.
+        parser.parse_expression()?;
+
+        // If the next token is ':', it's a dict literal: {k: v, ...}
+        if parser.match_token(TokenKind::Colon) {
+            parser.parse_expression()?;
+            let mut count: usize = 1;
+            while parser.match_token(TokenKind::Comma) {
                 if count >= u16::MAX as usize {
                     record_error_at_current!(parser, ParseReason::TooMuchItems);
                 }
-
                 parser.parse_expression()?;
                 parser.consume(TokenKind::Colon, "Expect ':' after key")?;
                 parser.parse_expression()?;
                 count += 1;
-                if !parser.match_token(TokenKind::Comma) {
-                    break;
-                }
             }
             parser.consume(TokenKind::RightBrace, "Expect '}' after dict literal.")?;
             parser.emit(Instruction::BuildDict(count));
-            Ok(())
         } else {
-            parser.consume(TokenKind::RightBrace, "Expect '}' after dict literal.")?;
-            parser.emit(Instruction::BuildDict(0));
-            Ok(())
+            // No colon → set literal: {a, b, ...}
+            let mut count: usize = 1;
+            while parser.match_token(TokenKind::Comma) {
+                if count >= u16::MAX as usize {
+                    record_error_at_current!(parser, ParseReason::TooMuchItems);
+                }
+                parser.parse_expression()?;
+                count += 1;
+            }
+            parser.consume(TokenKind::RightBrace, "Expect '}' after set literal.")?;
+            parser.emit(Instruction::BuildSet(count));
         }
+        Ok(())
     }
 
     fn list_literal(parser: &mut Parser<'_>, _can_assign: bool) -> ParseResult<()> {

@@ -16,14 +16,21 @@ impl ToNativeData for DictKeyIterator {
 impl VirtualMachine {
     pub fn dict_not(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
         let entries = self.get_dict_instance(receiver)?;
-        Ok(self.obj_heap.alloc_bool_instance(entries.is_empty()))
+        let is_empty = entries.values().all(|b| b.is_empty());
+        Ok(self.obj_heap.alloc_bool_instance(is_empty))
     }
 
     pub fn dict_str(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
-        let entries = self.get_dict_instance(receiver)?.clone();
+        // Collect all entries eagerly to release the dict borrow before
+        // calling `__str__` on each key/value.
+        let all_entries: Vec<(ObjectHandle, ObjectHandle)> = self.get_dict_instance(receiver)?
+            .values()
+            .flat_map(|b| b.iter().copied())
+            .collect();
+
         let mut result = String::from("{");
         let mut first = true;
-        for &(k, v) in &entries {
+        for (k, v) in all_entries {
             if !first { result.push_str(", "); }
             first = false;
             result.push_str(&self.__str__(k)?);
@@ -36,17 +43,26 @@ impl VirtualMachine {
 
     pub fn dict_bool(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
         let entries = self.get_dict_instance(receiver)?;
-        Ok(self.obj_heap.alloc_bool_instance(!entries.is_empty()))
+        let has_any = entries.values().any(|b| !b.is_empty());
+        Ok(self.obj_heap.alloc_bool_instance(has_any))
     }
 
     pub fn dict_len(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
         let entries = self.get_dict_instance(receiver)?;
-        Ok(self.obj_heap.alloc_integer_instance(entries.len() as i64))
+        let total: usize = entries.values().map(|b| b.len()).sum();
+        Ok(self.obj_heap.alloc_integer_instance(total as i64))
     }
 
     pub fn dict_getitem(&mut self, receiver: ObjectHandle, key: ObjectHandle) -> ExecuteResult<ObjectHandle> {
-        let entries = self.get_dict_instance(receiver).cloned()?;
-        for &(k, v) in &entries {
+        let hash = self.__hash__(key)?;
+
+        // Clone the bucket (small) to release the dict borrow before calling __eq__.
+        let bucket = {
+            let entries = self.get_dict_instance(receiver)?;
+            entries.get(&hash).cloned().unwrap_or_default()
+        };
+
+        for &(k, v) in &bucket {
             let eq = self.__eq__(k, key)?;
             if self.__bool__(eq)? {
                 return Ok(v);
@@ -56,33 +72,47 @@ impl VirtualMachine {
     }
 
     pub fn dict_setitem(&mut self, receiver: ObjectHandle, key: ObjectHandle, value: ObjectHandle) -> ExecuteResult<ObjectHandle> {
-        // Clone entries, remove existing key if present, push new.
-        let entries = self.get_dict_instance(receiver).cloned()?;
-        let mut new_entries = entries;
-        let mut found_pos = None;
-        for (i, &(k, _)) in new_entries.iter().enumerate() {
+        let hash = self.__hash__(key)?;
+
+        // Clone the bucket to release the dict borrow.
+        let mut bucket = {
+            let entries = self.get_dict_instance(receiver)?;
+            entries.get(&hash).cloned().unwrap_or_default()
+        };
+
+        // Linear scan with __eq__ inside the bucket.
+        let mut found_idx = None;
+        for (i, &(k, _)) in bucket.iter().enumerate() {
             let eq = self.__eq__(k, key)?;
             if self.__bool__(eq)? {
-                found_pos = Some(i);
+                found_idx = Some(i);
                 break;
             }
         }
-        if let Some(pos) = found_pos {
-            new_entries.remove(pos);
+        if let Some(i) = found_idx {
+            bucket[i].1 = value;
+        } else {
+            bucket.push((key, value));
         }
-        new_entries.push((key, value));
 
-        let inst_mut = self.get_instance_mut(receiver)?;
-        if let ObjectInstanceData::Dict(entries) = &mut inst_mut.data {
-            *entries = new_entries;
+        // Write back.
+        let inst = self.get_instance_mut(receiver)?;
+        if let ObjectInstanceData::Dict(entries) = &mut inst.data {
+            entries.insert(hash, bucket);
         }
         Ok(value)
     }
 
     /// `dict.get(key)` — get a value by key, returning nil if not found.
     pub fn dict_get(&mut self, receiver: ObjectHandle, key: ObjectHandle) -> ExecuteResult<ObjectHandle> {
-        let entries = self.get_dict_instance(receiver).cloned()?;
-        for &(k, v) in &entries {
+        let hash = self.__hash__(key)?;
+
+        let bucket = {
+            let entries = self.get_dict_instance(receiver)?;
+            entries.get(&hash).cloned().unwrap_or_default()
+        };
+
+        for &(k, v) in &bucket {
             let eq_result = self.__eq__(k, key)?;
             if self.__bool__(eq_result)? {
                 return Ok(v);
@@ -93,40 +123,54 @@ impl VirtualMachine {
 
     /// `dict.keys()` — return a list of all keys.
     pub fn dict_keys(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
-        let keys = self.get_dict_instance(receiver)?.iter().map(|&(k, _)| k).collect();
+        let keys: Vec<ObjectHandle> = self.get_dict_instance(receiver)?
+            .values()
+            .flat_map(|b| b.iter().map(|&(k, _)| k))
+            .collect();
         Ok(self.obj_heap.alloc_list_instance(keys))
     }
 
     /// `dict.values()` — return a list of all values.
     pub fn dict_values(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
-        let values = self.get_dict_instance(receiver)?.iter().map(|&(_, v)| v).collect();
+        let values: Vec<ObjectHandle> = self.get_dict_instance(receiver)?
+            .values()
+            .flat_map(|b| b.iter().map(|&(_, v)| v))
+            .collect();
         Ok(self.obj_heap.alloc_list_instance(values))
     }
 
     /// `dict.pop(key)` — remove a key and return its value.
     pub fn dict_pop(&mut self, receiver: ObjectHandle, key: ObjectHandle) -> ExecuteResult<ObjectHandle> {
-        // Clone entries, find key, remove, write back.
-        let entries = self.get_dict_instance(receiver).cloned()?;
+        let hash = self.__hash__(key)?;
 
-        let mut pos = None;
-        for (i, &(k, _)) in entries.iter().enumerate() {
+        // Clone the bucket to release the dict borrow.
+        let mut bucket = {
+            let entries = self.get_dict_instance(receiver)?;
+            entries.get(&hash).cloned().unwrap_or_default()
+        };
+
+        let mut found_idx = None;
+        for (i, &(k, _)) in bucket.iter().enumerate() {
             let eq = self.__eq__(k, key)?;
             if self.__bool__(eq)? {
-                pos = Some(i);
+                found_idx = Some(i);
                 break;
             }
         }
-        match pos {
+
+        match found_idx {
             Some(idx) => {
-                let removed = entries[idx].1;
-                let bi_mut = self.get_instance_mut(receiver)?;
-                match &mut bi_mut.data {
-                    ObjectInstanceData::Dict(e) => {
-                        e.remove(idx);
+                let removed = bucket.remove(idx);
+                // Write back the updated bucket.
+                let inst = self.get_instance_mut(receiver)?;
+                if let ObjectInstanceData::Dict(entries) = &mut inst.data {
+                    if bucket.is_empty() {
+                        entries.remove(&hash);
+                    } else {
+                        entries.insert(hash, bucket);
                     }
-                    _ => unreachable!(),
                 }
-                Ok(removed)
+                Ok(removed.1)
             }
             None => Err(ExecuteError::KeyNotFound),
         }
@@ -147,10 +191,17 @@ impl VirtualMachine {
             let iter = self.get_native::<DictKeyIterator>(receiver)?;
             iter.dict_handle
         };
-        let entries = self.get_dict_instance(dict_handle)?.clone();
+
+        // Collect all keys eagerly to release the dict borrow before
+        // mutably borrowing the iterator's native state.
+        let keys: Vec<ObjectHandle> = self.get_dict_instance(dict_handle)?
+            .values()
+            .flat_map(|b| b.iter().map(|&(k, _)| k))
+            .collect();
+
         let iter = self.get_native_mut::<DictKeyIterator>(receiver)?;
-        if iter.index < entries.len() {
-            let key = entries[iter.index].0;
+        if iter.index < keys.len() {
+            let key = keys[iter.index];
             iter.index += 1;
             Ok(key)
         } else {

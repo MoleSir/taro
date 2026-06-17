@@ -57,6 +57,14 @@ impl VirtualMachine {
         Ok(self.obj_heap.alloc_bool_instance(!s.is_empty()))
     }
 
+    pub fn string_hash(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let s = self.get_string_instance(receiver)?;
+        use std::hash::Hasher;
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        std::hash::Hash::hash(s.as_str(), &mut h);
+        Ok(self.obj_heap.alloc_integer_instance(h.finish() as i64))
+    }
+
     pub fn string_int(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
         let s = self.get_string_instance(receiver)?;
         let val: i64 = s.as_str().parse().map_err(|_| {
@@ -129,6 +137,7 @@ impl VirtualMachine {
         self.register_native_method(sc, "__le__",       NativeFunction::a2(VirtualMachine::string_le));
         self.register_native_method(sc, "__str__",      NativeFunction::a1(VirtualMachine::string_str));
         self.register_native_method(sc, "__bool__",     NativeFunction::a1(VirtualMachine::string_bool));
+        self.register_native_method(sc, "__hash__",     NativeFunction::a1(VirtualMachine::string_hash));
         self.register_native_method(sc, "__int__",      NativeFunction::a1(VirtualMachine::string_int));
         self.register_native_method(sc, "__float__",    NativeFunction::a1(VirtualMachine::string_float));
         self.register_native_method(sc, "__len__",      NativeFunction::a1(VirtualMachine::string_len));

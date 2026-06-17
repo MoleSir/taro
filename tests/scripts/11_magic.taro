@@ -24,8 +24,8 @@ class Num {
 }
 print(bool(Num(0)));   // false
 print(bool(Num(5)));   // true
-if (Num(10)) { print("truthy"); }
-if (!Num(0)) { print("falsy inverted"); }
+if Num(10) { print("truthy"); }
+if !Num(0) { print("falsy inverted"); }
 
 // === 3. __neg__ magic method ===
 print("=== __neg__ ===");
@@ -52,7 +52,7 @@ class Toggle {
         return Toggle(!self.v);
     }
     fun __str__(self) {
-        if (self.v) { return "on"; }
+        if self.v { return "on"; }
         return "off";
     }
 }
@@ -396,5 +396,37 @@ print(max(2.5, 1.5, 3.5));
 print("=== clock ===");
 var t = clock();
 print(t > 0);
+
+// === 30. __floordiv__ magic method ===
+print("=== __floordiv__ ===");
+class VecFD {
+    fun __init__(self, x, y) {
+        self.x = x;
+        self.y = y;
+    }
+    fun __floordiv__(self, s) {
+        return VecFD(self.x ~/ s, self.y ~/ s);
+    }
+    fun __str__(self) {
+        return "(" + str(self.x) + "," + str(self.y) + ")";
+    }
+}
+print(VecFD(10, 6) ~/ 2);
+
+// === 31. __mod__ magic method ===
+print("=== __mod__ ===");
+class VecMod {
+    fun __init__(self, x, y) {
+        self.x = x;
+        self.y = y;
+    }
+    fun __mod__(self, s) {
+        return VecMod(self.x % s, self.y % s);
+    }
+    fun __str__(self) {
+        return "(" + str(self.x) + "," + str(self.y) + ")";
+    }
+}
+print(VecMod(10, 6) % 3);
 
 print("magic done");

@@ -234,10 +234,10 @@ print(ck.isBig(200));  // true
 print("=== conditional in method ===");
 class Grader {
     fun grade(self, score) {
-        if (score > 90) {
+        if score > 90 {
             return "A";
         }
-        if (score > 75) {
+        if score > 75 {
             return "B";
         }
         return "C";
@@ -254,7 +254,7 @@ class Summer {
     fun sumTo(self, n) {
         var total = 0;
         var i = 1;
-        while (i <= n) {
+        while i <= n {
             total = total + i;
             i = i + 1;
         }

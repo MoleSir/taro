@@ -62,7 +62,7 @@ var d2 = {"a": 1, "b": 2, "c": 3};
 var keys = ["a", "b", "c"];
 var i = 0;
 var sum = 0;
-while (i < len(keys)) {
+while i < len(keys) {
     sum = sum + d2[keys[i]];
     i = i + 1;
 }

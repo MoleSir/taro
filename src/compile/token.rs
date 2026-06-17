@@ -22,8 +22,10 @@ pub enum TokenKind {
     Slash,
     Colon,
     Star,
+    Percent,
 
     // One or two character tokens.
+    TildeSlash,
     Bang,
     BangEqual,
     Equal,

@@ -131,19 +131,19 @@ impl ObjectClass {
 
 pub enum ObjectInstanceData {
     Nil,
-    /// Sentinel signalling the end of iteration — analogous to Python's
-    /// `StopIteration` but carried as a value rather than an exception.
     IterEnd,
+    
     Bool(bool),
     Integer(i64),
     Float(f64),
     String(ShrString),
+    
     List(Vec<ObjectHandle>),
-    Dict(Vec<(ObjectHandle, ObjectHandle)>),
+    Dict(HashMap<u64, Vec<(ObjectHandle, ObjectHandle)>>),
+    Set(HashMap<u64, Vec<ObjectHandle>>),
+
     Fields(HashMap<ShrString, ObjectHandle>),
-    /// Type-erased native Rust data, created via [`NativeData::new`].
-    /// Resources are automatically freed on GC sweep or heap destruction
-    /// thanks to [`ToNativeData`]'s vtable — no manual memory management.
+    
     Native(NativeData),
 }
 

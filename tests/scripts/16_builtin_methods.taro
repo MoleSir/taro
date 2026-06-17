@@ -49,7 +49,7 @@ print(len(e));
 print("=== list in loop with append ===");
 var f = [];
 var i = 0;
-while (i < 5) {
+while i < 5 {
     f.append(i);
     i = i + 1;
 }

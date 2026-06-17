@@ -85,6 +85,42 @@ impl VirtualMachine {
         Err(ExecuteError::BinaryOpTypeMismatch("div", "bool", self.value_type_name(rhs)))
     }
 
+    pub fn bool_floordiv(&mut self, lhs: ObjectHandle, rhs: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let lhs_val = self.bool_as_int(lhs)?;
+        if let Ok(rhs) = self.get_integer_instance(rhs) {
+            if *rhs == 0 { return Err(ExecuteError::DivideByZero); }
+            return Ok(self.obj_heap.alloc_integer_instance(i64::wrapping_div_euclid(lhs_val, *rhs)));
+        }
+        if let Ok(rhs) = self.get_float_instance(rhs) {
+            if *rhs == 0.0 { return Err(ExecuteError::DivideByZero); }
+            return Ok(self.obj_heap.alloc_float_instance((lhs_val as f64 / *rhs).floor()));
+        }
+        if self.get_bool_instance(rhs).is_ok() {
+            let rhs_val = self.bool_as_int(rhs)?;
+            if rhs_val == 0 { return Err(ExecuteError::DivideByZero); }
+            return Ok(self.obj_heap.alloc_integer_instance(i64::wrapping_div_euclid(lhs_val, rhs_val)));
+        }
+        Err(ExecuteError::BinaryOpTypeMismatch("floordiv", "bool", self.value_type_name(rhs)))
+    }
+
+    pub fn bool_mod(&mut self, lhs: ObjectHandle, rhs: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let lhs_val = self.bool_as_int(lhs)?;
+        if let Ok(rhs) = self.get_integer_instance(rhs) {
+            if *rhs == 0 { return Err(ExecuteError::DivideByZero); }
+            return Ok(self.obj_heap.alloc_integer_instance(i64::wrapping_rem_euclid(lhs_val, *rhs)));
+        }
+        if let Ok(rhs) = self.get_float_instance(rhs) {
+            if *rhs == 0.0 { return Err(ExecuteError::DivideByZero); }
+            return Ok(self.obj_heap.alloc_float_instance((lhs_val as f64).rem_euclid(*rhs)));
+        }
+        if self.get_bool_instance(rhs).is_ok() {
+            let rhs_val = self.bool_as_int(rhs)?;
+            if rhs_val == 0 { return Err(ExecuteError::DivideByZero); }
+            return Ok(self.obj_heap.alloc_integer_instance(i64::wrapping_rem_euclid(lhs_val, rhs_val)));
+        }
+        Err(ExecuteError::BinaryOpTypeMismatch("mod", "bool", self.value_type_name(rhs)))
+    }
+
     pub fn bool_eq(&mut self, lhs: ObjectHandle, rhs: ObjectHandle) -> ExecuteResult<ObjectHandle> {
         let lhs_val = *self.get_bool_instance(lhs)?;
 
@@ -181,6 +217,11 @@ impl VirtualMachine {
         Ok(receiver)
     }
 
+    pub fn bool_hash(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let val = *self.get_bool_instance(receiver)?;
+        Ok(self.obj_heap.alloc_integer_instance(if val { 1 } else { 0 }))
+    }
+
     pub fn bool_int(&mut self, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
         let val = *self.get_bool_instance(receiver)?;
         Ok(self.obj_heap.alloc_integer_instance(if val { 1 } else { 0 }))
@@ -198,7 +239,9 @@ impl VirtualMachine {
         self.register_native_method(bc, "__add__",   NativeFunction::a2(VirtualMachine::bool_add));
         self.register_native_method(bc, "__sub__",   NativeFunction::a2(VirtualMachine::bool_sub));
         self.register_native_method(bc, "__mul__",   NativeFunction::a2(VirtualMachine::bool_mul));
-        self.register_native_method(bc, "__div__",   NativeFunction::a2(VirtualMachine::bool_div));
+        self.register_native_method(bc, "__div__",      NativeFunction::a2(VirtualMachine::bool_div));
+        self.register_native_method(bc, "__floordiv__", NativeFunction::a2(VirtualMachine::bool_floordiv));
+        self.register_native_method(bc, "__mod__",      NativeFunction::a2(VirtualMachine::bool_mod));
         self.register_native_method(bc, "__eq__",    NativeFunction::a2(VirtualMachine::bool_eq));
         self.register_native_method(bc, "__ne__",    NativeFunction::a2(VirtualMachine::bool_ne));
         self.register_native_method(bc, "__gt__",    NativeFunction::a2(VirtualMachine::bool_gt));
@@ -207,6 +250,7 @@ impl VirtualMachine {
         self.register_native_method(bc, "__le__",    NativeFunction::a2(VirtualMachine::bool_le));
         self.register_native_method(bc, "__str__",   NativeFunction::a1(VirtualMachine::bool_str));
         self.register_native_method(bc, "__bool__",  NativeFunction::a1(VirtualMachine::bool_bool));
+        self.register_native_method(bc, "__hash__",  NativeFunction::a1(VirtualMachine::bool_hash));
         self.register_native_method(bc, "__int__",   NativeFunction::a1(VirtualMachine::bool_int));
         self.register_native_method(bc, "__float__", NativeFunction::a1(VirtualMachine::bool_float));
     }

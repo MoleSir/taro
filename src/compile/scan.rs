@@ -73,6 +73,7 @@ impl<'a> Scanner<'a> {
             ';' => Ok(self.make_token(TokenKind::Semicolon)),
             '/' => Ok(self.make_token(TokenKind::Slash)),
             '*' => Ok(self.make_token(TokenKind::Star)),
+            '%' => Ok(self.make_token(TokenKind::Percent)),
             ':' => Ok(self.make_token(TokenKind::Colon)),
 
             '!' => {
@@ -104,6 +105,15 @@ impl<'a> Scanner<'a> {
                     TokenKind::GreaterEqual
                 } else {
                     TokenKind::Greater
+                };
+                Ok(self.make_token(kind))
+            }
+
+            '~' => {
+                let kind = if self.match_then_advance('/')? {
+                    TokenKind::TildeSlash
+                } else {
+                    return Ok(self.error_token("Unexpected character."));
                 };
                 Ok(self.make_token(kind))
             }
@@ -354,7 +364,7 @@ mod tests {
 
     #[test]
     fn test_single_char_tokens() {
-        let source = "(){} ,.-+;/*";
+        let source = "(){} ,.-+;/*%";
         let kinds = scan_kinds(source);
         assert_eq!(
             kinds,
@@ -370,6 +380,7 @@ mod tests {
                 TokenKind::Semicolon,
                 TokenKind::Slash,
                 TokenKind::Star,
+                TokenKind::Percent,
                 TokenKind::Eof,
             ]
         );
@@ -731,5 +742,23 @@ mod tests {
         assert_eq!(tokens[1].lexeme, "x");
         assert_eq!(tokens[2].lexeme, "=");
         assert_eq!(tokens[3].lexeme, "42");
+    }
+
+    #[test]
+    fn test_percent_token() {
+        let kinds = scan_kinds("%");
+        assert_eq!(kinds, vec![TokenKind::Percent, TokenKind::Eof]);
+    }
+
+    #[test]
+    fn test_tilde_slash_token() {
+        let kinds = scan_kinds("~/");
+        assert_eq!(kinds, vec![TokenKind::TildeSlash, TokenKind::Eof]);
+    }
+
+    #[test]
+    fn test_bare_tilde_is_error() {
+        let tokens = scan_tokens("~");
+        assert_eq!(tokens[0].kind, TokenKind::Error);
     }
 }

@@ -16,6 +16,8 @@ pub enum ByteCode {
     Sub,
     Mul,
     Div,
+    Mod,
+    FloorDiv,
     Equal,
     NotEqual,
     Greater,
@@ -52,6 +54,7 @@ pub enum ByteCode {
 
     BuildList,
     BuildDict,
+    BuildSet,
     IndexGet,
     IndexSet,
     Import,
@@ -89,6 +92,8 @@ pub enum Instruction {
     Sub,
     Mul,
     Div,
+    Mod,
+    FloorDiv,
     Equal,
     NotEqual,
     Greater,
@@ -130,6 +135,7 @@ pub enum Instruction {
 
     BuildList(usize),
     BuildDict(usize),
+    BuildSet(usize),
     IndexGet,
     IndexSet,
 

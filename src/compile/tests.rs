@@ -235,6 +235,22 @@ fn test_division() {
     assert_eq!(c[6], ByteCode::Div as u8);
 }
 
+#[test]
+fn test_modulo() {
+    let c = codes("7 % 3;");
+    assert_eq!(&c[0..3], &[ByteCode::Constant as u8, 0, 0]);
+    assert_eq!(&c[3..6], &[ByteCode::Constant as u8, 1, 0]);
+    assert_eq!(c[6], ByteCode::Mod as u8);
+}
+
+#[test]
+fn test_floordiv() {
+    let c = codes("8 ~/ 3;");
+    assert_eq!(&c[0..3], &[ByteCode::Constant as u8, 0, 0]);
+    assert_eq!(&c[3..6], &[ByteCode::Constant as u8, 1, 0]);
+    assert_eq!(c[6], ByteCode::FloorDiv as u8);
+}
+
 // ------------------------------------------------------------------------
 //  Precedence
 // ------------------------------------------------------------------------
@@ -257,6 +273,38 @@ fn test_grouping_overrides_precedence() {
     assert_eq!(c[6], ByteCode::Add as u8);
     assert_eq!(&c[7..10], &[ByteCode::Constant as u8, 2, 0]);
     assert_eq!(c[10], ByteCode::Mul as u8);
+}
+
+#[test]
+fn test_precedence_mod_before_add() {
+    let c = codes("1 + 7 % 3;");
+    assert_eq!(&c[0..3], &[ByteCode::Constant as u8, 0, 0]);
+    assert_eq!(&c[3..6], &[ByteCode::Constant as u8, 1, 0]);
+    assert_eq!(&c[6..9], &[ByteCode::Constant as u8, 2, 0]);
+    assert_eq!(c[9], ByteCode::Mod as u8);
+    assert_eq!(c[10], ByteCode::Add as u8);
+}
+
+#[test]
+fn test_precedence_floordiv_before_add() {
+    let c = codes("1 + 20 ~/ 3;");
+    assert_eq!(&c[0..3], &[ByteCode::Constant as u8, 0, 0]);
+    assert_eq!(&c[3..6], &[ByteCode::Constant as u8, 1, 0]);
+    assert_eq!(&c[6..9], &[ByteCode::Constant as u8, 2, 0]);
+    assert_eq!(c[9], ByteCode::FloorDiv as u8);
+    assert_eq!(c[10], ByteCode::Add as u8);
+}
+
+#[test]
+fn test_precedence_mul_and_mod_same_level() {
+    // At same precedence, left-associative: (a * b) % c
+    let c = codes("3 * 7 % 5;");
+    // 3, 7 → Mul, 5 → Mod (left-to-right since left-assoc at Factor level)
+    assert_eq!(&c[0..3], &[ByteCode::Constant as u8, 0, 0]);
+    assert_eq!(&c[3..6], &[ByteCode::Constant as u8, 1, 0]);
+    assert_eq!(c[6], ByteCode::Mul as u8);
+    assert_eq!(&c[7..10], &[ByteCode::Constant as u8, 2, 0]);
+    assert_eq!(c[10], ByteCode::Mod as u8);
 }
 
 // ------------------------------------------------------------------------
@@ -520,7 +568,7 @@ fn test_duplicate_local_is_error() {
 
 #[test]
 fn test_if_statement() {
-    let c = codes("if (true) 1;");
+    let c = codes("if true { 1; }");
     assert_eq!(c[0], ByteCode::True as u8);
     assert_eq!(c[1], ByteCode::JumpIfFalse as u8);
     assert_eq!(c[4], ByteCode::Pop as u8);
@@ -532,7 +580,7 @@ fn test_if_statement() {
 
 #[test]
 fn test_if_else_statement() {
-    let c = codes("if (true) 1; else 2;");
+    let c = codes("if true { 1; } else { 2; }");
     assert_eq!(c[0], ByteCode::True as u8);
     assert_eq!(c[1], ByteCode::JumpIfFalse as u8);
     assert_eq!(c[4], ByteCode::Pop as u8);
@@ -543,14 +591,14 @@ fn test_if_else_statement() {
 
 #[test]
 fn test_if_statement_condition_is_falsey_jumps() {
-    let c = codes("if (false) 1;");
+    let c = codes("if false { 1; }");
     assert_eq!(c[0], ByteCode::False as u8);
     assert_eq!(c[1], ByteCode::JumpIfFalse as u8);
 }
 
 #[test]
 fn test_if_else_constants() {
-    let (chunk, heap) = compile_with_heap("if (true) 42; else 99;");
+    let (chunk, heap) = compile_with_heap("if true { 42; } else { 99; }");
     // Check that both constants exist
     let has_42 = chunk.constants.iter().any(|&h| is_const_int(&heap, h, 42));
     let has_99 = chunk.constants.iter().any(|&h| is_const_int(&heap, h, 99));
@@ -560,7 +608,7 @@ fn test_if_else_constants() {
 
 #[test]
 fn test_nested_if() {
-    let (chunk, heap) = compile_with_heap("if (true) if (false) 1; else 2;");
+    let (chunk, heap) = compile_with_heap("if true { if false { 1; } else { 2; } }");
     let has_1 = chunk.constants.iter().any(|&h| is_const_int(&heap, h, 1));
     let has_2 = chunk.constants.iter().any(|&h| is_const_int(&heap, h, 2));
     assert!(has_1);
@@ -573,7 +621,7 @@ fn test_nested_if() {
 
 #[test]
 fn test_while_statement() {
-    let c = codes("while (false) 1;");
+    let c = codes("while false { 1; }");
     assert_eq!(c[0], ByteCode::False as u8);
     assert_eq!(c[1], ByteCode::JumpIfFalse as u8);
     let has_loop = c.iter().any(|&b| b == ByteCode::Loop as u8);
@@ -582,7 +630,7 @@ fn test_while_statement() {
 
 #[test]
 fn test_while_statement_loops_back() {
-    let c = codes("while (true) 1;");
+    let c = codes("while true { 1; }");
     assert_eq!(c[0], ByteCode::True as u8);
     assert_eq!(c[1], ByteCode::JumpIfFalse as u8);
     assert!(c.iter().any(|&b| b == ByteCode::Loop as u8));
@@ -590,7 +638,7 @@ fn test_while_statement_loops_back() {
 
 #[test]
 fn test_while_with_condition_variable() {
-    let c = codes("{ var x = 0; while (x < 3) { print(x); x = x + 1; } }");
+    let c = codes("{ var x = 0; while x < 3 { print(x); x = x + 1; } }");
     assert!(c.iter().any(|&b| b == ByteCode::GetLocal as u8));
     assert!(c.iter().any(|&b| b == ByteCode::SetLocal as u8));
     assert!(c.iter().any(|&b| b == ByteCode::Loop as u8));
@@ -603,14 +651,14 @@ fn test_while_with_condition_variable() {
 
 #[test]
 fn test_for_statement_infinite() {
-    let c = codes("for (;;) 1;");
+    let c = codes("for (;;) { 1; }");
     assert!(c.iter().any(|&b| b == ByteCode::Loop as u8));
     assert!(!c.iter().any(|&b| b == ByteCode::JumpIfFalse as u8));
 }
 
 #[test]
 fn test_for_statement_with_condition() {
-    let c = codes("for (; true ;) 1;");
+    let c = codes("for (; true ;) { 1; }");
     assert_eq!(c[0], ByteCode::True as u8);
     assert_eq!(c[1], ByteCode::JumpIfFalse as u8);
     assert!(c.iter().any(|&b| b == ByteCode::Loop as u8));
@@ -618,7 +666,7 @@ fn test_for_statement_with_condition() {
 
 #[test]
 fn test_for_statement_with_initializer() {
-    let (chunk, _heap) = compile_with_heap("for (var i = 0; i < 5; i = i + 1) print(i);");
+    let (chunk, _heap) = compile_with_heap("for (var i = 0; i < 5; i = i + 1) { print(i); }");
     let c = &chunk.codes;
     let get_local_count = c.windows(3)
         .filter(|w| w[0] == ByteCode::GetLocal as u8)
@@ -631,7 +679,7 @@ fn test_for_statement_with_initializer() {
 
 #[test]
 fn test_for_statement_no_increment() {
-    let c = codes("for (var i = 0; i < 3;) print(i);");
+    let c = codes("for (var i = 0; i < 3;) { print(i); }");
     let loop_count = c.iter().filter(|&&b| b == ByteCode::Loop as u8).count();
     assert_eq!(loop_count, 1);
     assert!(c.iter().any(|&b| b == ByteCode::JumpIfFalse as u8));
@@ -639,7 +687,7 @@ fn test_for_statement_no_increment() {
 
 #[test]
 fn test_for_statement_no_condition() {
-    let c = codes("for (var i = 0;; i = i + 1) print(i);");
+    let c = codes("for (var i = 0;; i = i + 1) { print(i); }");
     assert!(!c.iter().any(|&b| b == ByteCode::JumpIfFalse as u8));
     let loop_count = c.iter().filter(|&&b| b == ByteCode::Loop as u8).count();
     assert_eq!(loop_count, 2);
@@ -659,13 +707,13 @@ fn test_for_statement_variable_decl_in_initializer() {
 // ------------------------------------------------------------------------
 
 #[test]
-fn test_if_missing_parens() { assert_err("if true) 1;"); }
+fn test_if_missing_parens() { assert_err("if true 1;"); }
 #[test]
-fn test_if_missing_condition() { assert_err("if ();"); }
+fn test_if_missing_condition() { assert_err("if {};"); }
 #[test]
-fn test_while_missing_parens() { assert_err("while true) 1;"); }
+fn test_while_missing_parens() { assert_err("while true 1;"); }
 #[test]
-fn test_while_missing_condition() { assert_err("while () 1;"); }
+fn test_while_missing_condition() { assert_err("while {};"); }
 #[test]
 fn test_for_missing_parens() { assert_err("for var i = 0; i < 10; i = i + 1) print(i);"); }
 
@@ -1111,7 +1159,7 @@ fn test_dict_colon_required() {
 
 #[test]
 fn test_while_break_emits_jump() {
-    let c = codes("while (true) { break; }");
+    let c = codes("while true { break; }");
     // Should contain Jump (for break) and JumpIfFalse (for while exit)
     assert!(c.iter().any(|&b| b == ByteCode::Jump as u8));
     assert!(c.iter().any(|&b| b == ByteCode::JumpIfFalse as u8));
@@ -1119,7 +1167,7 @@ fn test_while_break_emits_jump() {
 
 #[test]
 fn test_while_continue_emits_loop() {
-    let c = codes("while (true) { continue; }");
+    let c = codes("while true { continue; }");
     // Should contain 2 Loop instructions: one for continue, one for back-edge
     let loop_count = c.iter().filter(|&&b| b == ByteCode::Loop as u8).count();
     assert_eq!(loop_count, 2);
@@ -1163,25 +1211,25 @@ fn test_continue_outside_loop_error() {
 #[test]
 fn test_break_inside_function_inside_while_is_error() {
     // break inside a nested function should NOT see the enclosing while loop.
-    assert_err("while (true) { fun f() { break; } }");
+    assert_err("while true { fun f() { break; } }");
 }
 
 #[test]
 fn test_continue_inside_function_inside_while_is_error() {
     // continue inside a nested function should NOT see the enclosing while loop.
-    assert_err("while (true) { fun f() { continue; } }");
+    assert_err("while true { fun f() { continue; } }");
 }
 
 #[test]
 fn test_break_inside_if_inside_while() {
     // break inside an if statement inside a while loop — valid.
-    let c = codes("while (true) { if (true) { break; } }");
+    let c = codes("while true { if true { break; } }");
     assert!(c.iter().any(|&b| b == ByteCode::Jump as u8));
 }
 
 #[test]
 fn test_break_inside_nested_while() {
-    let c = codes("while (true) { while (true) { break; } }");
+    let c = codes("while true { while true { break; } }");
     // Inner break should be a Jump, and outer while still has Loop + JumpIfFalse
     assert!(c.iter().any(|&b| b == ByteCode::Jump as u8));
     assert!(c.iter().any(|&b| b == ByteCode::Loop as u8));

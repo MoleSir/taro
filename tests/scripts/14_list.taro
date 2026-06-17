@@ -55,7 +55,7 @@ print("=== loop over list ===");
 var items = [10, 20, 30, 40];
 var i = 0;
 var sum = 0;
-while (i < len(items)) {
+while i < len(items) {
     sum = sum + items[i];
     i = i + 1;
 }

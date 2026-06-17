@@ -125,7 +125,7 @@ pub fn test_jump_if_false() {
 pub fn test_while_loop() {
     // Test while loop via compilation (return isn't allowed at top level).
     let mut vm = VirtualMachine::new();
-    vm.interpret("{ var i = 0; while (i < 3) { i = i + 1; } }").unwrap();
+    vm.interpret("{ var i = 0; while i < 3 { i = i + 1; } }").unwrap();
     // The script returns nil implicitly — verify execution succeeded.
 }
 
@@ -288,7 +288,9 @@ pub fn test_build_dict() {
         c.write_instruction(Instruction::Return, h);
     });
     let r = vm.pop_stack().unwrap();
-    assert_eq!(vm.obj_heap.get_dict_instance(r).unwrap().len(), 2);
+    let entry_count: usize = vm.obj_heap.get_dict_instance(r).unwrap()
+        .values().map(|b| b.len()).sum();
+    assert_eq!(entry_count, 2);
 }
 
 #[test]
@@ -1739,7 +1741,7 @@ pub fn test_random_random_in_range() {
          var sum = 0.0; \
          for (var i = 0; i < 100; i = i + 1) { \
              var v = random.random(); \
-             if (v < 0 or v >= 1) print(\"out of range: \" + str(v)); \
+             if v < 0 or v >= 1 { print(\"out of range: \" + str(v)); } \
          }"
     ).unwrap();
 }
@@ -1750,9 +1752,9 @@ pub fn test_random_randint() {
     vm.interpret(
         "import \"std/random\"; \
          var v = random.randint(1, 10); \
-         if (v < 1 or v > 10) print(\"out of range: \" + str(v)); \
+         if v < 1 or v > 10 { print(\"out of range: \" + str(v)); } \
          var w = random.randint(-5, 5); \
-         if (w < -5 or w > 5) print(\"out of range: \" + str(w));"
+         if w < -5 or w > 5 { print(\"out of range: \" + str(w)); }"
     ).unwrap();
 }
 
@@ -1762,7 +1764,7 @@ pub fn test_random_randint_min_equals_max() {
     vm.interpret(
         "import \"std/random\"; \
          var v = random.randint(7, 7); \
-         if (v != 7) print(\"expected 7, got \" + str(v));"
+         if v != 7 { print(\"expected 7, got \" + str(v)); }"
     ).unwrap();
 }
 
@@ -1790,9 +1792,9 @@ pub fn test_random_uniform() {
     vm.interpret(
         "import \"std/random\"; \
          var v = random.uniform(1.0, 5.0); \
-         if (v < 1.0 or v >= 5.0) print(\"out of range: \" + str(v)); \
+         if v < 1.0 or v >= 5.0 { print(\"out of range: \" + str(v)); } \
          var w = random.uniform(-2.5, 3.5); \
-         if (w < -2.5 or w >= 3.5) print(\"out of range: \" + str(w));"
+         if w < -2.5 or w >= 3.5 { print(\"out of range: \" + str(w)); }"
     ).unwrap();
 }
 
@@ -1802,7 +1804,7 @@ pub fn test_random_uniform_accepts_int_args() {
     vm.interpret(
         "import \"std/random\"; \
          var v = random.uniform(0, 10); \
-         if (v < 0 or v >= 10) print(\"out of range: \" + str(v));"
+         if v < 0 or v >= 10 { print(\"out of range: \" + str(v)); }"
     ).unwrap();
 }
 
@@ -1813,7 +1815,7 @@ pub fn test_random_choice() {
         "import \"std/random\"; \
          var items = [\"a\", \"b\", \"c\"]; \
          var v = random.choice(items); \
-         if (v != \"a\" and v != \"b\" and v != \"c\") print(\"unexpected element: \" + str(v));"
+         if v != \"a\" and v != \"b\" and v != \"c\" { print(\"unexpected element: \" + str(v)); }"
     ).unwrap();
 }
 
@@ -1842,7 +1844,7 @@ pub fn test_random_shuffle() {
         "import \"std/random\"; \
          var items = [1, 2, 3, 4, 5]; \
          var result = random.shuffle(items); \
-         if (len(result) != 5) print(\"wrong length: \" + str(len(result)));"
+         if len(result) != 5 { print(\"wrong length: \" + str(len(result))); }"
     ).unwrap();
 }
 
@@ -1854,7 +1856,7 @@ pub fn test_random_shuffle() {
 pub fn test_while_break_terminates() {
     let mut vm = VirtualMachine::new();
     // Infinite while loop with break should terminate.
-    vm.interpret("while (true) { break; }").unwrap();
+    vm.interpret("while true { break; }").unwrap();
 }
 
 #[test]
@@ -1862,9 +1864,9 @@ pub fn test_while_break_early_exit() {
     let mut vm = VirtualMachine::new();
     vm.interpret("
         var i = 0;
-        while (i < 10) {
+        while i < 10 {
             i = i + 1;
-            if (i == 3) { break; }
+            if i == 3 { break; }
         }
         print(i);  // 3
     ").unwrap();
@@ -1876,9 +1878,9 @@ pub fn test_while_continue_skips_rest() {
     vm.interpret("
         var i = 0;
         var sum = 0;
-        while (i < 5) {
+        while i < 5 {
             i = i + 1;
-            if (i == 3) { continue; }
+            if i == 3 { continue; }
             sum = sum + i;
         }
         print(sum);  // 1 + 2 + 4 + 5 = 12
@@ -1891,7 +1893,7 @@ pub fn test_for_break() {
     vm.interpret("
         var i = 0;
         for (i = 0; i < 10; i = i + 1) {
-            if (i == 4) { break; }
+            if i == 4 { break; }
         }
         print(i);  // 4
     ").unwrap();
@@ -1904,7 +1906,7 @@ pub fn test_for_continue_increment_runs() {
     vm.interpret("
         var results = [];
         for (var i = 0; i < 5; i = i + 1) {
-            if (i == 2) { continue; }
+            if i == 2 { continue; }
             results.append(i);
         }
         // results should be [0, 1, 3, 4]
@@ -1921,11 +1923,11 @@ pub fn test_nested_break() {
     let mut vm = VirtualMachine::new();
     vm.interpret("
         var i = 0;
-        while (i < 3) {
+        while i < 3 {
             var j = 0;
-            while (j < 3) {
+            while j < 3 {
                 j = j + 1;
-                if (j == 2) { break; }
+                if j == 2 { break; }
             }
             i = i + 1;
         }
@@ -1939,12 +1941,12 @@ pub fn test_nested_continue() {
     vm.interpret("
         var sum = 0;
         var i = 0;
-        while (i < 3) {
+        while i < 3 {
             i = i + 1;
             var j = 0;
-            while (j < 3) {
+            while j < 3 {
                 j = j + 1;
-                if (j == 2) { continue; }
+                if j == 2 { continue; }
                 sum = sum + 1;
             }
         }
@@ -1961,7 +1963,7 @@ pub fn test_break_in_for_without_condition() {
         var i = 0;
         for (;;) {
             i = i + 1;
-            if (i == 5) { break; }
+            if i == 5 { break; }
         }
         print(i);  // 5
     ").unwrap();
@@ -1974,7 +1976,7 @@ pub fn test_continue_in_for_without_increment() {
         var sum = 0;
         for (var i = 0; i < 5;) {
             i = i + 1;
-            if (i == 3) { continue; }
+            if i == 3 { continue; }
             sum = sum + i;
         }
         print(sum);  // 1 + 2 + 4 + 5 = 12
@@ -1986,9 +1988,9 @@ pub fn test_break_inside_if_inside_loop() {
     let mut vm = VirtualMachine::new();
     vm.interpret("
         var i = 0;
-        while (i < 10) {
+        while i < 10 {
             i = i + 1;
-            if (i == 7) { break; }
+            if i == 7 { break; }
         }
         print(i);  // 7
     ").unwrap();
@@ -2015,10 +2017,10 @@ pub fn test_break_inside_nested_block_in_while() {
     let mut vm = VirtualMachine::new();
     vm.interpret("
         var i = 0;
-        while (i < 10) {
+        while i < 10 {
             {
                 i = i + 1;
-                if (i == 5) { break; }
+                if i == 5 { break; }
             }
         }
         print(i);  // 5
@@ -2033,7 +2035,7 @@ pub fn test_continue_respects_increment_in_for() {
         var count = 0;
         for (var i = 0; i < 10; i = i + 1) {
             count = count + 1;
-            if (i < 7) { continue; }
+            if i < 7 { continue; }
             print(i);  // 7, 8, 9
         }
         // count should be 10 (body executed 10 times)
@@ -2081,7 +2083,7 @@ fn test_for_in_break() {
     vm.interpret("
         var acc = \"\";
         for x in [1, 2, 3, 4] {
-            if (x > 2) { break; }
+            if x > 2 { break; }
             acc = acc + str(x);
         }
         print(acc);  // \"12\"
@@ -2094,7 +2096,7 @@ fn test_for_in_continue() {
     vm.interpret("
         var acc = \"\";
         for x in [1, 2, 3] {
-            if (x == 2) { continue; }
+            if x == 2 { continue; }
             acc = acc + str(x);
         }
         print(acc);  // \"13\"
@@ -2136,4 +2138,120 @@ fn test_non_iterable_error() {
     let mut vm = VirtualMachine::new();
     let result = vm.interpret("for x in 42 {}");
     assert!(result.is_err());
+}
+
+// ==========================================================================
+//  Floor division & modulo
+// ==========================================================================
+
+#[test]
+pub fn test_floordiv_basic() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("print(7 ~/ 3);").unwrap();     // 2
+    vm.interpret("print(10 ~/ 3);").unwrap();    // 3
+}
+
+#[test]
+pub fn test_floordiv_negative() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("print(-7 ~/ 3);").unwrap();    // -3 (Python floor)
+    vm.interpret("print(7 ~/ -3);").unwrap();    // -3
+    vm.interpret("print(-7 ~/ -3);").unwrap();   // 2
+}
+
+#[test]
+pub fn test_floordiv_float() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("print(10.5 ~/ 3.0);").unwrap();  // 3.0
+    vm.interpret("print(10 ~/ 3.0);").unwrap();    // 3.0
+    vm.interpret("print(10.0 ~/ 3);").unwrap();    // 3.0
+}
+
+#[test]
+pub fn test_mod_basic() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("print(7 % 3);").unwrap();     // 1
+    vm.interpret("print(10 % 3);").unwrap();    // 1
+    vm.interpret("print(8 % 2);").unwrap();     // 0
+}
+
+#[test]
+pub fn test_mod_negative() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("print(-7 % 3);").unwrap();    // 2 (Python-style)
+    vm.interpret("print(7 % -3);").unwrap();    // -2
+    vm.interpret("print(-7 % -3);").unwrap();   // -1
+}
+
+#[test]
+pub fn test_mod_float() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("print(10.5 % 3.0);").unwrap();  // 1.5
+    vm.interpret("print(7.0 % 2.0);").unwrap();   // 1.0
+}
+
+#[test]
+pub fn test_floordiv_divide_by_zero() {
+    let mut vm = VirtualMachine::new();
+    assert!(vm.interpret("1 ~/ 0;").is_err());
+    assert!(vm.interpret("1.0 ~/ 0.0;").is_err());
+}
+
+#[test]
+pub fn test_mod_divide_by_zero() {
+    let mut vm = VirtualMachine::new();
+    assert!(vm.interpret("1 % 0;").is_err());
+    assert!(vm.interpret("1.0 % 0.0;").is_err());
+}
+
+#[test]
+pub fn test_regression_nil_floordiv_error() {
+    let mut vm = VirtualMachine::new();
+    assert!(vm.interpret("nil ~/ 2;").is_err());
+}
+
+#[test]
+pub fn test_regression_nil_mod_error() {
+    let mut vm = VirtualMachine::new();
+    assert!(vm.interpret("nil % 2;").is_err());
+}
+
+#[test]
+pub fn test_type_error_floordiv_class() {
+    let mut vm = VirtualMachine::new();
+    let err = vm.interpret("class Foo {} Foo ~/ 2;").unwrap_err();
+    assert!(err.to_string().contains("unsupported operand type(s) for floordiv"), "got: {err}");
+}
+
+#[test]
+pub fn test_type_error_mod_class() {
+    let mut vm = VirtualMachine::new();
+    let err = vm.interpret("class Foo {} Foo % 2;").unwrap_err();
+    assert!(err.to_string().contains("unsupported operand type(s) for mod"), "got: {err}");
+}
+
+#[test]
+pub fn test_floordiv_magic_method() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        class Vec {
+            fun __init__(self, x) { self.x = x; }
+            fun __floordiv__(self, s) { return Vec(self.x / s); }
+            fun __str__(self) { return str(self.x); }
+        }
+        print(Vec(10) ~/ 2);
+    ").unwrap();
+}
+
+#[test]
+pub fn test_mod_magic_method() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        class Vec {
+            fun __init__(self, x) { self.x = x; }
+            fun __mod__(self, s) { return Vec(self.x % s); }
+            fun __str__(self) { return str(self.x); }
+        }
+        print(Vec(10) % 3);
+    ").unwrap();
 }

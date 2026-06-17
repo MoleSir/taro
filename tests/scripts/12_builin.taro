@@ -188,16 +188,16 @@ print("=== clock ===");
 var t1 = clock();
 // burn some cycles
 var i = 0;
-while (i < 1000) {
+while i < 1000 {
     i = i + 1;
 }
 var t2 = clock();
 print(t2 >= t1);    // should be true
 
 // === 12. input() ===
-print("=== input ===");
-var s = input("Input your name: ");
-print(s);
-print(clock());
+// print("=== input ===");
+// var s = input("Input your name: ");
+// print(s);
+// print(clock());
 
 print("builtin done");
