@@ -2255,3 +2255,339 @@ pub fn test_mod_magic_method() {
         print(Vec(10) % 3);
     ").unwrap();
 }
+
+// ===========================================================================
+// Std module tests — OS
+// ===========================================================================
+
+#[test]
+pub fn test_std_os_import_creates_global() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("import \"std/os\"; print(os);").unwrap();
+}
+
+#[test]
+pub fn test_std_os_import_as_expression() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("var m = import \"std/os\"; print(m);").unwrap();
+}
+
+#[test]
+pub fn test_os_pid() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("import \"std/os\"; var p = os.pid(); print(p > 0);").unwrap();
+}
+
+#[test]
+pub fn test_os_cwd() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("import \"std/os\"; print(os.cwd()); var d = os.cwd(); print(len(d) > 0);").unwrap();
+}
+
+#[test]
+pub fn test_os_getenv() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("import \"std/os\"; var v = os.getenv(\"PATH\"); print(v != nil);").unwrap();
+}
+
+#[test]
+pub fn test_os_getenv_missing() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("import \"std/os\"; var v = os.getenv(\"TARO_NO_SUCH_VAR_XYZ\"); print(v == nil);").unwrap();
+}
+
+#[test]
+pub fn test_os_setenv_and_getenv() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(
+        "import \"std/os\"; \
+         os.setenv(\"TARO_TEST_VAR\", \"hello\"); \
+         print(os.getenv(\"TARO_TEST_VAR\") == \"hello\");"
+    ).unwrap();
+}
+
+#[test]
+pub fn test_os_env_returns_dict() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(
+        "import \"std/os\"; \
+         var e = os.env(); \
+         print(type(e) == Dict); \
+         print(len(e) > 0);"
+    ).unwrap();
+}
+
+#[test]
+pub fn test_os_tmpdir() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("import \"std/os\"; var t = os.tmpdir(); print(len(t) > 0);").unwrap();
+}
+
+#[test]
+pub fn test_os_args_returns_list() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("import \"std/os\"; var a = os.args(); print(type(a) == List);").unwrap();
+}
+
+// ===========================================================================
+// Std module tests — Time
+// ===========================================================================
+
+#[test]
+pub fn test_std_time_import_creates_global() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("import \"std/time\"; print(time);").unwrap();
+}
+
+#[test]
+pub fn test_std_time_import_as_expression() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("var m = import \"std/time\"; print(m);").unwrap();
+}
+
+#[test]
+pub fn test_time_time_returns_number() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(
+        "import \"std/time\"; \
+         var t = time.time(); \
+         print(t > 1700000000);" // well after 2023
+    ).unwrap();
+}
+
+#[test]
+pub fn test_time_sleep() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(
+        "import \"std/time\"; \
+         var t0 = time.time(); \
+         time.sleep(0.01); \
+         var t1 = time.time(); \
+         print(t1 >= t0);"
+    ).unwrap();
+}
+
+#[test]
+pub fn test_time_now_returns_object() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(
+        "import \"std/time\"; \
+         var n = time.now(); \
+         print(n.year > 2023); \
+         print(n.month >= 1); \
+         print(n.month <= 12); \
+         print(n.day >= 1); \
+         print(n.day <= 31); \
+         print(n.hour >= 0); \
+         print(n.hour <= 23); \
+         print(n.min >= 0); \
+         print(n.min <= 59); \
+         print(n.sec >= 0); \
+         print(n.sec < 60); \
+         print(n.wday >= 0); \
+         print(n.wday <= 6); \
+         print(n.yday >= 1); \
+         print(n.yday <= 366); \
+         print(n.timestamp > 1700000000);"
+    ).unwrap();
+}
+
+#[test]
+pub fn test_time_sleep_negative_error() {
+    let mut vm = VirtualMachine::new();
+    let err = vm.interpret(
+        "import \"std/time\"; time.sleep(-1);"
+    ).unwrap_err();
+    assert!(err.to_string().contains("negative duration"), "got: {err}");
+}
+
+// ===========================================================================
+// Std module tests — JSON
+// ===========================================================================
+
+#[test]
+pub fn test_std_json_import_creates_global() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("import \"std/json\"; print(json);").unwrap();
+}
+
+#[test]
+pub fn test_json_encode_nil() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("import \"std/json\"; print(json.encode(nil) == \"null\");").unwrap();
+}
+
+#[test]
+pub fn test_json_encode_bool() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(
+        "import \"std/json\"; \
+         print(json.encode(true) == \"true\"); \
+         print(json.encode(false) == \"false\");"
+    ).unwrap();
+}
+
+#[test]
+pub fn test_json_encode_int() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("import \"std/json\"; print(json.encode(42) == \"42\");").unwrap();
+}
+
+#[test]
+pub fn test_json_encode_float() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("import \"std/json\"; print(json.encode(3.14) == \"3.14\");").unwrap();
+}
+
+#[test]
+pub fn test_json_encode_string() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(
+        "import \"std/json\"; \
+         print(json.encode(\"hello\") == \"\\\"hello\\\"\"); \
+         print(json.encode(\"a\\nb\") == \"\\\"a\\\\nb\\\"\");"
+    ).unwrap();
+}
+
+#[test]
+pub fn test_json_encode_list() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(
+        "import \"std/json\"; \
+         print(json.encode([1, 2, 3]) == \"[1,2,3]\"); \
+         print(json.encode([\"a\", 1, true]) == \"[\\\"a\\\",1,true]\");"
+    ).unwrap();
+}
+
+#[test]
+pub fn test_json_encode_dict() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(
+        "import \"std/json\"; \
+         var d = dict(); \
+         d[\"name\"] = \"taro\"; \
+         d[\"ver\"] = 1; \
+         var s = json.encode(d); \
+         print(s == \"{\\\"name\\\":\\\"taro\\\",\\\"ver\\\":1}\" \
+               or s == \"{\\\"ver\\\":1,\\\"name\\\":\\\"taro\\\"}\");"
+    ).unwrap();
+}
+
+#[test]
+pub fn test_json_encode_deeply_nested() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(
+        "import \"std/json\"; \
+         var v = [1, [2, [3, 4]], {\"k\": [5, 6]}]; \
+         print(json.encode(v) == \"[1,[2,[3,4]],{\\\"k\\\":[5,6]}]\");"
+    ).unwrap();
+}
+
+#[test]
+pub fn test_json_decode_null() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("import \"std/json\"; print(json.decode(\"null\") == nil);").unwrap();
+}
+
+#[test]
+pub fn test_json_decode_bool() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(
+        "import \"std/json\"; \
+         print(json.decode(\"true\") == true); \
+         print(json.decode(\"false\") == false);"
+    ).unwrap();
+}
+
+#[test]
+pub fn test_json_decode_number() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(
+        "import \"std/json\"; \
+         print(json.decode(\"42\") == 42); \
+         print(json.decode(\"3.14\") == 3.14); \
+         print(json.decode(\"-100\") == -100);"
+    ).unwrap();
+}
+
+#[test]
+pub fn test_json_decode_string() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(
+        "import \"std/json\"; \
+         print(json.decode(\"\\\"hello\\\"\") == \"hello\"); \
+         print(json.decode(\"\\\"a\\\\nb\\\"\") == \"a\\nb\");"
+    ).unwrap();
+}
+
+#[test]
+pub fn test_json_decode_array() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(
+        "import \"std/json\"; \
+         var a = json.decode(\"[1, 2, 3]\"); \
+         print(len(a) == 3); \
+         print(a[0] == 1); \
+         print(a[2] == 3);"
+    ).unwrap();
+}
+
+#[test]
+pub fn test_json_decode_object() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(
+        "import \"std/json\"; \
+         var d = json.decode(\"{\\\"x\\\": 10, \\\"y\\\": 20}\"); \
+         print(d[\"x\"] == 10); \
+         print(d[\"y\"] == 20);"
+    ).unwrap();
+}
+
+#[test]
+pub fn test_json_decode_nested() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(
+        "import \"std/json\"; \
+         var v = json.decode(\"{\\\"items\\\": [1, {\\\"nested\\\": true}]}\"); \
+         print(v[\"items\"][0] == 1); \
+         print(v[\"items\"][1][\"nested\"] == true);"
+    ).unwrap();
+}
+
+#[test]
+pub fn test_json_roundtrip() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(
+        "import \"std/json\"; \
+         var original = {\"a\": 1, \"b\": [2, 3], \"c\": {\"d\": \"hello\"}}; \
+         var encoded = json.encode(original); \
+         var decoded = json.decode(encoded); \
+         print(decoded[\"a\"] == 1); \
+         print(decoded[\"b\"][1] == 3); \
+         print(decoded[\"c\"][\"d\"] == \"hello\");"
+    ).unwrap();
+}
+
+#[test]
+pub fn test_json_encode_unsupported_type() {
+    let mut vm = VirtualMachine::new();
+    let err = vm.interpret(
+        "import \"std/json\"; json.encode(print);"
+    ).unwrap_err();
+    assert!(
+        err.to_string().contains("cannot serialize"),
+        "got: {err}"
+    );
+}
+
+#[test]
+pub fn test_json_decode_invalid() {
+    let mut vm = VirtualMachine::new();
+    let err = vm.interpret(
+        "import \"std/json\"; json.decode(\"not json\");"
+    ).unwrap_err();
+    assert!(
+        err.to_string().contains("json.decode"),
+        "got: {err}"
+    );
+}

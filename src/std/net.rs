@@ -56,13 +56,7 @@ impl VirtualMachine {
         exports.insert(ShrString::new_str("Socket"), socket_class);
         exports.insert(ShrString::new_str("Server"), server_class);
 
-        let module = self.obj_heap.alloc_fields_instance(self.obj_heap.module_class);
-        if let Some(inst) = self.obj_heap.get_instance_mut(module) {
-            if let ObjectInstanceData::Fields(fields) = &mut inst.data {
-                *fields = exports;
-            }
-        }
-
+        let module = self.obj_heap.alloc_fields_instance(self.obj_heap.module_class, exports);
         Ok(module)
     }
 }

@@ -172,13 +172,7 @@ impl VirtualMachine {
         };
 
         // 12. Create module object with exported names as fields.
-        let module = self.obj_heap.alloc_fields_instance(self.obj_heap.module_class);
-        if let Some(inst) = self.obj_heap.get_instance_mut(module) {
-            if let ObjectInstanceData::Fields(fields) = &mut inst.data {
-                *fields = exports;
-            }
-        }
-
+        let module = self.obj_heap.alloc_fields_instance(self.obj_heap.module_class, exports);
         Ok(module)
     }
 
@@ -599,9 +593,12 @@ impl VirtualMachine {
     pub fn import_std_module(&mut self, module_name: &str) -> ExecuteResult<ObjectHandle> {
         match module_name {
             "fs" => self.create_fs_module(),
+            "json" => self.create_json_module(),
             "math" => self.create_math_module(),
             "net" => self.create_net_module(),
+            "os" => self.create_os_module(),
             "random" => self.create_random_module(),
+            "time" => self.create_time_module(),
             _ => Err(ExecuteError::ImportError(format!(
                 "unknown std module '{module_name}'"
             ))),
@@ -662,7 +659,7 @@ impl VirtualMachine {
                     let class = self.get_class(callee)?;
                     class.methods.get("__init__").copied()
                 };
-                let instance = self.obj_heap.alloc_fields_instance(callee);
+                let instance = self.obj_heap.alloc_fields_instance(callee, Default::default());
                 let index = self.callee_slot(arg_count);
                 self.stack[index] = instance;
                 if let Some(method) = init_method {

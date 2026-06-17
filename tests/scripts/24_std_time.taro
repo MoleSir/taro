@@ -1,0 +1,55 @@
+// Std module tests — time
+
+// === 1. Import std/time ===
+print("=== import std/time ===");
+import "std/time";
+print(time);                     // module instance
+
+// === 2. time() — Unix timestamp ===
+print("=== time() ===");
+var t = time.time();
+print(t > 1700000000);           // well past 2023
+
+// === 3. sleep ===
+print("=== sleep ===");
+var t0 = time.time();
+time.sleep(0.02);
+var t1 = time.time();
+print(t1 >= t0);                 // true
+
+// === 4. now() — structured time object ===
+print("=== now() ===");
+var n = time.now();
+print(n.year > 2023);            // true
+print(n.month >= 1);             // true
+print(n.month <= 12);            // true
+print(n.day >= 1);               // true
+print(n.day <= 31);              // true
+print(n.hour >= 0);              // true
+print(n.hour <= 23);             // true
+print(n.min >= 0);               // true
+print(n.min <= 59);              // true
+print(n.sec >= 0);               // true
+print(n.sec < 60);               // true
+print(n.wday >= 0);              // true (0=Sun)
+print(n.wday <= 6);              // true (6=Sat)
+print(n.yday >= 1);              // true
+print(n.yday <= 366);            // true
+print(n.timestamp > 1700000000); // true
+
+// === 5. now() fields accessed via dot ===
+print("=== now() field access ===");
+print(n.year);
+print(n.month);
+print(n.day);
+print(n.hour);
+print(n.min);
+print(str(n.sec));
+print(str(n.timestamp));
+
+// === 6. Import as expression ===
+print("=== import as expression ===");
+var m = import "std/time";
+print(m.time() > 0);             // true
+
+print("done");

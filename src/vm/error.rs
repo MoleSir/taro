@@ -103,4 +103,13 @@ pub enum ExecuteError {
 
     #[error("net error: {0}")]
     NetError(String),
+
+    #[error("time error: {0}")]
+    TimeError(String),
+
+    #[error("os error: {0}")]
+    OsError(String),
+
+    #[error("json error: {0}")]
+    JosnError(String),
 }   

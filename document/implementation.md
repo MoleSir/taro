@@ -39,13 +39,16 @@ src/
     │   ├── list.rs           #   List methods (append, pop, extend, __getitem__, __setitem__, __len__, …)
     │   ├── dict.rs           #   Dict methods (get, pop, keys, values, __getitem__, __setitem__, __len__, …)
     │   └── function.rs       #   Global functions (print, str, len, type, min, max, abs, input, clock)
-    ├── stdlib/               # Virtual std modules (no .taro file needed)
+    ├── std/                  # Virtual std modules (no .taro file needed)
     │   ├── mod.rs            #   import_std_module dispatcher
     │   ├── fs.rs             #   std/fs — File class + standalone fs functions
+    │   ├── json.rs           #   std/json — JSON encode/decode via serde_json
     │   ├── math.rs           #   std/math — trig, log, rounding, conversion + constants
     │   ├── net.rs            #   std/net — TCP Socket client + Server listener
-    │   └── random.rs         #   std/random — random numbers, randint, choice, shuffle
-    └── tests.rs              # VM runtime tests (267 tests)
+    │   ├── os.rs             #   std/os — env vars, pid, cwd, shell commands
+    │   ├── random.rs         #   std/random — random numbers, randint, choice, shuffle
+    │   └── time.rs           #   std/time — timestamp, sleep, structured UTC time
+    └── tests.rs              # VM runtime tests (391 tests)
 
 tests/scripts/                # Integration test scripts
 ├── 00_test.taro             # Smoke test
@@ -61,12 +64,17 @@ tests/scripts/                # Integration test scripts
 ├── 18_call_magic.taro       # __call__ magic method
 ├── 19_import.taro           # File-based module import
 ├── 20_std_fs.taro           # std/fs integration tests
-└── 21_std_math.taro         # std/math integration tests
+├── 21_std_math.taro         # std/math integration tests
+├── 22_std_random.taro       # std/random integration tests
+├── 23_std_os.taro           # std/os integration tests
+├── 24_std_time.taro         # std/time integration tests
+└── 25_std_json.taro         # std/json integration tests
 tests/scripts/lib/           # File-based modules used by import tests
 └── math.taro                #   Sample module (add, mul, PI, Vec class)
 examples/                    # Runnable example scripts
 ├── echo_server.taro         #   TCP echo server using std/net
-└── echo_client.taro         #   TCP echo client using std/net
+├── echo_client.taro         #   TCP echo client using std/net
+└── web.taro                 #   HTTP web server using std/net
 ```
 
 ## Key design decisions
@@ -105,4 +113,4 @@ Mark-and-sweep, triggered when `bytes_allocated` exceeds `gc_threshold` (1 MiB).
 
 ### Error handling
 
-`ExecuteError` (28 variants) uses `thiserror::Error` with `#[error("...")]` for Display. A `context_error` derive from `thiserrorctx` adds context-tracking for better error messages. `InterpretError` wraps compile + runtime errors.
+`ExecuteError` (30 variants) uses `thiserror::Error` with `#[error("...")]` for Display. A `context_error` derive from `thiserrorctx` adds context-tracking for better error messages. `InterpretError` wraps compile + runtime errors.

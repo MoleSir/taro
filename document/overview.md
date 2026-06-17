@@ -364,6 +364,9 @@ Module globals do not leak — `PI` is only accessible via `math.PI`.
 | `std/fs`     | File I/O — `File` class + standalone convenience functions |
 | `std/random` | Random numbers, randint, uniform, choice, shuffle |
 | `std/net`    | TCP networking — `Socket` client + `Server` listener |
+| `std/os`     | Environment variables, process info, working directory, shell commands |
+| `std/time`   | Unix timestamp, sleep, structured UTC time |
+| `std/json`   | JSON encoding (serialize) and decoding (parse) |
 
 ### `std/math`
 
@@ -504,3 +507,137 @@ server.close();
 | `server.bind(port)` | Bind to `0.0.0.0:port`. Also `bind(host, port)` or `bind("host:port")`. |
 | `server.accept()` | Accept a connection, return a `Socket` instance. |
 | `server.close()` | Close the listener. |
+
+### `std/os`
+
+Operating system interaction — environment variables, process info, working directory, and shell commands.
+
+```taro
+import "std/os";
+
+// Environment variables
+print(os.getenv("HOME"));             // "/home/user" (or nil if not set)
+os.setenv("MY_VAR", "hello");
+print(os.getenv("MY_VAR"));           // "hello"
+
+// All env vars as a dict
+var all = os.env();
+print(all["PATH"]);                   // system PATH
+
+// Process info
+print(os.pid());                      // e.g. 12345
+print(os.args());                     // command-line arguments as list
+
+// Working directory
+var here = os.cwd();
+os.chdir("/tmp");                     // change directory
+print(os.cwd());                      // "/tmp"
+os.chdir(here);                       // restore
+
+// Temp directory
+print(os.tmpdir());                   // e.g. "/tmp"
+
+// Run a shell command
+var code = os.system("echo hello");   // prints "hello", returns exit code
+print(code);                          // 0
+```
+
+| Function | Description |
+|----------|-------------|
+| `os.args()` | List of command-line arguments. |
+| `os.getenv(name)` | Value of environment variable, or `nil`. |
+| `os.setenv(key, value)` | Set an environment variable. |
+| `os.env()` | Dict of all environment variables. |
+| `os.cwd()` | Current working directory path. |
+| `os.chdir(path)` | Change working directory. |
+| `os.pid()` | Current process ID. |
+| `os.tmpdir()` | System temporary directory path. |
+| `os.system(cmd)` | Run a shell command, return exit code. |
+
+### `std/time`
+
+Time functions — Unix timestamp, sleep, and structured UTC time.
+
+```taro
+import "std/time";
+
+// Unix timestamp
+print(time.time());                   // e.g. 1781706916.163
+
+// Sleep (seconds, fractional ok)
+time.sleep(0.5);                      // pause 500 ms
+
+// Structured UTC time
+var n = time.now();
+print(n.year);                        // 2026
+print(n.month);                       // 6
+print(n.day);                         // 17
+print(n.hour);                        // 14
+print(n.min);                         // 35
+print(n.sec);                         // 16.163
+print(n.wday);                        // 3 (= Wednesday, 0=Sun)
+print(n.yday);                        // 168 (day of year)
+print(n.timestamp);                   // same as time.time()
+```
+
+| Function | Description |
+|----------|-------------|
+| `time.time()` | Current Unix timestamp in seconds (float). |
+| `time.sleep(secs)` | Pause execution for `secs` seconds (may be fractional). |
+| `time.now()` | Current UTC time as a structured object with fields: `year`, `month`, `day`, `hour`, `min`, `sec`, `wday` (0=Sun), `yday` (1–366), `timestamp`. |
+
+All time fields are in UTC.
+
+### `std/json`
+
+JSON encoding (serialization) and decoding (parsing), backed by `serde_json`.
+
+```taro
+import "std/json";
+
+// ---- encode: Taro value → JSON string ----
+json.encode(nil);                     // "null"
+json.encode(42);                      // "42"
+json.encode(true);                    // "true"
+json.encode("hello");                 // "\"hello\""
+json.encode([1, 2, 3]);               // "[1,2,3]"
+
+var d = dict();
+d["name"] = "taro";
+d["version"] = 1;
+json.encode(d);                       // "{\"name\":\"taro\",\"version\":1}"
+
+// ---- decode: JSON string → Taro value ----
+json.decode("null");                  // nil
+json.decode("42");                    // 42 (Int)
+json.decode("3.14");                  // 3.14 (Float)
+json.decode("[1, 2, 3]");             // [1, 2, 3] (List)
+json.decode("{\"x\": 10}");           // {"x": 10} (Dict)
+
+// ---- roundtrip ----
+var original = {"a": 1, "b": [2, 3]};
+var encoded = json.encode(original);
+var decoded = json.decode(encoded);
+print(decoded["a"]);                  // 1
+print(decoded["b"][1]);               // 3
+```
+
+| Function | Description |
+|----------|-------------|
+| `json.encode(value)` | Serialize a Taro value to a JSON string. Supports nil, bool, int, float, string, list, dict, and set. Errors on non-serializable types (functions, classes, native objects). |
+| `json.decode(string)` | Parse a JSON string into a Taro value. JSON null→nil, bool→Bool, number→Int/Float, string→String, array→List, object→Dict. |
+
+**Type mapping:**
+
+| Taro → JSON | JSON → Taro |
+|---|---|
+| `nil` → `null` | `null` → `nil` |
+| `Bool` → `true`/`false` | `true`/`false` → `Bool` |
+| `Int` → number | number → `Int` (if integral) or `Float` |
+| `Float` → number | — |
+| `String` → string | string → `String` |
+| `List` → `[...]` | `[...]` → `List` |
+| `Dict` → `{...}` (string keys) | `{...}` → `Dict` |
+| `Set` → `[...]` (as array) | — |
+
+NaN and Infinity are encoded as `null` (JSON does not support them). Dict keys must be strings; non-string keys cause an error.

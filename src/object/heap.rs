@@ -168,8 +168,8 @@ impl ObjectHeap {
     }
 
     #[inline]
-    pub fn alloc_fields_instance(&mut self, class: ObjectHandle) -> ObjectHandle {
-        self.alloc_instance(class, ObjectInstanceData::Fields(Default::default()))
+    pub fn alloc_fields_instance(&mut self, class: ObjectHandle, fields: HashMap<ShrString, ObjectHandle>) -> ObjectHandle {
+        self.alloc_instance(class, ObjectInstanceData::Fields(fields))
     }
 
     #[inline]

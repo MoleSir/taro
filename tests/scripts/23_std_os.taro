@@ -1,0 +1,53 @@
+// Std module tests — os (operating system)
+
+// === 1. Import std/os ===
+print("=== import std/os ===");
+import "std/os";
+print(os);                       // module instance
+
+// === 2. pid ===
+print("=== pid ===");
+print(os.pid() > 0);             // true
+
+// === 3. cwd + chdir ===
+print("=== cwd / chdir ===");
+var c = os.cwd();
+print(len(c) > 0);               // true
+os.chdir("/tmp");
+print(os.cwd() == "/tmp");       // true
+os.chdir(c);                     // restore
+
+// === 4. getenv ===
+print("=== getenv ===");
+print(os.getenv("PATH") != nil); // true
+print(os.getenv("TARO_NO_SUCH_VAR____") == nil); // true
+
+// === 5. setenv ===
+print("=== setenv ===");
+os.setenv("TARO_TEST_ENV", "hello world");
+print(os.getenv("TARO_TEST_ENV") == "hello world"); // true
+
+// === 6. env ===
+print("=== env ===");
+var all = os.env();
+print(type(all) == Dict);        // true
+print(len(all) > 0);             // true
+print(all.get("PATH") != nil);   // true
+
+// === 7. tmpdir ===
+print("=== tmpdir ===");
+print(len(os.tmpdir()) > 0);     // true
+
+// === 8. args ===
+print("=== args ===");
+var a = os.args();
+print(type(a) == List);          // true
+print(a.len());
+print(a[0]);
+
+// === 9. Import as expression ===
+print("=== import as expression ===");
+var m = import "std/os";
+print(m.pid() > 0);              // true
+
+print("done");
