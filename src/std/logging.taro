@@ -1,0 +1,95 @@
+// logging — pure-taro logging module.
+//
+// Usage:
+//   import "std/logging" as log;
+//   log.set_level(log.INFO);       // set default logger level
+//   log.info("server started");
+//   log.error("something broke");
+//
+//   // Named loggers:
+//   var db_log = log.get_logger("db", log.DEBUG);
+//   db_log.debug("query: SELECT ...");
+//
+// Log format:  [LEVEL] YYYY-MM-DD HH:MM:SS [name] message
+
+// ==========================================================================
+//  Level constants
+// ==========================================================================
+
+// Level constants — must come before any `import` so the compiler
+// can correctly capture both vars and import locals as upvalues.
+
+var DEBUG = 0;
+var INFO  = 1;
+var WARN  = 2;
+var ERROR = 3;
+
+import "std/time";
+
+// ==========================================================================
+//  Logger class
+// ==========================================================================
+
+class Logger {
+    fun __init__(self, name, level) {
+        self.name = name;
+        self.level = level;
+    }
+
+    fun set_level(self, level) {
+        self.level = level;
+    }
+
+    fun debug(self, msg) {
+        if (DEBUG >= self.level) { self._emit("DEBUG", msg); }
+    }
+
+    fun info(self, msg) {
+        if (INFO >= self.level) { self._emit("INFO ", msg); }
+    }
+
+    fun warn(self, msg) {
+        if (WARN >= self.level) { self._emit("WARN ", msg); }
+    }
+
+    fun error(self, msg) {
+        if (ERROR >= self.level) { self._emit("ERROR", msg); }
+    }
+
+    // ---- internals ----
+
+    fun _emit(self, level_name, msg) {
+        var t = time.now();
+        var ts = str(t.year) + "-" +
+                 self._p2(t.month) + "-" +
+                 self._p2(t.day) + " " +
+                 self._p2(t.hour) + ":" +
+                 self._p2(t.min) + ":" +
+                 self._p2(int(t.sec));
+        print("[" + level_name + "] " + ts + " [" + self.name + "] " + str(msg));
+    }
+
+    fun _p2(self, n) {
+        if (n < 10) { return "0" + str(n); }
+        return str(n);
+    }
+}
+
+// ==========================================================================
+//  Default (root) logger + convenience functions
+// ==========================================================================
+
+var _default_logger = Logger("root", INFO);
+
+fun get_logger(name, level) {
+    return Logger(name, level);
+}
+
+fun set_level(level) {
+    _default_logger.set_level(level);
+}
+
+fun debug(msg) { _default_logger.debug(msg); }
+fun info(msg)  { _default_logger.info(msg); }
+fun warn(msg)  { _default_logger.warn(msg); }
+fun error(msg) { _default_logger.error(msg); }

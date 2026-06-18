@@ -1,0 +1,76 @@
+// Std module tests — logging (leveled logging with timestamps)
+
+import "std/logging" as log;
+
+// === 1. Import ===
+print("=== import ===");
+print(log != nil);  // true
+
+// === 2. Level constants ===
+print("=== level constants ===");
+print(log.DEBUG == 0);
+print(log.INFO  == 1);
+print(log.WARN  == 2);
+print(log.ERROR == 3);
+
+// === 3. Default level is INFO (debug suppressed) ===
+print("=== default level INFO ===");
+print("  [expect INFO, WARN, ERROR — no DEBUG line below]:");
+log.debug("SHOULD NOT APPEAR — DEBUG");
+log.info("info message");
+log.warn("warn message");
+log.error("error message");
+
+// === 4. set_level to DEBUG ===
+print("=== set_level(DEBUG) ===");
+log.set_level(log.DEBUG);
+print("  [expect all four levels now]:");
+log.debug("debug message (now visible)");
+log.info("info message");
+
+// === 5. set_level to ERROR ===
+print("=== set_level(ERROR) ===");
+log.set_level(log.ERROR);
+print("  [expect only ERROR]:");
+log.info("SHOULD NOT APPEAR — INFO suppressed");
+log.warn("SHOULD NOT APPEAR — WARN suppressed");
+log.error("only error shows");
+
+// === 6. Named logger ===
+print("=== named logger ===");
+var db = log.get_logger("database", log.WARN);
+print("  [expect WARN and ERROR only]:");
+db.debug("SHOULD NOT APPEAR");
+db.info("SHOULD NOT APPEAR");
+db.warn("db warning");
+db.error("db error");
+
+// === 7. Named logger level change ===
+print("=== change named logger level ===");
+db.set_level(log.DEBUG);
+print("  [expect all four]:");
+db.debug("db debug now visible");
+db.info("db info now visible");
+
+// === 8. Named loggers are independent ===
+print("=== independent loggers ===");
+var a = log.get_logger("A", log.INFO);
+var b = log.get_logger("B", log.WARN);
+print("  [expect A: info, B: none]:");
+a.info("A info");
+b.info("SHOULD NOT APPEAR — B at WARN level");
+
+// === 9. get_logger returns Logger instance ===
+print("=== get_logger returns Logger ===");
+var mylog = log.get_logger("test", log.DEBUG);
+print(mylog != nil);                              // true
+print(type(mylog));                               // Instance
+mylog.debug("test logger debug");
+
+// === 10. Timestamp format (YYYY-MM-DD HH:MM:SS) ===
+print("=== timestamp format ===");
+print("  [expect ISO-like timestamp in line below]:");
+log.set_level(log.INFO);
+log.info("check timestamp format above");
+
+print("done");

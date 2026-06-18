@@ -160,6 +160,18 @@ fun add(a, b) {
 }
 print(add(3, 4));  // 7
 
+// Default parameters
+fun greet(name, greeting = "Hello", punctuation = "!") {
+    return greeting + " " + name + punctuation;
+}
+print(greet("World"));                    // Hello World!
+print(greet("Taro", "Hi"));               // Hi Taro!
+print(greet("Claude", punctuation = ".")); // Hello Claude.
+
+// Keyword arguments (positional must come before keyword)
+print(greet(name = "World"));             // Hello World!
+print(greet("Bob", punctuation = "?"));   // Hello Bob?
+
 // Closures capture variables from enclosing scope
 fun makeCounter() {
     var i = 0;
@@ -175,6 +187,11 @@ print(c());  // 1
 print(c());  // 2
 print(c());  // 3
 ```
+
+Default values must be constant literals (numbers, strings, booleans, nil).
+Parameters with defaults must come after required parameters.
+Keyword arguments are matched by name at runtime; unknown or duplicate keyword
+arguments produce runtime errors.
 
 ## Classes and instances
 
@@ -198,8 +215,23 @@ print(p.distance()); // 7
 - Methods declare `self` as the first parameter (explicit receiver).
 - `Class(args)` calls `__init__` on a fresh instance.
 - Class without `__init__` takes zero arguments.
+- Constructors support default parameters and keyword arguments.
 - `instance.field = value` sets fields; `instance.field` reads them.
 - `instance.method(args)` looks up methods on the instance's class.
+
+```taro
+class Point {
+    fun __init__(self, x = 0, y = 0) {
+        self.x = x;
+        self.y = y;
+    }
+}
+
+var a = Point();           // (0, 0)
+var b = Point(5);          // (5, 0)
+var c = Point(y = 7);      // (0, 7)
+var d = Point(x = 3, y = 4); // (3, 4)
+```
 
 ## Inheritance
 
@@ -312,7 +344,7 @@ Comparison fallback mechanism: `!=` works with only `__eq__`, `>=` works with on
 
 ## Builtin methods
 
-List and Dict objects have builtin methods callable via dot syntax:
+List, Dict, and String objects have builtin methods callable via dot syntax:
 
 | Type | Method | Description |
 |------|--------|-------------|
@@ -323,6 +355,17 @@ List and Dict objects have builtin methods callable via dot syntax:
 | Dict | `dict.keys()` | Return a list of all keys. |
 | Dict | `dict.values()` | Return a list of all values. |
 | Dict | `dict.pop(key)` | Remove `key` and return its value; errors if missing. |
+| String | `str.upper()` / `str.lower()` | Convert case (aliases: `to_uppercase()`, `to_lowercase()`). |
+| String | `str.trim()` | Remove leading/trailing whitespace (aliases: `strip()`, `lstrip()`, `rstrip()`). |
+| String | `str.starts_with(p)` / `str.ends_with(s)` | Check prefix/suffix. |
+| String | `str.contains(sub)` | Check if string contains `sub`. |
+| String | `str.replace(old, new)` | Replace all occurrences of `old` with `new`. |
+| String | `str.split(delim)` | Split by delimiter, return list of strings. |
+| String | `str.substr(start, len)` | Extract substring (negative start counts from end). |
+| String | `str.find(sub)` / `str.rfind(sub)` | Return first/last index of `sub`, or -1 if not found. |
+| String | `str.is_empty()` | Return `true` if the string is empty. |
+| String | `str.repeat(n)` | Repeat the string `n` times. |
+| String | `str.len()` | Return the string length in bytes. |
 
 Methods can be assigned to variables and called later (bound methods):
 
@@ -361,14 +404,73 @@ Module globals do not leak — `PI` is only accessible via `math.PI`.
 
 | Module | Description |
 |--------|-------------|
-| `std/math`     | Constants, trig, logarithms, rounding, angle conversion |
-| `std/fs`       | File I/O — `File` class + standalone convenience functions |
-| `std/random`   | Random numbers, randint, uniform, choice, shuffle |
-| `std/net`      | TCP networking — `Socket` client + `Server` listener |
-| `std/os`       | Environment variables, process info, working directory, shell commands |
-| `std/time`     | Unix timestamp, sleep, structured UTC time |
-| `std/json`     | JSON encoding (serialize) and decoding (parse) |
-| `std/itertools`| Lazy iterators — map, filter, zip, chain, take, drop, …  (pure taro) |
+| `std/argparse`  | CLI argument parser — flag definitions, type coercion (pure taro) |
+| `std/fs`        | File I/O — `File` class + standalone convenience functions |
+| `std/itertools` | Lazy iterators — map, filter, zip, chain, take, drop, … (pure taro) |
+| `std/json`      | JSON encoding (serialize) and decoding (parse) |
+| `std/logging`   | Leveled logging with timestamps and named loggers (pure taro) |
+| `std/math`      | Constants, trig, logarithms, rounding, angle conversion |
+| `std/net`       | TCP networking — `Socket` client + `Server` listener |
+| `std/os`        | Environment variables, process info, working directory, shell commands |
+| `std/random`    | Random numbers, randint, uniform, choice, shuffle |
+| `std/time`      | Unix timestamp, sleep, structured UTC time |
+
+### `std/argparse`
+
+Pure-taro CLI argument parser supporting flags with type coercion (string, int, float, bool).
+
+```taro
+import "std/argparse";
+
+var p = argparse.Parser();
+p.add_str("--name", "name", "default_name");
+p.add_int("--count", "count", 1);
+p.add_float("--rate", "rate", 0.5);
+p.add_bool("--verbose", "verbose");
+
+var args = p.parse(os.args());
+print(args["name"]);      // from --name flag
+print(args["verbose"]);   // true if --verbose given
+```
+
+| Method | Description |
+|--------|-------------|
+| `p.add_str(flag, dest, default)` | Add a string flag. |
+| `p.add_int(flag, dest, default)` | Add an integer flag. |
+| `p.add_float(flag, dest, default)` | Add a float flag. |
+| `p.add_bool(flag, dest)` | Add a boolean switch (no value; sets to `true` when present). |
+| `p.parse(args_list)` | Parse a list of tokens (e.g. `os.args()`), return a dict mapping dest→value. Returns `nil` on error (with diagnostic printed). |
+
+### `std/logging`
+
+Pure-taro leveled logging with timestamps and named loggers.
+
+```taro
+import "std/logging" as log;
+
+// Level constants: log.DEBUG, log.INFO, log.WARN, log.ERROR
+log.set_level(log.INFO);
+
+log.info("server started");
+log.warn("disk usage at 80%");
+log.error("connection refused");
+
+// Named logger with its own level
+var db = log.get_logger("database", log.WARN);
+db.error("query timeout");   // shown
+db.info("query ok");         // suppressed (WARN > INFO)
+```
+
+| Function | Description |
+|----------|-------------|
+| `log.get_logger(name, level)` | Create a named logger with the given level. |
+| `log.set_level(level)` | Set the root logger's minimum level. |
+| `log.debug(msg)` | Log at DEBUG level (level 0). |
+| `log.info(msg)` | Log at INFO level (level 1). |
+| `log.warn(msg)` | Log at WARN level (level 2). |
+| `log.error(msg)` | Log at ERROR level (level 3). |
+
+Log format: `[LEVEL] YYYY-MM-DD HH:MM:SS [name] message`
 
 ### `std/math`
 

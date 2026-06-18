@@ -1,0 +1,100 @@
+// Std module tests — argparse (CLI argument parser)
+
+import "std/argparse";
+
+// === 1. Import ===
+print("=== import ===");
+print(argparse != nil);  // true
+
+// === 2. All defaults ===
+print("=== all defaults ===");
+var p = argparse.Parser();
+p.add_str("--name", "name", "default_name");
+p.add_int("--count", "count", 42);
+p.add_float("--rate", "rate", 1.5);
+p.add_bool("--verbose", "verbose");
+
+var r = p.parse(["prog"]);
+print(r["name"] == "default_name");
+print(r["count"] == 42);
+print(r["rate"] == 1.5);
+print(r["verbose"] == false);
+
+// === 3. String flag ===
+print("=== string flag ===");
+var p2 = argparse.Parser();
+p2.add_str("--name", "name", "");
+var r2 = p2.parse(["prog", "--name", "hello"]);
+print(r2["name"] == "hello");
+
+// === 4. Int flag ===
+print("=== int flag ===");
+var p3 = argparse.Parser();
+p3.add_int("--num", "num", 0);
+var r3 = p3.parse(["prog", "--num", "99"]);
+print(r3["num"] == 99);
+
+// === 5. Float flag ===
+print("=== float flag ===");
+var p4 = argparse.Parser();
+p4.add_float("--val", "val", 0.0);
+var r4 = p4.parse(["prog", "--val", "3.14"]);
+print(r4["val"] == 3.14);
+
+// === 6. Bool switch (present) ===
+print("=== bool switch present ===");
+var p5 = argparse.Parser();
+p5.add_bool("--verbose", "verbose");
+var r5 = p5.parse(["prog", "--verbose"]);
+print(r5["verbose"] == true);
+
+// === 7. Bool switch (absent) ===
+print("=== bool switch absent ===");
+var r5b = p5.parse(["prog"]);
+print(r5b["verbose"] == false);
+
+// === 8. Mixed flags ===
+print("=== mixed flags ===");
+var p6 = argparse.Parser();
+p6.add_str("--name", "name", "");
+p6.add_int("--count", "count", 0);
+p6.add_bool("--debug", "debug");
+var r6 = p6.parse(["prog", "--name", "taro", "--count", "7", "--debug"]);
+print(r6["name"] == "taro");
+print(r6["count"] == 7);
+print(r6["debug"] == true);
+
+// === 9. Positional args are ignored ===
+print("=== positional args ignored ===");
+var p7 = argparse.Parser();
+p7.add_bool("--flag", "flag");
+var r7 = p7.parse(["/usr/bin/prog", "some_file.txt", "--flag"]);
+print(r7["flag"] == true);
+
+// === 10. Unknown flag returns nil ===
+print("=== unknown flag ===");
+var p8 = argparse.Parser();
+var r8 = p8.parse(["prog", "--unknown"]);
+print(r8 == nil);
+
+// === 11. Missing value returns nil ===
+print("=== missing value ===");
+var p9 = argparse.Parser();
+p9.add_str("--name", "name", "");
+var r9 = p9.parse(["prog", "--name"]);
+print(r9 == nil);
+
+// === 12. Multiple parsers are independent ===
+print("=== independent parsers ===");
+var pa = argparse.Parser();
+pa.add_str("--a", "a", "aaa");
+var pb = argparse.Parser();
+pb.add_str("--b", "b", "bbb");
+var ra = pa.parse(["prog", "--a", "X"]);
+var rb = pb.parse(["prog", "--b", "Y"]);
+print(ra["a"] == "X");
+print(rb["b"] == "Y");
+print(ra.contains("b") == false);
+print(rb.contains("a") == false);
+
+print("done");

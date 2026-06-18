@@ -103,6 +103,143 @@ impl ObjectString {
         Self::__len__(vm, receiver)
     }
 
+    /// `string.upper()` — convert all characters to uppercase.
+    pub fn upper(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let s = vm.get_string_instance(receiver)?;
+        Ok(vm.obj_heap.alloc_string_instance(s.to_uppercase().into()))
+    }
+
+    /// `string.lower()` — convert all characters to lowercase.
+    pub fn lower(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let s = vm.get_string_instance(receiver)?;
+        Ok(vm.obj_heap.alloc_string_instance(s.to_lowercase().into()))
+    }
+
+    /// `string.trim()` — remove leading and trailing whitespace.
+    pub fn trim(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let s = vm.get_string_instance(receiver)?;
+        Ok(vm.obj_heap.alloc_string_instance(s.trim().to_string().into()))
+    }
+
+    /// `string.trim_start()` — remove leading whitespace.
+    pub fn trim_start(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let s = vm.get_string_instance(receiver)?;
+        Ok(vm.obj_heap.alloc_string_instance(s.trim_start().to_string().into()))
+    }
+
+    /// `string.trim_end()` — remove trailing whitespace.
+    pub fn trim_end(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let s = vm.get_string_instance(receiver)?;
+        Ok(vm.obj_heap.alloc_string_instance(s.trim_end().to_string().into()))
+    }
+
+    /// `string.starts_with(prefix)` — return true if the string starts with `prefix`.
+    pub fn starts_with(vm: &mut VirtualMachine, receiver: ObjectHandle, prefix_handle: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let s = vm.get_string_instance(receiver)?;
+        let prefix = vm.get_string_instance(prefix_handle)?;
+        Ok(vm.obj_heap.alloc_bool_instance(s.starts_with(prefix.as_str())))
+    }
+
+    /// `string.ends_with(suffix)` — return true if the string ends with `suffix`.
+    pub fn ends_with(vm: &mut VirtualMachine, receiver: ObjectHandle, suffix_handle: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let s = vm.get_string_instance(receiver)?;
+        let suffix = vm.get_string_instance(suffix_handle)?;
+        Ok(vm.obj_heap.alloc_bool_instance(s.ends_with(suffix.as_str())))
+    }
+
+    /// `string.contains(sub)` — return true if the string contains `sub`.
+    pub fn contains(vm: &mut VirtualMachine, receiver: ObjectHandle, sub_handle: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let s = vm.get_string_instance(receiver)?;
+        let sub = vm.get_string_instance(sub_handle)?;
+        Ok(vm.obj_heap.alloc_bool_instance(s.contains(sub.as_str())))
+    }
+
+    /// `string.replace(old, new)` — replace all occurrences of `old` with `new`.
+    pub fn replace(vm: &mut VirtualMachine, receiver: ObjectHandle, old_handle: ObjectHandle, new_handle: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let s = vm.get_string_instance(receiver)?;
+        let old = vm.get_string_instance(old_handle)?;
+        let new = vm.get_string_instance(new_handle)?;
+        Ok(vm.obj_heap.alloc_string_instance(s.replace(old.as_str(), new.as_str()).into()))
+    }
+
+    /// `string.split(delim)` — split the string by `delim` and return a list.
+    pub fn split(vm: &mut VirtualMachine, receiver: ObjectHandle, delim_handle: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let s = vm.get_string_instance(receiver)?.clone();
+        let delim = vm.get_string_instance(delim_handle)?.clone();
+        let parts: Vec<ObjectHandle> = s.split(delim.as_str())
+            .map(|part| vm.obj_heap.alloc_string_instance(part.to_string().into()))
+            .collect();
+        Ok(vm.obj_heap.alloc_list_instance(parts))
+    }
+
+    /// `string.substr(start, length)` — extract a substring.
+    pub fn substr(vm: &mut VirtualMachine, receiver: ObjectHandle, start_handle: ObjectHandle, length_handle: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let s = vm.get_string_instance(receiver)?.clone();
+        let start = *vm.get_integer_instance(start_handle)?;
+        let length = *vm.get_integer_instance(length_handle)?;
+        let len = s.len() as i64;
+
+        // Handle negative start (count from end).
+        let byte_start = if start < 0 {
+            let adjusted = len + start;
+            if adjusted < 0 { 0 } else { adjusted }
+        } else if start > len {
+            len
+        } else {
+            start
+        } as usize;
+
+        let byte_end = if length < 0 {
+            // Negative length: clamp to 0 (like JavaScript).
+            byte_start
+        } else {
+            let end = byte_start as i64 + length;
+            if end > len { len as usize } else { end as usize }
+        };
+
+        let result = &s.as_str()[byte_start..byte_end];
+        Ok(vm.obj_heap.alloc_string_instance(result.to_string().into()))
+    }
+
+    /// `string.find(sub)` — return the index of the first occurrence of `sub`,
+    /// or -1 if not found.
+    pub fn find(vm: &mut VirtualMachine, receiver: ObjectHandle, sub_handle: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let s = vm.get_string_instance(receiver)?;
+        let sub = vm.get_string_instance(sub_handle)?;
+        match s.find(sub.as_str()) {
+            Some(idx) => Ok(vm.obj_heap.alloc_integer_instance(idx as i64)),
+            None => Ok(vm.obj_heap.alloc_integer_instance(-1)),
+        }
+    }
+
+    /// `string.rfind(sub)` — return the index of the last occurrence of `sub`,
+    /// or -1 if not found.
+    pub fn rfind(vm: &mut VirtualMachine, receiver: ObjectHandle, sub_handle: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let s = vm.get_string_instance(receiver)?;
+        let sub = vm.get_string_instance(sub_handle)?;
+        match s.rfind(sub.as_str()) {
+            Some(idx) => Ok(vm.obj_heap.alloc_integer_instance(idx as i64)),
+            None => Ok(vm.obj_heap.alloc_integer_instance(-1)),
+        }
+    }
+
+    /// `string.is_empty()` — return true if the string is empty.
+    pub fn is_empty(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let s = vm.get_string_instance(receiver)?;
+        Ok(vm.obj_heap.alloc_bool_instance(s.is_empty()))
+    }
+
+    /// `string.repeat(n)` — repeat the string `n` times.
+    pub fn repeat(vm: &mut VirtualMachine, receiver: ObjectHandle, n_handle: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let s = vm.get_string_instance(receiver)?.clone();
+        let n = *vm.get_integer_instance(n_handle)?;
+        if n < 0 {
+            return Err(ExecuteError::IndexOutOfRange(n, 0));
+        }
+        let result = s.repeat(n as usize);
+        Ok(vm.obj_heap.alloc_string_instance(result.into()))
+    }
+
     pub fn __getitem__(vm: &mut VirtualMachine, receiver: ObjectHandle, idx_handle: ObjectHandle) -> ExecuteResult<ObjectHandle> {
         let s = vm.get_string_instance(receiver)?.clone();
         let idx_val = *vm.get_integer_instance(idx_handle)?;
@@ -178,6 +315,31 @@ pub fn register_string_builtins(heap: &mut ObjectHeap) {
     heap.register_native_method(sc, "__len__",      NativeFunction::a1(ObjectString::__len__));
     heap.register_native_method(sc, "__getitem__",  NativeFunction::a2(ObjectString::__getitem__));
     heap.register_native_method(sc, "len",          NativeFunction::a1(ObjectString::len));
+    heap.register_native_method(sc, "upper",        NativeFunction::a1(ObjectString::upper));
+    heap.register_native_method(sc, "lower",        NativeFunction::a1(ObjectString::lower));
+    heap.register_native_method(sc, "trim",         NativeFunction::a1(ObjectString::trim));
+    heap.register_native_method(sc, "trim_start",   NativeFunction::a1(ObjectString::trim_start));
+    heap.register_native_method(sc, "trim_end",     NativeFunction::a1(ObjectString::trim_end));
+    heap.register_native_method(sc, "starts_with",  NativeFunction::a2(ObjectString::starts_with));
+    heap.register_native_method(sc, "ends_with",    NativeFunction::a2(ObjectString::ends_with));
+    heap.register_native_method(sc, "contains",     NativeFunction::a2(ObjectString::contains));
+    heap.register_native_method(sc, "replace",      NativeFunction::a3(ObjectString::replace));
+    heap.register_native_method(sc, "split",        NativeFunction::a2(ObjectString::split));
+    heap.register_native_method(sc, "substr",       NativeFunction::a3(ObjectString::substr));
+    heap.register_native_method(sc, "find",         NativeFunction::a2(ObjectString::find));
+    heap.register_native_method(sc, "rfind",        NativeFunction::a2(ObjectString::rfind));
+    heap.register_native_method(sc, "is_empty",     NativeFunction::a1(ObjectString::is_empty));
+    heap.register_native_method(sc, "repeat",       NativeFunction::a2(ObjectString::repeat));
+
+    // Aliases
+    heap.register_native_method(sc, "to_uppercase",   NativeFunction::a1(ObjectString::upper));
+    heap.register_native_method(sc, "to_lowercase",   NativeFunction::a1(ObjectString::lower));
+    heap.register_native_method(sc, "strip",          NativeFunction::a1(ObjectString::trim));
+    heap.register_native_method(sc, "lstrip",         NativeFunction::a1(ObjectString::trim_start));
+    heap.register_native_method(sc, "rstrip",         NativeFunction::a1(ObjectString::trim_end));
+    heap.register_native_method(sc, "index_of",       NativeFunction::a2(ObjectString::find));
+    heap.register_native_method(sc, "last_index_of",  NativeFunction::a2(ObjectString::rfind));
+
     heap.register_native_method(sc, "__iter__",     NativeFunction::a1(ObjectString::__iter__));
 
     let sic = heap.string_iter_class;

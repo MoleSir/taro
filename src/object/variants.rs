@@ -19,14 +19,29 @@ pub enum Method {
 // ========================================================================== //
 
 pub struct ObjectFunction {
+    /// Total parameter count (including those with defaults).
     pub arity: usize,
+    /// Parameter count without defaults — these must be provided at every
+    /// call site.  Always ≤ `arity`.
+    pub required_arity: usize,
+    /// Names of all parameters in declaration order.
+    pub param_names: Vec<ShrString>,
+    /// Default values for the *last* N parameters, where N = arity - required_arity.
+    pub defaults: Vec<ObjectHandle>,
     pub chunk: Chunk,
     pub name: ShrString,
 }
 
 impl ObjectFunction {
-    pub fn new(name: impl Into<ShrString>, arity: usize, chunk: Chunk) -> Self {
-        Self { arity, name: name.into(), chunk }
+    pub fn new(
+        name: impl Into<ShrString>,
+        arity: usize,
+        required_arity: usize,
+        param_names: Vec<ShrString>,
+        defaults: Vec<ObjectHandle>,
+        chunk: Chunk,
+    ) -> Self {
+        Self { arity, required_arity, param_names, defaults, name: name.into(), chunk }
     }
 }
 

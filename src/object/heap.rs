@@ -137,8 +137,16 @@ impl ObjectHeap {
         self.alloc(obj)
     }
 
-    pub fn alloc_function(&mut self, name: impl Into<ShrString>, arity: usize, chunk: Chunk) -> ObjectHandle {
-        let obj = ObjectFunction::new(name, arity, chunk);
+    pub fn alloc_function(
+        &mut self,
+        name: impl Into<ShrString>,
+        arity: usize,
+        required_arity: usize,
+        param_names: Vec<ShrString>,
+        defaults: Vec<ObjectHandle>,
+        chunk: Chunk,
+    ) -> ObjectHandle {
+        let obj = ObjectFunction::new(name, arity, required_arity, param_names, defaults, chunk);
         self.alloc(obj)
     }
 
@@ -412,6 +420,9 @@ impl ObjectHeap {
                 Object::Function(function) => {
                     for &const_handle in function.chunk.constants.iter() {
                         self.mark_object(const_handle);
+                    }
+                    for &default_handle in &function.defaults {
+                        self.mark_object(default_handle);
                     }
                 }
                 Object::Closure(closure) => {

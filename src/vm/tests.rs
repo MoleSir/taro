@@ -11,7 +11,7 @@ fn run_chunk(build: impl FnOnce(&mut Chunk, &mut ObjectHeap)) -> VirtualMachine 
     let heap_ptr = &mut vm.obj_heap as *mut ObjectHeap;
     let mut chunk = Chunk::new();
     unsafe { build(&mut chunk, &mut *heap_ptr); }
-    let function = vm.obj_heap.alloc_function("script", 0, chunk);
+    let function = vm.obj_heap.alloc_function("script", 0, 0, vec![], vec![], chunk);
     vm.interpret_function(function).unwrap();
     vm
 }
@@ -137,7 +137,7 @@ pub fn test_function_call() {
         f.write_instruction(Instruction::GetLocal(2), h);
         f.write_instruction(Instruction::Add, h);
         f.write_instruction(Instruction::Return, h);
-        let fn_h = h.alloc_function("add", 2, f);
+        let fn_h = h.alloc_function("add", 2, 2, vec![], vec![], f);
         let cl_h = h.alloc_closure(fn_h);
         c.write_instruction(Instruction::Constant(cl_h), h);
         c.write_instruction(Instruction::Constant(h.alloc_integer_instance(10)), h);
@@ -384,7 +384,7 @@ pub fn test_class_with_method() {
         mc.write_instruction(Instruction::Constant(h.alloc_integer_instance(2)), h);
         mc.write_instruction(Instruction::Mul, h);
         mc.write_instruction(Instruction::Return, h);
-        let mfn = h.alloc_function("double", 2, mc);
+        let mfn = h.alloc_function("double", 2, 2, vec![], vec![], mc);
         let mcl = h.alloc_closure(mfn);
         h.get_class_mut(cls).unwrap().methods.insert("double".into(), crate::Method::User(mcl));
         c.write_instruction(Instruction::Constant(cls), h);
@@ -441,7 +441,7 @@ pub fn test_super_invoke() {
         let mut bc = Chunk::new();
         bc.write_instruction(Instruction::Constant(h.alloc_integer_instance(1)), h);
         bc.write_instruction(Instruction::Return, h);
-        let bm = h.alloc_function("m", 1, bc);
+        let bm = h.alloc_function("m", 1, 1, vec![], vec![], bc);
         let bm_cl = h.alloc_closure(bm);
         h.get_class_mut(base).unwrap().methods.insert("m".into(), crate::Method::User(bm_cl));
 
@@ -451,7 +451,7 @@ pub fn test_super_invoke() {
         dc.write_instruction(Instruction::GetLocal(0), h);
         dc.write_instruction(Instruction::SuperInvoke("m".into(), 0), h);
         dc.write_instruction(Instruction::Return, h);
-        let dm = h.alloc_function("m", 1, dc);
+        let dm = h.alloc_function("m", 1, 1, vec![], vec![], dc);
         let dm_cl = h.alloc_closure(dm);
         h.get_class_mut(derived).unwrap().methods.insert("m".into(), crate::Method::User(dm_cl));
 
@@ -2590,4 +2590,262 @@ pub fn test_json_decode_invalid() {
         err.to_string().contains("json.decode"),
         "got: {err}"
     );
+}
+
+// ===========================================================================
+// Default parameters & keyword arguments
+// ===========================================================================
+
+#[test]
+pub fn test_default_param_basic() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        fun greet(name, greeting = \"Hello\") {
+            print(greeting + \" \" + name);
+        }
+        greet(\"World\");
+        greet(\"Taro\", \"Hi\");
+    ").unwrap();
+}
+
+#[test]
+pub fn test_default_param_multiple() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        fun add(a, b = 10, c = 20) {
+            return a + b + c;
+        }
+        print(add(1));          // 1 + 10 + 20 = 31
+        print(add(1, 2));       // 1 + 2 + 20 = 23
+        print(add(1, 2, 3));    // 1 + 2 + 3 = 6
+    ").unwrap();
+}
+
+#[test]
+pub fn test_default_param_all_optional() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        fun wrap(x = 0, y = 0) {
+            return x * 10 + y;
+        }
+        print(wrap());          // 0
+        print(wrap(3));         // 30
+        print(wrap(3, 5));      // 35
+    ").unwrap();
+}
+
+#[test]
+pub fn test_default_param_nil() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        fun maybe(value = nil) {
+            print(value == nil);
+        }
+        maybe();
+        maybe(42);
+    ").unwrap();
+}
+
+#[test]
+pub fn test_default_param_bool() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        fun flag(on = true) {
+            print(on);
+        }
+        flag();
+        flag(false);
+    ").unwrap();
+}
+
+#[test]
+pub fn test_default_param_string() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        fun echo(msg = \"default\") {
+            print(msg);
+        }
+        echo();
+        echo(\"custom\");
+    ").unwrap();
+}
+
+#[test]
+pub fn test_default_param_negative_number() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        fun offset(x, delta = -1) {
+            return x + delta;
+        }
+        print(offset(5));       // 4
+        print(offset(5, 3));    // 8
+    ").unwrap();
+}
+
+#[test]
+pub fn test_default_param_negative_float() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        fun shift(x = -1.5) {
+            print(x);
+        }
+        shift();
+        shift(2.5);
+    ").unwrap();
+}
+
+#[test]
+pub fn test_keyword_arg_basic() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        fun greet(name, greeting) {
+            print(greeting + \" \" + name);
+        }
+        greet(name = \"World\", greeting = \"Hello\");
+        greet(greeting = \"Hi\", name = \"Taro\");
+    ").unwrap();
+}
+
+#[test]
+pub fn test_keyword_arg_mixed_positional() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        fun describe(name, age, city = \"unknown\") {
+            print(name + \" is \" + str(age) + \" from \" + city);
+        }
+        describe(\"Alice\", age = 30);
+        describe(\"Bob\", city = \"NYC\", age = 25);
+    ").unwrap();
+}
+
+#[test]
+pub fn test_keyword_arg_with_defaults() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        fun build(a = 1, b = 2, c = 3) {
+            return a * 100 + b * 10 + c;
+        }
+        print(build());              // 123
+        print(build(9));             // 923
+        print(build(c = 7));         // 127
+        print(build(b = 5, c = 6));  // 156
+        print(build(9, c = 0));      // 900
+    ").unwrap();
+}
+
+#[test]
+pub fn test_keyword_arg_positional_after_keyword_error() {
+    let mut vm = VirtualMachine::new();
+    let err = vm.interpret("
+        fun f(a, b, c) {}
+        f(a = 1, 2);
+    ").unwrap_err();
+    assert!(err.to_string().contains("Positional"), "got: {err}");
+}
+
+#[test]
+pub fn test_keyword_arg_unknown_error() {
+    let mut vm = VirtualMachine::new();
+    let err = vm.interpret("
+        fun f(x, y) { print(x + y); }
+        f(x = 1, z = 3);
+    ").unwrap_err();
+    assert!(err.to_string().contains("unknown keyword"), "got: {err}");
+}
+
+#[test]
+pub fn test_keyword_arg_duplicate_error() {
+    let mut vm = VirtualMachine::new();
+    let err = vm.interpret("
+        fun f(x, y) { print(x + y); }
+        f(x = 1, x = 2);
+    ").unwrap_err();
+    assert!(err.to_string().contains("Duplicate"), "got: {err}");
+}
+
+#[test]
+pub fn test_default_param_required_after_optional_error() {
+    let mut vm = VirtualMachine::new();
+    let err = vm.interpret("
+        fun bad(a = 1, b) {}
+    ").unwrap_err();
+    assert!(err.to_string().contains("Required"), "got: {err}");
+}
+
+#[test]
+pub fn test_arg_count_range_error() {
+    let mut vm = VirtualMachine::new();
+    let err = vm.interpret("
+        fun f(a, b = 2, c = 3) {}
+        f();
+    ").unwrap_err();
+    assert!(err.to_string().contains("arguments"), "got: {err}");
+}
+
+#[test]
+pub fn test_keyword_arg_in_class_constructor() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        class Point {
+            fun __init__(self, x = 0, y = 0) {
+                self.x = x;
+                self.y = y;
+            }
+        }
+        var p = Point(x = 5, y = 3);
+        print(p.x);  // 5
+        print(p.y);  // 3
+        var q = Point(y = 10);
+        print(q.x);  // 0
+        print(q.y);  // 10
+    ").unwrap();
+}
+
+#[test]
+pub fn test_default_param_in_class_constructor() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        class Point {
+            fun __init__(self, x = 0, y = 0) {
+                self.x = x;
+                self.y = y;
+            }
+        }
+        var p = Point();
+        print(p.x);  // 0
+        print(p.y);  // 0
+        var q = Point(7);
+        print(q.x);  // 7
+        print(q.y);  // 0
+    ").unwrap();
+}
+
+#[test]
+pub fn test_default_param_method_positional() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        class Greeter {
+            fun greet(self, name, punctuation = \"!\") {
+                print(\"Hello \" + name + punctuation);
+            }
+        }
+        var g = Greeter();
+        g.greet(\"World\");
+        g.greet(\"Taro\", \"?\");
+    ").unwrap();
+}
+
+#[test]
+pub fn test_default_param_method() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret("
+        class Greeter {
+            fun greet(self, name, punctuation = \"!\") {
+                print(\"Hello \" + name + punctuation);
+            }
+        }
+        var g = Greeter();
+        g.greet(\"World\");
+        g.greet(\"Taro\", \"?\");  // Invoke still uses positional
+    ").unwrap();
 }

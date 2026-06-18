@@ -161,6 +161,12 @@ enum FunctionKind {
 struct CompilationUnit {
     name:        ShrString,
     arity:       usize,
+    /// Number of parameters *without* a default value.
+    required_arity: usize,
+    /// Names of all parameters in declaration order.
+    param_names: Vec<ShrString>,
+    /// Default values for the last `arity - required_arity` parameters.
+    defaults:    Vec<ObjectHandle>,
     chunk:       Chunk,
     kind:        FunctionKind,
     locals:      Vec<Local>,
@@ -246,6 +252,18 @@ pub enum ParseReason {
 
     #[error("invalid escape sequence '\\{0}'")]
     InvalidEscape(char),
+
+    #[error("required parameter after optional parameter")]
+    RequiredAfterOptional,
+
+    #[error("positional argument after keyword argument")]
+    PositionalAfterKeyword,
+
+    #[error("duplicate keyword argument '{0}'")]
+    DuplicateKeywordArg(String),
+
+    #[error("invalid default value — only constant literals (numbers, strings, bools, nil) are supported")]
+    InvalidDefaultValue,
 }
 
 #[derive(Debug)]
@@ -316,6 +334,9 @@ impl CompilationUnit {
         Self {
             name: name.clone(),
             arity: 0,
+            required_arity: 0,
+            param_names: vec![],
+            defaults: vec![],
             chunk: Chunk::new(),
             kind,
             locals,
@@ -327,7 +348,14 @@ impl CompilationUnit {
 
     /// Finish compilation and create the function object in the heap.
     fn finish(self, obj_heap: &mut ObjectHeap) -> ObjectHandle {
-        obj_heap.alloc_function(self.name, self.arity, self.chunk)
+        obj_heap.alloc_function(
+            self.name,
+            self.arity,
+            self.required_arity,
+            self.param_names,
+            self.defaults,
+            self.chunk,
+        )
     }
 }
 
@@ -488,8 +516,15 @@ impl<'a> Parser<'a> {
         // Emit import instruction (pushes module object onto stack).
         self.emit(Instruction::Import(ShrString::new_string(inner)));
 
-        // Define global with the module name.
-        self.emit(Instruction::DefineGlobal(ShrString::new_string(module_name)));
+        // In module/function scope, store in a local so nested functions and
+        // class methods can capture the import as an upvalue.  Otherwise
+        // define a global variable (script scope).
+        if self.cur_unit().scope_depth > 0 {
+            self.add_variable_to_scope(ShrString::new_string(module_name.clone()))?;
+            self.mark_local_initialized();
+        } else {
+            self.emit(Instruction::DefineGlobal(ShrString::new_string(module_name)));
+        }
 
         self.consume(TokenKind::Semicolon, "Expect ';' after import.")?;
         Ok(())
@@ -601,8 +636,33 @@ impl<'a> Parser<'a> {
                 if self.cur_unit().arity > 255 {
                     record_error_at_current!(self, ParseReason::TooMuchParameter);
                 }
-                let param_name = self.declare_variable_name("Expect parameter name.")?;
-                self.finalize_variable(param_name)?;
+
+                // Parse parameter name.
+                self.consume(TokenKind::Identifier, "Expect parameter name.")?;
+                let param_name_str = ShrString::new_string(self.previous().lexeme);
+                self.add_variable_to_scope(param_name_str.clone())?;
+                self.cur_unit_mut().param_names.push(param_name_str);
+
+                // Check for default value: `param = literal`.
+                if self.match_token(TokenKind::Equal) {
+                    let default_handle = self.parse_default_value()?;
+                    self.cur_unit_mut().defaults.push(default_handle);
+                    // required_arity stays as-is — this parameter is optional.
+                } else {
+                    // No default — required parameter.
+                    if !self.cur_unit().defaults.is_empty() {
+                        record_error_at_current!(self, ParseReason::RequiredAfterOptional);
+                    }
+                    self.cur_unit_mut().required_arity += 1;
+                }
+
+                // Finalize: mark local initialized or define global.
+                if self.cur_unit().scope_depth > 0 {
+                    self.mark_local_initialized();
+                } else {
+                    let n = ShrString::new_string(self.previous().lexeme);
+                    self.emit(Instruction::DefineGlobal(n));
+                }
 
                 if !self.match_token(TokenKind::Comma) {
                     break;
@@ -1196,8 +1256,12 @@ impl<'a> Parser<'a> {
     }
 
     fn call(parser: &mut Parser<'_>, _can_assign: bool) -> ParseResult<()> {
-        let arg_count = parser.parse_argument_list()?;
-        parser.emit(Instruction::Call(arg_count));
+        let (pos_count, kw_count, kw_names) = parser.parse_argument_list()?;
+        if kw_count > 0 {
+            parser.emit(Instruction::CallKw { pos_count, kw_count, kw_names });
+        } else {
+            parser.emit(Instruction::Call(pos_count));
+        }
         Ok(())
     }
 
@@ -1207,7 +1271,12 @@ impl<'a> Parser<'a> {
 
         if parser.match_token(TokenKind::LeftParen) {
             // Method invocation — optimized OP_INVOKE.
-            let arg_count = parser.parse_argument_list()?;
+            let (pos_count, kw_count, _kw_names) = parser.parse_argument_list()?;
+            let arg_count = pos_count + kw_count;
+            if kw_count > 0 {
+                // TODO: support keyword args in Invoke
+                record_error_at_current!(parser, ParseReason::ExpectedExpression);
+            }
             parser.emit(Instruction::Invoke(field_name, arg_count));
         } else if can_assign && parser.match_token(TokenKind::Equal) {
             parser.parse_expression()?;
@@ -1242,7 +1311,11 @@ impl<'a> Parser<'a> {
         parser.emit(Instruction::GetLocal(0));
 
         if parser.match_token(TokenKind::LeftParen) {
-            let arg_count = parser.parse_argument_list()?;
+            let (pos_count, kw_count, _kw_names) = parser.parse_argument_list()?;
+            let arg_count = pos_count + kw_count;
+            if kw_count > 0 {
+                record_error_at_current!(parser, ParseReason::ExpectedExpression);
+            }
             parser.emit(Instruction::SuperInvoke(method_name, arg_count));
         } else {
             bail_error_at_current!(parser, ParseReason::ExpectedToken("Expect '(' after super method name."));
@@ -1331,22 +1404,106 @@ impl<'a> Parser<'a> {
         Ok(())
     }
 
-    fn parse_argument_list(&mut self) -> ParseResult<usize> {
-        let mut arg_count = 0;
+    fn parse_argument_list(&mut self) -> ParseResult<(usize, usize, Vec<ShrString>)> {
+        let mut pos_count: usize = 0;
+        let mut kw_count: usize = 0;
+        let mut kw_names: Vec<ShrString> = vec![];
+        let mut seen_keyword = false;
+
         if !self.check(TokenKind::RightParen) {
             loop {
-                self.parse_expression()?;
-                if arg_count >= 255 {
+                if pos_count + kw_count >= 255 {
                     record_error_at_current!(self, ParseReason::TooMuchArgument);
                 }
-                arg_count += 1;
+
+                // Detect keyword argument: `Identifier = expr`.
+                if self.check(TokenKind::Identifier)
+                    && self.peek_next().kind == TokenKind::Equal
+                {
+                    seen_keyword = true;
+                    self.advance(); // consume identifier
+                    let name = ShrString::new_string(self.previous().lexeme);
+                    self.advance(); // consume '='
+
+                    // Check for duplicate keyword names.
+                    if kw_names.contains(&name) {
+                        record_error_at_current!(self, ParseReason::DuplicateKeywordArg(name.to_string()));
+                    }
+                    kw_names.push(name);
+
+                    self.parse_expression()?;
+                    kw_count += 1;
+                } else {
+                    if seen_keyword {
+                        record_error_at_current!(self, ParseReason::PositionalAfterKeyword);
+                    }
+                    self.parse_expression()?;
+                    pos_count += 1;
+                }
+
                 if !self.match_token(TokenKind::Comma) {
                     break;
                 }
             }
         }
-        self.consume(TokenKind::RightParen,"Expect ')' after arguments.")?;
-        Ok(arg_count)
+        self.consume(TokenKind::RightParen, "Expect ')' after arguments.")?;
+        Ok((pos_count, kw_count, kw_names))
+    }
+
+    /// Parse a constant literal default value and return its handle.
+    /// Supports: numbers, strings, booleans, nil, and negated numbers.
+    fn parse_default_value(&mut self) -> ParseResult<ObjectHandle> {
+        // Handle negative numbers: `-<number>`.
+        let negate = self.match_token(TokenKind::Minus);
+
+        // Only numbers can be negated.
+        if negate && self.peek().kind != TokenKind::Number {
+            return Err(error_at_current!(self, ParseReason::InvalidDefaultValue));
+        }
+
+        let handle = match self.peek().kind {
+            TokenKind::Number => {
+                self.advance();
+                let lexeme = self.previous().lexeme;
+                if lexeme.contains('.') {
+                    let mut value: f64 = lexeme
+                        .parse()
+                        .map_err(|e| error_at_previous!(self, ParseReason::InvalidFloat(e)))?;
+                    if negate { value = -value; }
+                    self.obj_heap.alloc_float_instance(value)
+                } else {
+                    let mut value: i64 = lexeme
+                        .parse()
+                        .map_err(|e| error_at_previous!(self, ParseReason::InvalidInteger(e)))?;
+                    if negate { value = -value; }
+                    self.obj_heap.alloc_integer_instance(value)
+                }
+            }
+            TokenKind::String => {
+                self.advance();
+                let lexeme = self.previous().lexeme;
+                let inner = &lexeme[1..lexeme.len() - 1];
+                let unescaped = unescape_string(inner)
+                    .map_err(|c| error_at_previous!(self, ParseReason::InvalidEscape(c)))?;
+                self.obj_heap.alloc_string_instance(unescaped.into())
+            }
+            TokenKind::True => {
+                self.advance();
+                self.obj_heap.true_instance
+            }
+            TokenKind::False => {
+                self.advance();
+                self.obj_heap.false_instance
+            }
+            TokenKind::Nil => {
+                self.advance();
+                ObjectHandle::NIL
+            }
+            _ => {
+                return Err(error_at_current!(self, ParseReason::InvalidDefaultValue));
+            }
+        };
+        Ok(handle)
     }
 
     fn resolve_and_emit_variable(&mut self, name: ShrString, can_assign: bool) -> ParseResult<()> {
@@ -1485,6 +1642,14 @@ impl<'a> Parser<'a> {
 
     fn peek(&self) -> &Token<'a> {
         &self.tokens[self.current]
+    }
+
+    fn peek_next(&self) -> &Token<'a> {
+        if self.current + 1 < self.tokens.len() {
+            &self.tokens[self.current + 1]
+        } else {
+            &self.tokens[self.current]
+        }
     }
 
     fn previous(&self) -> &Token<'a> {

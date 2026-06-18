@@ -299,6 +299,14 @@ impl VirtualMachine {
                 return Ok(());
             }
 
+            Instruction::CallKw { pos_count, kw_count, ref kw_names } => {
+                self.frame_mut()?.ip = ip;
+                let total_on_stack = pos_count + kw_count;
+                let callee = self.peek_stack(total_on_stack)?;
+                self.call_value_kw(callee, pos_count, kw_count, kw_names)?;
+                return Ok(());
+            }
+
             Instruction::Closure { function, upvalues } => {
                 let closure_handle = self.obj_heap.alloc_closure(function);
                 for uv_desc in upvalues {
@@ -600,6 +608,14 @@ impl VirtualMachine {
     /// is indistinguishable from a compiled `.taro` module.
     pub fn import_std_module(&mut self, module_name: &str) -> ExecuteResult<ObjectHandle> {
         match module_name {
+            "argparse" => {
+                let source = include_str!("../std/argparse.taro");
+                self.import_source_module(source, "std/argparse")
+            }
+            "logging" => {
+                let source = include_str!("../std/logging.taro");
+                self.import_source_module(source, "std/logging")
+            }
             "fs" => self.create_fs_module(),
             "itertools" => {
                 let source = include_str!("../std/itertools.taro");
@@ -716,6 +732,159 @@ impl VirtualMachine {
         }
     }
 
+    /// Call a value with keyword arguments — reorder args to match parameter
+    /// order and fill in defaults.
+    fn call_value_kw(
+        &mut self,
+        callee: ObjectHandle,
+        pos_count: usize,
+        kw_count: usize,
+        kw_names: &[ShrString],
+    ) -> ExecuteResult<()> {
+        let total_on_stack = pos_count + kw_count;
+        let callee_idx = self.stack.len() - total_on_stack - 1;
+        let obj = self.obj_heap.get(callee);
+
+        match obj {
+            Object::Class(_) => {
+                // Class construction: get __init__ params, skipping `self`.
+                let (param_names, arity, required_arity, defaults) = self.get_callable_info(callee)?;
+                // param_names[0] is "self" — skip it for keyword matching.
+                let user_param_names: Vec<ShrString> = param_names.iter().skip(1).cloned().collect();
+                let user_arity = arity.saturating_sub(1);
+                let _user_required = required_arity.saturating_sub(1);
+                // defaults correspond to user params (not including self).
+                let default_offset = user_arity.saturating_sub(defaults.len());
+
+                let mut resolved: Vec<Option<ObjectHandle>> = vec![None; user_arity];
+
+                for i in 0..pos_count.min(user_arity) {
+                    resolved[i] = Some(self.stack[callee_idx + 1 + i]);
+                }
+                for (kw_idx, kw_name) in kw_names.iter().enumerate() {
+                    let kw_val = self.stack[callee_idx + 1 + pos_count + kw_idx];
+                    if let Some(param_idx) = user_param_names.iter().position(|n| n == kw_name) {
+                        if resolved[param_idx].is_some() {
+                            return Err(ExecuteError::DuplicateKeywordArg(kw_name.to_string()));
+                        }
+                        resolved[param_idx] = Some(kw_val);
+                    } else {
+                        return Err(ExecuteError::UnknownKeywordArg(kw_name.to_string()));
+                    }
+                }
+                for i in 0..user_arity {
+                    if resolved[i].is_none() {
+                        if i >= default_offset {
+                            resolved[i] = Some(defaults[i - default_offset]);
+                        } else {
+                            return Err(ExecuteError::MissingArgument(user_param_names[i].to_string()));
+                        }
+                    }
+                }
+
+                // Build new stack: callee + resolved args.
+                self.stack.truncate(callee_idx);
+                self.stack.push(callee);
+                for arg_opt in &resolved {
+                    self.stack.push(arg_opt.unwrap());
+                }
+                // call_value(Class) will create instance and call __init__.
+                self.call_value(callee, user_arity)
+            }
+            _ => {
+                // Closure, BoundMethod, etc.
+                let (param_names, arity, _required_arity, defaults) = self.get_callable_info(callee)?;
+                let default_offset = arity.saturating_sub(defaults.len());
+
+                let mut resolved: Vec<Option<ObjectHandle>> = vec![None; arity];
+
+                for i in 0..pos_count.min(arity) {
+                    resolved[i] = Some(self.stack[callee_idx + 1 + i]);
+                }
+                for (kw_idx, kw_name) in kw_names.iter().enumerate() {
+                    let kw_val = self.stack[callee_idx + 1 + pos_count + kw_idx];
+                    if let Some(param_idx) = param_names.iter().position(|n| n == kw_name) {
+                        if resolved[param_idx].is_some() {
+                            return Err(ExecuteError::DuplicateKeywordArg(kw_name.to_string()));
+                        }
+                        resolved[param_idx] = Some(kw_val);
+                    } else {
+                        return Err(ExecuteError::UnknownKeywordArg(kw_name.to_string()));
+                    }
+                }
+                for i in 0..arity {
+                    if resolved[i].is_none() {
+                        if i >= default_offset {
+                            resolved[i] = Some(defaults[i - default_offset]);
+                        } else {
+                            return Err(ExecuteError::MissingArgument(param_names[i].to_string()));
+                        }
+                    }
+                }
+
+                self.stack.truncate(callee_idx);
+                self.stack.push(callee);
+                for arg_opt in &resolved {
+                    self.stack.push(arg_opt.unwrap());
+                }
+                self.call_value(callee, arity)
+            }
+        }
+    }
+
+    /// Return (param_names, arity, required_arity, defaults) for a callable.
+    fn get_callable_info(
+        &self,
+        callee: ObjectHandle,
+    ) -> ExecuteResult<(Vec<ShrString>, usize, usize, Vec<ObjectHandle>)> {
+        let obj = self.obj_heap.get(callee);
+        match obj {
+            Object::Closure(closure) => {
+                let func = self.obj_heap.get_function(closure.function).expect("must function");
+                Ok((
+                    func.param_names.clone(),
+                    func.arity,
+                    func.required_arity,
+                    func.defaults.clone(),
+                ))
+            }
+            Object::BoundMethod(bound) => {
+                let handle = match bound.method {
+                    Method::User(h) => h,
+                    Method::Native(_) => {
+                        // Native methods don't support keyword args yet.
+                        return Err(ExecuteError::UnsupportedMethodCall("keyword", "native method"));
+                    }
+                };
+                let closure = self.obj_heap.get_closure(handle).expect("must closure");
+                let func = self.obj_heap.get_function(closure.function).expect("must function");
+                Ok((
+                    func.param_names.clone(),
+                    func.arity,
+                    func.required_arity,
+                    func.defaults.clone(),
+                ))
+            }
+            Object::Class(class) => {
+                // For class construction, look up __init__.
+                if let Some(Method::User(init_handle)) = class.methods.get("__init__").copied() {
+                    let closure = self.obj_heap.get_closure(init_handle).expect("must closure");
+                    let func = self.obj_heap.get_function(closure.function).expect("must function");
+                    Ok((
+                        func.param_names.clone(),
+                        func.arity,
+                        func.required_arity,
+                        func.defaults.clone(),
+                    ))
+                } else {
+                    // No init — no params.
+                    Ok((vec![], 0, 0, vec![]))
+                }
+            }
+            _ => Err(ExecuteError::CanNotCall(self.value_type_name(callee))),
+        }
+    }
+
     /// Push a call frame for a user-defined closure.
     ///
     /// `callee_on_stack` distinguishes two stack layouts:
@@ -728,14 +897,32 @@ impl VirtualMachine {
     fn call_closure(&mut self, closure: ObjectHandle, arg_count: usize, callee_on_stack: bool) -> ExecuteResult<()> {
         let closure_obj = self.obj_heap.get_closure(closure).expect("must closure");
         let function = self.obj_heap.get_function(closure_obj.function).expect("must function");
-        if arg_count != function.arity {
-            Err(ExecuteError::ArgumentCountMismatch { expected: function.arity, got: arg_count })?;
+        // Allow arg_count in [required_arity, arity]; fill defaults for missing args.
+        if arg_count < function.required_arity || arg_count > function.arity {
+            Err(ExecuteError::ArgumentCountRange {
+                min: function.required_arity,
+                max: function.arity,
+                got: arg_count,
+            })?;
         }
         let slots_start = if callee_on_stack {
             self.stack.len() - arg_count - 1
         } else {
             self.stack.len() - arg_count
         };
+
+        // Fill in default values for missing arguments.
+        let num_missing = function.arity - arg_count;
+        if num_missing > 0 {
+            let default_start = function.arity - function.defaults.len();
+            // Push defaults for missing trailing parameters.
+            for i in (function.arity - num_missing)..function.arity {
+                let default_idx = i - default_start;
+                let default_val = function.defaults[default_idx];
+                self.stack.push(default_val);
+            }
+        }
+
         self.frames.push(CallFrame { closure, ip: 0, slots_start });
         Ok(())
     }

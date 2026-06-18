@@ -50,6 +50,18 @@ pub enum ExecuteError {
     #[error("Expected {expected} arguments but got {got}")]
     ArgumentCountMismatch { expected: usize, got: usize },
 
+    #[error("Expected {min}..{max} arguments but got {got}")]
+    ArgumentCountRange { min: usize, max: usize, got: usize },
+
+    #[error("unknown keyword argument '{0}'")]
+    UnknownKeywordArg(String),
+
+    #[error("got multiple values for argument '{0}'")]
+    DuplicateKeywordArg(String),
+
+    #[error("missing required argument '{0}'")]
+    MissingArgument(String),
+
     #[error("no superclass to call super method on")]
     NoSuperclass,
 

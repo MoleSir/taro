@@ -35,15 +35,17 @@ src/
     │                         #    is_iter_end, int, float, bool, list, dict, set, exit)
     ├── std/                  # Virtual std modules (no .taro file needed)
     │   ├── mod.rs            #   import_std_module dispatcher
+    │   ├── argparse.taro     #   std/argparse — CLI argument parser (pure taro)
     │   ├── fs.rs             #   std/fs — File class + standalone fs functions
     │   ├── itertools.taro    #   std/itertools — lazy iterators (pure taro)
     │   ├── json.rs           #   std/json — JSON encode/decode via serde_json
+    │   ├── logging.taro      #   std/logging — leveled logging with timestamps (pure taro)
     │   ├── math.rs           #   std/math — trig, log, rounding, conversion + constants
     │   ├── net.rs            #   std/net — TCP Socket client + Server listener
     │   ├── os.rs             #   std/os — env vars, pid, cwd, shell commands
     │   ├── random.rs         #   std/random — random numbers, randint, choice, shuffle
     │   └── time.rs           #   std/time — timestamp, sleep, structured UTC time
-    └── tests.rs              # VM runtime tests (391 tests)
+    └── tests.rs              # VM runtime tests (411 tests)
 
 tests/scripts/                # Integration test scripts
 ├── 00_test.taro             # Smoke test
@@ -64,7 +66,9 @@ tests/scripts/                # Integration test scripts
 ├── 23_std_os.taro           # std/os integration tests
 ├── 24_std_time.taro         # std/time integration tests
 ├── 25_std_json.taro         # std/json integration tests
-└── 26_std_itertools.taro    # std/itertools integration tests
+├── 26_std_itertools.taro    # std/itertools integration tests
+├── 27_std_argparse.taro     # std/argparse integration tests
+└── 28_std_logging.taro      # std/logging integration tests
 tests/scripts/lib/           # File-based modules used by import tests
 └── math.taro                #   Sample module (add, mul, PI, Vec class)
 examples/                    # Runnable example scripts
@@ -99,6 +103,38 @@ The VM dispatch (`call_native_fn`) validates argument counts and extracts typed 
 - `NativeObject` stores type-erased Rust data (`Box<T>` behind a raw pointer) — used by `FileData` in fs module.
 - Small integers (-5..256) and strings are interned via caches on `ObjectHeap`.
 
+### Functions, default parameters & keyword arguments
+
+`ObjectFunction` stores function metadata alongside the bytecode chunk:
+
+```rust
+pub struct ObjectFunction {
+    pub arity: usize,               // total parameter count (incl. those with defaults)
+    pub required_arity: usize,      // parameter count without defaults
+    pub param_names: Vec<ShrString>, // names of all parameters in declaration order
+    pub defaults: Vec<ObjectHandle>, // default values for the last N parameters
+    pub chunk: Chunk,
+    pub name: ShrString,
+}
+```
+
+Default parameter values must be constant literals (numbers, strings, booleans, nil).
+They are stored as `ObjectHandle` constants in the function object.  Parameters with
+defaults must come after required parameters (a `RequiredAfterOptional` parse error is
+emitted otherwise).
+
+Keyword arguments use a dedicated instruction:
+
+```rust
+CallKw { pos_count: usize, kw_count: usize, kw_names: Vec<ShrString> }
+```
+
+At runtime the VM matches keyword names to parameter names, validates for duplicates and
+unknown names, fills defaults for missing trailing arguments, and reorders the stack into
+parameter-declaration order.  Positional arguments must precede keyword arguments.
+Class constructors receive special treatment: the `self` parameter (slot 0) is excluded
+from user-facing keyword matching.
+
 ### String interning
 
 `ShrString` is an `Arc<str>` wrapper that makes string copies O(1) and equality/hash O(1). The `ObjectHeap` maintains a `string_cache` so identical strings share the same handle.
@@ -109,4 +145,19 @@ Mark-and-sweep, triggered when `bytes_allocated` exceeds `gc_threshold` (1 MiB).
 
 ### Error handling
 
-`ExecuteError` (30 variants) uses `thiserror::Error` with `#[error("...")]` for Display. A `context_error` derive from `thiserrorctx` adds context-tracking for better error messages. `InterpretError` wraps compile + runtime errors.
+`ExecuteError` (35+ variants) uses `thiserror::Error` with `#[error("...")]` for Display. A `context_error` derive from `thiserrorctx` adds context-tracking for better error messages. `InterpretError` wraps compile + runtime errors.
+
+### String methods
+
+The `String` class implements 15+ built-in methods (in `src/object/instance/string.rs`):
+
+| Category | Methods |
+|----------|---------|
+| Case | `upper()`, `lower()` (aliases: `to_uppercase()`, `to_lowercase()`) |
+| Whitespace | `trim()`, `trim_start()`, `trim_end()` (aliases: `strip()`, `lstrip()`, `rstrip()`) |
+| Search | `find(sub)`, `rfind(sub)` (aliases: `index_of()`, `last_index_of()`) |
+| Predicate | `starts_with(prefix)`, `ends_with(suffix)`, `contains(sub)`, `is_empty()` |
+| Transform | `replace(old, new)`, `split(delim)`, `substr(start, length)`, `repeat(n)` |
+
+All search methods (`find`, `rfind`) return -1 when the substring is not found.
+`substr` supports negative start indices (count from end).

@@ -1,0 +1,70 @@
+class ArgConfig {
+    fun __init__(self, dest, type_func, default_val, is_switch) {
+        self.dest = dest;
+        self.type_func = type_func;
+        self.default_val = default_val;
+        self.is_switch = is_switch;
+    }
+}
+
+class Parser {
+    fun __init__(self) {
+        self.flags = dict();
+    }
+
+    fun add_str(self, flag, dest, default_val="") {
+        self.flags[flag] = ArgConfig(dest, str, default_val, false);
+    }
+
+    fun add_int(self, flag, dest, default_val=0) {
+        self.flags[flag] = ArgConfig(dest, int, default_val, false);
+    }
+
+    fun add_float(self, flag, dest, default_val=0.0) {
+        self.flags[flag] = ArgConfig(dest, float, default_val, false);
+    }
+
+    fun add_bool(self, flag, dest) {
+        self.flags[flag] = ArgConfig(dest, bool, false, true);
+    }
+
+    fun parse(self, args_list) {
+        var result = dict();
+
+        // Fill defaults first.
+        for config in self.flags.values() {
+            result[config.dest] = config.default_val;
+        }
+
+        var i = 0;
+        while i < args_list.len() {
+            var token = args_list[i];
+            if token.starts_with("-") {
+                if self.flags.contains(token) {
+                    var config = self.flags[token];
+                    if config.is_switch {
+                        result[config.dest] = true;
+                        i = i + 1;
+                    } else {
+                        if i + 1 >= args_list.len() {
+                            print("error: " + token + " expects a value");
+                            return nil;
+                        }
+                        i = i + 1;
+                        var val_str = args_list[i];
+                        result[config.dest] = config.type_func(val_str);
+                        i = i + 1;
+                    }
+                } else {
+                    print("error: unknown flag " + token);
+                    return nil;
+                }
+            } else {
+                // Positional argument — skip it (user can access via os.args).
+                i = i + 1;
+            }
+        }
+
+        return result;
+    }
+}

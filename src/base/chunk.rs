@@ -129,6 +129,19 @@ impl Chunk {
                 self.write_byte(arg_count as u8);
             }
 
+            Instruction::CallKw { pos_count, kw_count, kw_names } => {
+                assert!(pos_count + kw_count <= 255, "Too much args.");
+                self.write_op(ByteCode::CallKw);
+                self.write_byte(pos_count as u8);
+                self.write_byte(kw_count as u8);
+                for name in &kw_names {
+                    let handle = heap.alloc_string_instance(name.clone());
+                    let index = self.add_constant(handle);
+                    assert!(index <= u16::MAX as usize, "Too many constants!");
+                    self.write_u16(index as u16);
+                }
+            }
+
             Instruction::Closure { function, upvalues } => {
                 self.write_const_op(ByteCode::Closure, function);
                 self.write_byte(upvalues.len() as u8);
@@ -287,6 +300,17 @@ impl Chunk {
             ByteCode::Call => {
                 let arg_count = self.read_byte(ip)?;
                 Ok(Instruction::Call(arg_count as usize))
+            }
+
+            ByteCode::CallKw => {
+                let pos_count = self.read_byte(ip)? as usize;
+                let kw_count = self.read_byte(ip)? as usize;
+                let mut kw_names = Vec::with_capacity(kw_count);
+                for _ in 0..kw_count {
+                    let name = self.read_string_constant(ip, heap)?;
+                    kw_names.push(name);
+                }
+                Ok(Instruction::CallKw { pos_count, kw_count, kw_names })
             }
 
             ByteCode::Closure => {

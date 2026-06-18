@@ -36,6 +36,7 @@ pub enum ByteCode {
     Loop,
 
     Call,
+    CallKw,
 
     Closure,
 
@@ -114,6 +115,10 @@ pub enum Instruction {
     Loop(usize),
 
     Call(usize),
+    /// Function call with keyword arguments.
+    /// `pos_count` positional args followed by `kw_count` keyword args.
+    /// `kw_names` lists the parameter names for each keyword argument, in order.
+    CallKw { pos_count: usize, kw_count: usize, kw_names: Vec<ShrString> },
 
     Closure {
         function: ObjectHandle,

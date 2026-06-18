@@ -156,6 +156,21 @@ impl ObjectDict {
         Ok(vm.obj_heap.alloc_list_instance(values))
     }
 
+    pub fn contains(vm: &mut VirtualMachine, receiver: ObjectHandle, key: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        let hash = vm.__hash__(key)?;
+        let entries = vm.get_dict_instance(receiver)?;
+        if let Some(bucket) = entries.get(&hash).cloned() {
+            for &(k, _) in bucket.iter() {
+                let eq = vm.__eq__(k, key)?;
+                if vm.__bool__(eq)? {
+                    return Ok(vm.obj_heap.alloc_bool_instance(true))
+                }
+            }
+        }
+
+        Ok(vm.obj_heap.alloc_bool_instance(false))
+    }
+
     /// `dict.pop(key)` — remove a key and return its value.
     pub fn pop(vm: &mut VirtualMachine, receiver: ObjectHandle, key: ObjectHandle) -> ExecuteResult<ObjectHandle> {
         let hash = vm.__hash__(key)?;
@@ -239,6 +254,7 @@ pub fn register_dict_builtins(heap: &mut ObjectHeap) {
     heap.register_native_method(dc, "keys",        NativeFunction::a1(ObjectDict::keys));
     heap.register_native_method(dc, "values",      NativeFunction::a1(ObjectDict::values));
     heap.register_native_method(dc, "pop",         NativeFunction::a2(ObjectDict::pop));
+    heap.register_native_method(dc, "contains",    NativeFunction::a2(ObjectDict::contains));
     heap.register_native_method(dc, "len",         NativeFunction::a1(ObjectDict::len));
     heap.register_native_method(dc, "__iter__",    NativeFunction::a1(ObjectDict::__iter__));
 

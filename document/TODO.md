@@ -4,6 +4,7 @@
 - [x] import
 - [x] break / continue
 - [x] for-in (iterator)
+- [x] default arguments 
 - [ ] source line in run time error
 - [x] std
   - [x] fs
@@ -16,5 +17,5 @@
   - [ ] strutil
   - [x] itertools
   - [ ] path
-  - [ ] logging
-  - [ ] argparse
+  - [x] logging
+  - [x] argparse
