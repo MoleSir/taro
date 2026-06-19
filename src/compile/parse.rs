@@ -210,7 +210,7 @@ struct LoopContext {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum ParseReason {
+pub enum ParseErrorKind {
     #[error("invalid float literal")]
     InvalidFloat(#[from] std::num::ParseFloatError),
 
@@ -269,16 +269,17 @@ pub enum ParseReason {
 #[derive(Debug)]
 pub struct ParseError {
     pub line: usize,
+    pub column: usize,
     pub lexeme: String,
-    pub reason: ParseReason,
+    pub kind: ParseErrorKind,
 }
 
 pub type ParseResult<T> = std::result::Result<T, ParseError>;
 
 macro_rules! error_at_current {
-    ($p:ident, $reason:expr) => {{
+    ($p:ident, $kind:expr) => {{
         let token = $p.peek();
-        ParseError { line: token.line, lexeme: token.lexeme.to_string(), reason: $reason }
+        ParseError { line: token.line, column: token.column, lexeme: token.lexeme.to_string(), kind: $kind }
     }};
 }
 
@@ -289,16 +290,16 @@ macro_rules! bail_error_at_current {
 }
 
 macro_rules! record_error_at_current {
-    ($p:ident, $reason:expr) => {{
-        $p.errors.push(error_at_current!($p, $reason));
+    ($p:ident, $kind:expr) => {{
+        $p.errors.push(error_at_current!($p, $kind));
     }};
 }
 
 #[allow(unused)]
 macro_rules! error_at_previous {
-    ($p:ident, $reason:expr) => {{
+    ($p:ident, $kind:expr) => {{
         let token = $p.previous();
-        ParseError { line: token.line, lexeme: token.lexeme.to_string(), reason: $reason }
+        ParseError { line: token.line, column: token.column, lexeme: token.lexeme.to_string(), kind: $kind }
     }};
 }
 
@@ -634,7 +635,7 @@ impl<'a> Parser<'a> {
             loop {
                 self.cur_unit_mut().arity += 1;
                 if self.cur_unit().arity > 255 {
-                    record_error_at_current!(self, ParseReason::TooMuchParameter);
+                    record_error_at_current!(self, ParseErrorKind::TooMuchParameter);
                 }
 
                 // Parse parameter name.
@@ -651,7 +652,7 @@ impl<'a> Parser<'a> {
                 } else {
                     // No default — required parameter.
                     if !self.cur_unit().defaults.is_empty() {
-                        record_error_at_current!(self, ParseReason::RequiredAfterOptional);
+                        record_error_at_current!(self, ParseErrorKind::RequiredAfterOptional);
                     }
                     self.cur_unit_mut().required_arity += 1;
                 }
@@ -714,7 +715,7 @@ impl<'a> Parser<'a> {
 
     fn parse_return_statement(&mut self) -> ParseResult<()> {
         if self.cur_unit().kind == FunctionKind::Script {
-            record_error_at_current!(self, ParseReason::ReturnInTop);
+            record_error_at_current!(self, ParseErrorKind::ReturnInTop);
         }
 
         if self.match_token(TokenKind::Semicolon) {
@@ -730,7 +731,7 @@ impl<'a> Parser<'a> {
 
     fn parse_break_statement(&mut self) -> ParseResult<()> {
         if self.loop_stack.is_empty() {
-            bail_error_at_previous!(self, ParseReason::BreakOutsideLoop);
+            bail_error_at_previous!(self, ParseErrorKind::BreakOutsideLoop);
         }
 
         // Emit a forward Jump(0) placeholder.  The offset will be patched
@@ -744,14 +745,14 @@ impl<'a> Parser<'a> {
 
     fn parse_continue_statement(&mut self) -> ParseResult<()> {
         if self.loop_stack.is_empty() {
-            bail_error_at_previous!(self, ParseReason::ContinueOutsideLoop);
+            bail_error_at_previous!(self, ParseErrorKind::ContinueOutsideLoop);
         }
 
         // Jump back to the loop's continue target (condition or increment).
         let target = self.loop_stack.last().unwrap().continue_target;
         let offset = self.cur_unit().chunk.codes.len() - target + 3;
         if offset > u16::MAX as usize {
-            record_error_at_current!(self, ParseReason::TooMuchCodeToJumpOver(offset));
+            record_error_at_current!(self, ParseErrorKind::TooMuchCodeToJumpOver(offset));
         }
         self.emit(Instruction::Loop(offset));
 
@@ -1006,7 +1007,7 @@ impl<'a> Parser<'a> {
     fn emit_loop(&mut self, loop_start: usize) -> ParseResult<()> {
         let offset = self.cur_unit().chunk.codes.len() - loop_start + 3;
         if offset > u16::MAX as usize {
-            record_error_at_current!(self, ParseReason::TooMuchCodeToJumpOver(offset));
+            record_error_at_current!(self, ParseErrorKind::TooMuchCodeToJumpOver(offset));
         }
 
         self.emit(Instruction::Loop(offset));
@@ -1026,7 +1027,7 @@ impl<'a> Parser<'a> {
         // distance of if and cur
         let offset = self.cur_unit().chunk.codes.len() - jump_addr - 2;
         if offset > u16::MAX as usize {
-            record_error_at_current!(self, ParseReason::TooMuchCodeToJumpOver(offset));
+            record_error_at_current!(self, ParseErrorKind::TooMuchCodeToJumpOver(offset));
         }
 
         let bytes = (offset as u16).to_le_bytes();
@@ -1052,7 +1053,7 @@ impl<'a> Parser<'a> {
         let prefix_rule = get_rule(self.previous().kind).prefix;
 
         let Some(prefix_fn) = prefix_rule else {
-            bail_error_at_previous!(self, ParseReason::ExpectedExpression)
+            bail_error_at_previous!(self, ParseErrorKind::ExpectedExpression)
         };
 
         let can_assign = precedence <= Prec::Assignment;
@@ -1072,7 +1073,7 @@ impl<'a> Parser<'a> {
         }
 
         if can_assign && self.check(TokenKind::Equal) {
-            bail_error_at_current!(self, ParseReason::InvalidAssignmentTarget);
+            bail_error_at_current!(self, ParseErrorKind::InvalidAssignmentTarget);
         }
 
         Ok(())
@@ -1102,7 +1103,7 @@ impl<'a> Parser<'a> {
                 break;
             }
             if var_name == local.name {
-                bail_error_at_previous!(self, ParseReason::VariableRedefine(var_name.to_string()));
+                bail_error_at_previous!(self, ParseErrorKind::VariableRedefine(var_name.to_string()));
             }
         }
         self.add_local(var_name)?;
@@ -1161,7 +1162,7 @@ impl<'a> Parser<'a> {
             let value: f64 = lexeme
                 .parse()
                 .map_err(|e|
-                    error_at_previous!(parser, ParseReason::InvalidFloat(e))
+                    error_at_previous!(parser, ParseErrorKind::InvalidFloat(e))
                 )?;
             let handle = parser.obj_heap.alloc_float_instance(value);
             parser.emit(Instruction::Constant(handle));
@@ -1169,7 +1170,7 @@ impl<'a> Parser<'a> {
             let value: i64 = lexeme
                 .parse()
                 .map_err(|e|
-                    error_at_previous!(parser, ParseReason::InvalidInteger(e))
+                    error_at_previous!(parser, ParseErrorKind::InvalidInteger(e))
                 )?;
             let handle = parser.obj_heap.alloc_integer_instance(value);
             parser.emit(Instruction::Constant(handle));
@@ -1180,13 +1181,15 @@ impl<'a> Parser<'a> {
     /// `string` — prefix parser for string literals.
     fn string(parser: &mut Parser<'_>, _can_assign: bool) -> ParseResult<()> {
         // The lexeme includes the surrounding quotes — strip them.
-        let lexeme = parser.previous().lexeme;
+        let prev = parser.previous();
+        let lexeme = prev.lexeme;
         let inner = &lexeme[1..lexeme.len() - 1];
         let unescaped = unescape_string(inner)
             .map_err(|c| ParseError {
-                line: parser.previous().line,
+                line: prev.line,
+                column: prev.column,
                 lexeme: lexeme.to_string(),
-                reason: ParseReason::InvalidEscape(c),
+                kind: ParseErrorKind::InvalidEscape(c),
             })?;
         let handle = parser
             .obj_heap
@@ -1275,7 +1278,7 @@ impl<'a> Parser<'a> {
             let arg_count = pos_count + kw_count;
             if kw_count > 0 {
                 // TODO: support keyword args in Invoke
-                record_error_at_current!(parser, ParseReason::ExpectedExpression);
+                record_error_at_current!(parser, ParseErrorKind::ExpectedExpression);
             }
             parser.emit(Instruction::Invoke(field_name, arg_count));
         } else if can_assign && parser.match_token(TokenKind::Equal) {
@@ -1314,11 +1317,11 @@ impl<'a> Parser<'a> {
             let (pos_count, kw_count, _kw_names) = parser.parse_argument_list()?;
             let arg_count = pos_count + kw_count;
             if kw_count > 0 {
-                record_error_at_current!(parser, ParseReason::ExpectedExpression);
+                record_error_at_current!(parser, ParseErrorKind::ExpectedExpression);
             }
             parser.emit(Instruction::SuperInvoke(method_name, arg_count));
         } else {
-            bail_error_at_current!(parser, ParseReason::ExpectedToken("Expect '(' after super method name."));
+            bail_error_at_current!(parser, ParseErrorKind::ExpectedToken("Expect '(' after super method name."));
         }
 
         Ok(())
@@ -1343,7 +1346,7 @@ impl<'a> Parser<'a> {
             let mut count: usize = 1;
             while parser.match_token(TokenKind::Comma) {
                 if count >= u16::MAX as usize {
-                    record_error_at_current!(parser, ParseReason::TooMuchItems);
+                    record_error_at_current!(parser, ParseErrorKind::TooMuchItems);
                 }
                 parser.parse_expression()?;
                 parser.consume(TokenKind::Colon, "Expect ':' after key")?;
@@ -1357,7 +1360,7 @@ impl<'a> Parser<'a> {
             let mut count: usize = 1;
             while parser.match_token(TokenKind::Comma) {
                 if count >= u16::MAX as usize {
-                    record_error_at_current!(parser, ParseReason::TooMuchItems);
+                    record_error_at_current!(parser, ParseErrorKind::TooMuchItems);
                 }
                 parser.parse_expression()?;
                 count += 1;
@@ -1373,7 +1376,7 @@ impl<'a> Parser<'a> {
             let mut count = 0;
             loop {
                 if count >= u16::MAX as usize {
-                    record_error_at_current!(parser, ParseReason::TooMuchItems);
+                    record_error_at_current!(parser, ParseErrorKind::TooMuchItems);
                 }
 
                 parser.parse_expression()?;
@@ -1413,7 +1416,7 @@ impl<'a> Parser<'a> {
         if !self.check(TokenKind::RightParen) {
             loop {
                 if pos_count + kw_count >= 255 {
-                    record_error_at_current!(self, ParseReason::TooMuchArgument);
+                    record_error_at_current!(self, ParseErrorKind::TooMuchArgument);
                 }
 
                 // Detect keyword argument: `Identifier = expr`.
@@ -1427,7 +1430,7 @@ impl<'a> Parser<'a> {
 
                     // Check for duplicate keyword names.
                     if kw_names.contains(&name) {
-                        record_error_at_current!(self, ParseReason::DuplicateKeywordArg(name.to_string()));
+                        record_error_at_current!(self, ParseErrorKind::DuplicateKeywordArg(name.to_string()));
                     }
                     kw_names.push(name);
 
@@ -1435,7 +1438,7 @@ impl<'a> Parser<'a> {
                     kw_count += 1;
                 } else {
                     if seen_keyword {
-                        record_error_at_current!(self, ParseReason::PositionalAfterKeyword);
+                        record_error_at_current!(self, ParseErrorKind::PositionalAfterKeyword);
                     }
                     self.parse_expression()?;
                     pos_count += 1;
@@ -1458,7 +1461,7 @@ impl<'a> Parser<'a> {
 
         // Only numbers can be negated.
         if negate && self.peek().kind != TokenKind::Number {
-            return Err(error_at_current!(self, ParseReason::InvalidDefaultValue));
+            return Err(error_at_current!(self, ParseErrorKind::InvalidDefaultValue));
         }
 
         let handle = match self.peek().kind {
@@ -1468,13 +1471,13 @@ impl<'a> Parser<'a> {
                 if lexeme.contains('.') {
                     let mut value: f64 = lexeme
                         .parse()
-                        .map_err(|e| error_at_previous!(self, ParseReason::InvalidFloat(e)))?;
+                        .map_err(|e| error_at_previous!(self, ParseErrorKind::InvalidFloat(e)))?;
                     if negate { value = -value; }
                     self.obj_heap.alloc_float_instance(value)
                 } else {
                     let mut value: i64 = lexeme
                         .parse()
-                        .map_err(|e| error_at_previous!(self, ParseReason::InvalidInteger(e)))?;
+                        .map_err(|e| error_at_previous!(self, ParseErrorKind::InvalidInteger(e)))?;
                     if negate { value = -value; }
                     self.obj_heap.alloc_integer_instance(value)
                 }
@@ -1484,7 +1487,7 @@ impl<'a> Parser<'a> {
                 let lexeme = self.previous().lexeme;
                 let inner = &lexeme[1..lexeme.len() - 1];
                 let unescaped = unescape_string(inner)
-                    .map_err(|c| error_at_previous!(self, ParseReason::InvalidEscape(c)))?;
+                    .map_err(|c| error_at_previous!(self, ParseErrorKind::InvalidEscape(c)))?;
                 self.obj_heap.alloc_string_instance(unescaped.into())
             }
             TokenKind::True => {
@@ -1500,7 +1503,7 @@ impl<'a> Parser<'a> {
                 ObjectHandle::NIL
             }
             _ => {
-                return Err(error_at_current!(self, ParseReason::InvalidDefaultValue));
+                return Err(error_at_current!(self, ParseErrorKind::InvalidDefaultValue));
             }
         };
         Ok(handle)
@@ -1554,7 +1557,7 @@ impl<'a> Parser<'a> {
                 if local.depth == -1 {
                     record_error_at_previous!(
                         self,
-                        ParseReason::VariableRedefine(format!("Cannot read local variable '{}' in its own initializer", name.as_str(),))
+                        ParseErrorKind::VariableRedefine(format!("Cannot read local variable '{}' in its own initializer", name.as_str(),))
                     );
                     return None;
                 }
@@ -1633,10 +1636,16 @@ impl<'a> Parser<'a> {
         //   it never reads or modifies `self.units` or any chunk.
         // - The lifetime `'a` on `Parser<'a>` guarantees the `&'a mut ObjectHeap`
         //   outlives the parser, so the raw pointer remains valid.
+        let (line, column) = if self.current > 0 {
+            let prev = self.previous();
+            (prev.line, prev.column)
+        } else {
+            (1, 1) // No token consumed yet — default to line 1, column 1.
+        };
         let heap = self.obj_heap as *mut ObjectHeap;
         let chunk = &mut self.units[self.current_unit].chunk;
         unsafe {
-            chunk.write_instruction(inst, &mut *heap);
+            chunk.write_instruction(inst, line, column, &mut *heap);
         }
     }
 
@@ -1684,7 +1693,7 @@ impl<'a> Parser<'a> {
             self.advance();
             Ok(())
         } else {
-            bail_error_at_current!(self, ParseReason::ExpectedToken(msg))
+            bail_error_at_current!(self, ParseErrorKind::ExpectedToken(msg))
         }
     }
 

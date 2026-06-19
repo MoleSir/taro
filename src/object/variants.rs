@@ -1,4 +1,4 @@
-use crate::{vm::{ExecuteResult, VirtualMachine}, ShrString};
+use crate::{vm::{RuntimeResult, VirtualMachine}, ShrString};
 use super::ObjectHandle;
 
 // ========================================================================== //
@@ -47,13 +47,13 @@ impl ObjectFunction {
 
 // ---- Arity-specific native-function pointer types -----------------------
 
-pub type NativeFn0 = fn(&mut VirtualMachine) -> ExecuteResult<ObjectHandle>;
-pub type NativeFn1 = fn(&mut VirtualMachine, ObjectHandle) -> ExecuteResult<ObjectHandle>;
-pub type NativeFn2 = fn(&mut VirtualMachine, ObjectHandle, ObjectHandle) -> ExecuteResult<ObjectHandle>;
-pub type NativeFn3 = fn(&mut VirtualMachine, ObjectHandle, ObjectHandle, ObjectHandle) -> ExecuteResult<ObjectHandle>;
-pub type NativeFn4 = fn(&mut VirtualMachine, ObjectHandle, ObjectHandle, ObjectHandle, ObjectHandle) -> ExecuteResult<ObjectHandle>;
-pub type NativeFn5 = fn(&mut VirtualMachine, ObjectHandle, ObjectHandle, ObjectHandle, ObjectHandle, ObjectHandle) -> ExecuteResult<ObjectHandle>;
-pub type NativeFnN = fn(&mut VirtualMachine, args: &[ObjectHandle]) -> ExecuteResult<ObjectHandle>;
+pub type NativeFn0 = fn(&mut VirtualMachine) -> RuntimeResult<ObjectHandle>;
+pub type NativeFn1 = fn(&mut VirtualMachine, ObjectHandle) -> RuntimeResult<ObjectHandle>;
+pub type NativeFn2 = fn(&mut VirtualMachine, ObjectHandle, ObjectHandle) -> RuntimeResult<ObjectHandle>;
+pub type NativeFn3 = fn(&mut VirtualMachine, ObjectHandle, ObjectHandle, ObjectHandle) -> RuntimeResult<ObjectHandle>;
+pub type NativeFn4 = fn(&mut VirtualMachine, ObjectHandle, ObjectHandle, ObjectHandle, ObjectHandle) -> RuntimeResult<ObjectHandle>;
+pub type NativeFn5 = fn(&mut VirtualMachine, ObjectHandle, ObjectHandle, ObjectHandle, ObjectHandle, ObjectHandle) -> RuntimeResult<ObjectHandle>;
+pub type NativeFnN = fn(&mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle>;
 
 /// Tagged union over native function arities.
 ///

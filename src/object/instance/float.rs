@@ -1,6 +1,6 @@
 use crate::{
     NativeFunction, ObjectHandle,
-    vm::{ExecuteError, ExecuteResult, VirtualMachine},
+    vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine},
 };
 use super::ObjectHeap;
 
@@ -15,7 +15,7 @@ pub struct ObjectFloat(pub f64);
 
 macro_rules! float_binary_arith {
     ($name:ident, $float_op:expr, $op_name:literal) => {
-        pub fn $name(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        pub fn $name(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
             let lhs_val = *vm.get_float_instance(lhs)?;
             if let Ok(rhs) = vm.get_float_instance(rhs) {
                 return Ok(vm.obj_heap.alloc_float_instance($float_op(lhs_val, *rhs)));
@@ -23,21 +23,21 @@ macro_rules! float_binary_arith {
             if let Ok(rhs) = vm.get_integer_instance(rhs) {
                 return Ok(vm.obj_heap.alloc_float_instance($float_op(lhs_val, *rhs as f64)));
             }
-            Err(ExecuteError::BinaryOpTypeMismatch($op_name, "float", vm.value_type_name(rhs)))
+            Err(RuntimeErrorKind::BinaryOpTypeMismatch($op_name, "float", vm.value_type_name(rhs)))
         }
     };
 }
 
 macro_rules! float_cmp_op {
     ($name:ident, $float_cmp:expr, $op_name:literal) => {
-        pub fn $name(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        pub fn $name(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
             let lhs_val = *vm.get_float_instance(lhs)?;
             let result = if let Ok(rhs) = vm.get_float_instance(rhs) {
                 $float_cmp(lhs_val, *rhs)
             } else if let Ok(rhs) = vm.get_integer_instance(rhs) {
                 $float_cmp(lhs_val, *rhs as f64)
             } else {
-                return Err(ExecuteError::BinaryOpTypeMismatch($op_name, "float", vm.value_type_name(rhs)));
+                return Err(RuntimeErrorKind::BinaryOpTypeMismatch($op_name, "float", vm.value_type_name(rhs)));
             };
             Ok(vm.obj_heap.alloc_bool_instance(result))
         }
@@ -56,77 +56,77 @@ impl ObjectFloat {
     float_cmp_op!(__lt__, |a, b| a < b, "lt");
     float_cmp_op!(__le__, |a, b| a <= b, "le");
 
-    pub fn __div__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __div__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let lhs_val = *vm.get_float_instance(lhs)?;
         if let Ok(rhs) = vm.get_float_instance(rhs) {
-            if *rhs == 0.0 { return Err(ExecuteError::DivideByZero); }
+            if *rhs == 0.0 { return Err(RuntimeErrorKind::DivideByZero); }
             return Ok(vm.obj_heap.alloc_float_instance(lhs_val / *rhs));
         }
         if let Ok(rhs) = vm.get_integer_instance(rhs) {
-            if *rhs == 0 { return Err(ExecuteError::DivideByZero); }
+            if *rhs == 0 { return Err(RuntimeErrorKind::DivideByZero); }
             return Ok(vm.obj_heap.alloc_float_instance(lhs_val / *rhs as f64));
         }
-        Err(ExecuteError::BinaryOpTypeMismatch("div", "float", vm.value_type_name(rhs)))
+        Err(RuntimeErrorKind::BinaryOpTypeMismatch("div", "float", vm.value_type_name(rhs)))
     }
 
-    pub fn __floordiv__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __floordiv__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let lhs_val = *vm.get_float_instance(lhs)?;
         if let Ok(rhs) = vm.get_float_instance(rhs) {
-            if *rhs == 0.0 { return Err(ExecuteError::DivideByZero); }
+            if *rhs == 0.0 { return Err(RuntimeErrorKind::DivideByZero); }
             return Ok(vm.obj_heap.alloc_float_instance((lhs_val / *rhs).floor()));
         }
         if let Ok(rhs) = vm.get_integer_instance(rhs) {
-            if *rhs == 0 { return Err(ExecuteError::DivideByZero); }
+            if *rhs == 0 { return Err(RuntimeErrorKind::DivideByZero); }
             return Ok(vm.obj_heap.alloc_float_instance((lhs_val / *rhs as f64).floor()));
         }
-        Err(ExecuteError::BinaryOpTypeMismatch("floordiv", "float", vm.value_type_name(rhs)))
+        Err(RuntimeErrorKind::BinaryOpTypeMismatch("floordiv", "float", vm.value_type_name(rhs)))
     }
 
-    pub fn __mod__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __mod__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let lhs_val = *vm.get_float_instance(lhs)?;
         if let Ok(rhs) = vm.get_float_instance(rhs) {
-            if *rhs == 0.0 { return Err(ExecuteError::DivideByZero); }
+            if *rhs == 0.0 { return Err(RuntimeErrorKind::DivideByZero); }
             return Ok(vm.obj_heap.alloc_float_instance(lhs_val.rem_euclid(*rhs)));
         }
         if let Ok(rhs) = vm.get_integer_instance(rhs) {
-            if *rhs == 0 { return Err(ExecuteError::DivideByZero); }
+            if *rhs == 0 { return Err(RuntimeErrorKind::DivideByZero); }
             return Ok(vm.obj_heap.alloc_float_instance(lhs_val.rem_euclid(*rhs as f64)));
         }
-        Err(ExecuteError::BinaryOpTypeMismatch("mod", "float", vm.value_type_name(rhs)))
+        Err(RuntimeErrorKind::BinaryOpTypeMismatch("mod", "float", vm.value_type_name(rhs)))
     }
 
-    pub fn __neg__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __neg__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let val = *vm.get_float_instance(receiver)?;
         Ok(vm.obj_heap.alloc_float_instance(-val))
     }
 
-    pub fn __not__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __not__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let val = *vm.get_float_instance(receiver)?;
         Ok(vm.obj_heap.alloc_bool_instance(val == 0.0))
     }
 
-    pub fn __str__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __str__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let val = *vm.get_float_instance(receiver)?;
         Ok(vm.obj_heap.alloc_string_instance(crate::format_shr!("{}", val)))
     }
 
-    pub fn __bool__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __bool__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let val = *vm.get_float_instance(receiver)?;
         Ok(vm.obj_heap.alloc_bool_instance(val != 0.0))
     }
 
-    pub fn __hash__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __hash__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let val = *vm.get_float_instance(receiver)?;
         let hash = val.to_bits() as i64;
         Ok(vm.obj_heap.alloc_integer_instance(hash))
     }
 
-    pub fn __int__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __int__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let val = *vm.get_float_instance(receiver)?;
         Ok(vm.obj_heap.alloc_integer_instance(val as i64))
     }
 
-    pub fn __float__(_vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __float__(_vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         Ok(receiver)
     }
 }

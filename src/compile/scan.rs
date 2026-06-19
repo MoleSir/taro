@@ -5,15 +5,31 @@ pub struct Scanner<'a> {
     start: usize,
     current: usize,
     line: usize,
+    line_start: usize,
 }
 
-#[thiserrorctx::context_error]
-pub enum ScanError {
+#[derive(Debug, thiserror::Error)]
+pub enum ScanErrorKind {
     #[error("unexpected end of source")]
     UnexpectedEnd,
 
     #[error("unterminated string")]
     UnterminatedString,
+}
+
+#[derive(Debug)]
+pub struct ScanError {
+    pub line: usize,
+    pub column: usize,
+    pub kind: ScanErrorKind,
+}
+
+pub type ScanResult<T> = Result<T, ScanError>;
+
+impl std::fmt::Display for ScanError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "[line {}:{}] {}", self.line, self.column, self.kind)
+    }
 }
 
 impl<'a> Scanner<'a> {
@@ -23,6 +39,7 @@ impl<'a> Scanner<'a> {
             start: 0,
             current: 0,
             line: 1,
+            line_start: 0,
         }
     }
 
@@ -161,7 +178,7 @@ impl<'a> Scanner<'a> {
     fn string(&mut self) -> ScanResult<Token<'a>> {
         loop {
             if self.at_end() {
-                return Err(ScanError::UnterminatedString);
+                return Err(self.wrap_error(ScanErrorKind::UnterminatedString));
             }
             let c = self.advance()?;
             if c == '"' {
@@ -169,6 +186,7 @@ impl<'a> Scanner<'a> {
             }
             if c == '\n' {
                 self.line += 1;
+                self.line_start = self.current;
             }
             // Skip the next character after a backslash — this keeps the raw
             // lexeme intact while preventing `\"` from closing the string.
@@ -176,6 +194,7 @@ impl<'a> Scanner<'a> {
                 let next = self.advance()?;
                 if next == '\n' {
                     self.line += 1;
+                    self.line_start = self.current;
                 }
             }
         }
@@ -235,7 +254,7 @@ impl<'a> Scanner<'a> {
         let ch = rest
             .chars()
             .next()
-            .ok_or(ScanError::UnexpectedEnd)?;
+            .ok_or_else(|| self.wrap_error(ScanErrorKind::UnexpectedEnd))?;
         self.current += ch.len_utf8();
         Ok(ch)
     }
@@ -244,7 +263,7 @@ impl<'a> Scanner<'a> {
         self.source[self.current..]
             .chars()
             .next()
-            .ok_or(ScanError::UnexpectedEnd)
+            .ok_or_else(|| self.wrap_error(ScanErrorKind::UnexpectedEnd))
     }
 
     fn match_then_advance(&mut self, expected: char) -> ScanResult<bool> {
@@ -254,7 +273,7 @@ impl<'a> Scanner<'a> {
         let nxt = self.source[self.current..]
             .chars()
             .next()
-            .ok_or(ScanError::UnexpectedEnd)?;
+            .ok_or_else(|| self.wrap_error(ScanErrorKind::UnexpectedEnd))?;
 
         if nxt != expected {
             Ok(false)
@@ -266,8 +285,8 @@ impl<'a> Scanner<'a> {
 
     fn peek_next(&self) -> ScanResult<char> {
         let mut chars = self.source[self.current..].chars();
-        chars.next().ok_or(ScanError::UnexpectedEnd)?;
-        chars.next().ok_or(ScanError::UnexpectedEnd)
+        chars.next().ok_or_else(|| self.wrap_error(ScanErrorKind::UnexpectedEnd))?;
+        chars.next().ok_or_else(|| self.wrap_error(ScanErrorKind::UnexpectedEnd))
     }
 
     fn make_token(&self, kind: TokenKind) -> Token<'a> {
@@ -275,6 +294,7 @@ impl<'a> Scanner<'a> {
             kind,
             lexeme: &self.source[self.start..self.current],
             line: self.line,
+            column: self.current_column(),
         }
     }
 
@@ -283,7 +303,13 @@ impl<'a> Scanner<'a> {
             kind: TokenKind::Error,
             lexeme: msg,
             line: self.line,
+            column: 0,
         }
+    }
+
+    /// 1-based column of the current token start within its source line.
+    fn current_column(&self) -> usize {
+        self.start.saturating_sub(self.line_start) + 1
     }
 
     fn skip_whitespace(&mut self) -> ScanResult<()> {
@@ -299,6 +325,7 @@ impl<'a> Scanner<'a> {
                 '\n' => {
                     self.line += 1;
                     self.advance()?;
+                    self.line_start = self.current;
                 }
                 '/' => {
                     // Check for comment.  peek_next() fails when there is no
@@ -325,6 +352,10 @@ impl<'a> Scanner<'a> {
                 _ => return Ok(()),
             }
         }
+    }
+
+    fn wrap_error(&self, kind: ScanErrorKind) -> ScanError {
+        ScanError { line: self.line, column: self.current_column(), kind }
     }
 }
 

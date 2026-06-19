@@ -5,7 +5,7 @@
 - [x] break / continue
 - [x] for-in (iterator)
 - [x] default arguments 
-- [ ] source line in run time error
+- [x] source line in run time error
 - [ ] str formart
 - [ ] str len(?) slice 
 - [x] std

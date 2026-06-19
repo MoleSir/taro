@@ -3,7 +3,7 @@ use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::time::Duration;
 use crate::{ToNativeData, NativeFunction, NativeData, ObjectHandle, ObjectInstanceData, ShrString};
-use crate::vm::{ExecuteError, ExecuteResult, VirtualMachine};
+use crate::vm::{RuntimeResult, RuntimeErrorKind, VirtualMachine};
 
 impl VirtualMachine {
     /// Create the `net` std module.
@@ -30,7 +30,7 @@ impl VirtualMachine {
     /// | `bind(h, p)`        | bind to host:port                 |
     /// | `accept()`          | accept a connection → Socket      |
     /// | `close()`           | close the listener                |
-    pub(crate) fn create_net_module(&mut self) -> ExecuteResult<ObjectHandle> {
+    pub(crate) fn create_net_module(&mut self) -> RuntimeResult<ObjectHandle> {
         // ---- Socket class ----
         let socket_class = self.obj_heap.alloc_class("Socket");
         self.register_native_method(socket_class, "connect",    NativeFunction::var(StdSocketData::net_socket_connect));
@@ -77,11 +77,11 @@ impl ToNativeData for ServerData {}
 
 impl StdSocketData {
     /// `socket.connect(host, port)` or `socket.connect("host:port")`
-    fn net_socket_connect(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> ExecuteResult<ObjectHandle> {
+    fn net_socket_connect(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
         // args[0] = receiver (self)
         let explicit = args.len().saturating_sub(1);
         if explicit < 1 || explicit > 2 {
-            return Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: explicit });
+            return Err(RuntimeErrorKind::ArgumentCountMismatch { expected: 1, got: explicit });
         }
         let self_handle = args[0];
 
@@ -96,10 +96,10 @@ impl StdSocketData {
         };
 
         let stream = TcpStream::connect(&addr)
-            .map_err(|e| ExecuteError::NetError(format!("cannot connect to '{}': {}", addr, e)))?;
+            .map_err(|e| RuntimeErrorKind::NetError(format!("cannot connect to '{}': {}", addr, e)))?;
 
         let inst = vm.obj_heap.get_instance_mut(self_handle)
-            .ok_or_else(|| ExecuteError::NetError("not a Socket instance".into()))?;
+            .ok_or_else(|| RuntimeErrorKind::NetError("not a Socket instance".into()))?;
         inst.data = ObjectInstanceData::Native(
             NativeData::new(StdSocketData { stream: Some(stream), peer_addr: addr }),
         );
@@ -108,59 +108,59 @@ impl StdSocketData {
     }
 
     /// `socket.send(data)` — send a string.
-    fn net_socket_send(vm: &mut VirtualMachine, receiver: ObjectHandle, data: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    fn net_socket_send(vm: &mut VirtualMachine, receiver: ObjectHandle, data: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let text = vm.get_string_instance(data)?.clone();
         let stream = vm.get_native_mut::<StdSocketData>(receiver)?.stream.as_mut()
-            .ok_or_else(|| ExecuteError::NetError("socket is closed".into()))?;
+            .ok_or_else(|| RuntimeErrorKind::NetError("socket is closed".into()))?;
         stream.write_all(text.as_bytes())
-            .map_err(|e| ExecuteError::NetError(format!("send error: {}", e)))?;
+            .map_err(|e| RuntimeErrorKind::NetError(format!("send error: {}", e)))?;
         Ok(ObjectHandle::NIL)
     }
 
     /// `socket.recv(bufsize)` — receive up to `bufsize` bytes, return as string.
-    fn net_socket_recv(vm: &mut VirtualMachine, receiver: ObjectHandle, bufsize: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    fn net_socket_recv(vm: &mut VirtualMachine, receiver: ObjectHandle, bufsize: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let n = *vm.get_integer_instance(bufsize)?;
         if n <= 0 || n > 65536 {
-            return Err(ExecuteError::NetError(format!(
+            return Err(RuntimeErrorKind::NetError(format!(
                 "recv: bufsize must be 1..65536, got {}", n
             )));
         }
         let stream = vm.get_native_mut::<StdSocketData>(receiver)?.stream.as_mut()
-            .ok_or_else(|| ExecuteError::NetError("socket is closed".into()))?;
+            .ok_or_else(|| RuntimeErrorKind::NetError("socket is closed".into()))?;
         let mut buf = vec![0u8; n as usize];
         let read = stream.read(&mut buf)
-            .map_err(|e| ExecuteError::NetError(format!("recv error: {}", e)))?;
+            .map_err(|e| RuntimeErrorKind::NetError(format!("recv error: {}", e)))?;
         buf.truncate(read);
         let s = String::from_utf8_lossy(&buf).to_string();
         Ok(vm.obj_heap.alloc_string_instance(ShrString::new_string(&s)))
     }
 
     /// `socket.close()` — close the socket.
-    fn net_socket_close(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    fn net_socket_close(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         vm.get_native_mut::<StdSocketData>(receiver)?.stream = None;
         Ok(ObjectHandle::NIL)
     }
 
     /// `socket.settimeout(seconds)` — set the read timeout.
-    fn net_socket_settimeout(vm: &mut VirtualMachine, receiver: ObjectHandle, seconds: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    fn net_socket_settimeout(vm: &mut VirtualMachine, receiver: ObjectHandle, seconds: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let secs = if let Ok(v) = vm.get_float_instance(seconds) {
             *v
         } else if let Ok(v) = vm.get_integer_instance(seconds) {
             *v as f64
         } else {
-            return Err(ExecuteError::UnexpectedType("number", vm.value_type_name(seconds)));
+            return Err(RuntimeErrorKind::UnexpectedType("number", vm.value_type_name(seconds)));
         };
         let dur = Duration::from_secs_f64(secs);
         let data = vm.get_native_mut::<StdSocketData>(receiver)?;
         if let Some(ref stream) = data.stream {
             stream.set_read_timeout(Some(dur))
-                .map_err(|e| ExecuteError::NetError(format!("settimeout: {}", e)))?;
+                .map_err(|e| RuntimeErrorKind::NetError(format!("settimeout: {}", e)))?;
         }
         Ok(ObjectHandle::NIL)
     }
 
     /// `socket.__str__()` → `<Socket peer='host:port' status=open|closed>`
-    fn net_socket_str(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    fn net_socket_str(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let (is_open, addr) = if let Some(d) = vm.obj_heap.get_native::<StdSocketData>(receiver) {
             (d.stream.is_some(), d.peer_addr.clone())
         } else {
@@ -173,10 +173,10 @@ impl StdSocketData {
     }
 
     /// `server.bind(port)` or `server.bind(host, port)` or `server.bind("host:port")`
-    fn net_server_bind(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> ExecuteResult<ObjectHandle> {
+    fn net_server_bind(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
         let explicit = args.len().saturating_sub(1);
         if explicit < 1 || explicit > 2 {
-            return Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: explicit });
+            return Err(RuntimeErrorKind::ArgumentCountMismatch { expected: 1, got: explicit });
         }
         let self_handle = args[0];
 
@@ -194,10 +194,10 @@ impl StdSocketData {
         };
 
         let listener = TcpListener::bind(&addr)
-            .map_err(|e| ExecuteError::NetError(format!("cannot bind '{}': {}", addr, e)))?;
+            .map_err(|e| RuntimeErrorKind::NetError(format!("cannot bind '{}': {}", addr, e)))?;
 
         let inst = vm.obj_heap.get_instance_mut(self_handle)
-            .ok_or_else(|| ExecuteError::NetError("not a Server instance".into()))?;
+            .ok_or_else(|| RuntimeErrorKind::NetError("not a Server instance".into()))?;
         inst.data = ObjectInstanceData::Native(
             NativeData::new(ServerData { listener: Some(listener), bind_addr: addr }),
         );
@@ -206,11 +206,11 @@ impl StdSocketData {
     }
 
     /// `server.accept()` — accept a connection, return a Socket instance.
-    fn net_server_accept(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    fn net_server_accept(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let listener = vm.get_native_mut::<ServerData>(receiver)?.listener.as_mut()
-            .ok_or_else(|| ExecuteError::NetError("server is closed".into()))?;
+            .ok_or_else(|| RuntimeErrorKind::NetError("server is closed".into()))?;
         let (stream, peer_addr) = listener.accept()
-            .map_err(|e| ExecuteError::NetError(format!("accept error: {}", e)))?;
+            .map_err(|e| RuntimeErrorKind::NetError(format!("accept error: {}", e)))?;
         let peer_str = peer_addr.to_string();
 
         // Create a Socket instance using the cached socket_class.
@@ -221,13 +221,13 @@ impl StdSocketData {
     }
 
     /// `server.close()` — close the listener.
-    fn net_server_close(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    fn net_server_close(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         vm.get_native_mut::<ServerData>(receiver)?.listener = None;
         Ok(ObjectHandle::NIL)
     }
 
     /// `server.__str__()` → `<Server addr='host:port' status=open|closed>`
-    fn net_server_str(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    fn net_server_str(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let (is_open, addr) = if let Some(d) = vm.obj_heap.get_native::<ServerData>(receiver) {
             (d.listener.is_some(), d.bind_addr.clone())
         } else {

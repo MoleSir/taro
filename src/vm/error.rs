@@ -3,7 +3,7 @@ use crate::{compile::CompileError, ChunkError};
 #[derive(Debug)]
 pub enum InterpretError {
     Compile(CompileError),
-    Runtime(ExecuteError),
+    Runtime(RuntimeError),
 }
 
 impl std::fmt::Display for InterpretError {
@@ -15,8 +15,40 @@ impl std::fmt::Display for InterpretError {
     }
 }
 
-#[thiserrorctx::context_error]
-pub enum ExecuteError {
+impl std::fmt::Display for RuntimeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match (self.line, self.column) {
+            (Some(line), Some(col)) => write!(f, "[line {line}:{col}] {}", self.reason),
+            (Some(line), None) => write!(f, "[line {line}] {}", self.reason),
+            (None, _) => write!(f, "{}", self.reason),
+        }
+    }
+}
+
+pub type RuntimeResult<T> = Result<T, RuntimeErrorKind>;
+
+#[derive(Debug)]
+pub struct RuntimeError {
+    pub line: Option<usize>,
+    /// 1-based column within the source line (if available).
+    pub column: Option<usize>,
+    pub reason: RuntimeErrorKind,
+}
+
+// impl From<ChunkError> for RuntimeError {
+//     fn from(e: ChunkError) -> Self {
+//         RuntimeError { line: None, column: None, reason: RuntimeErrorKind::Chunk(e) }
+//     }
+// }
+
+// impl From<RuntimeErrorKind> for RuntimeError {
+//     fn from(reason: RuntimeErrorKind) -> Self {
+//         RuntimeError { line: None, column: None, reason }
+//     }
+// }
+
+#[derive(Debug, thiserror::Error)]
+pub enum RuntimeErrorKind {
     #[error(transparent)]
     Chunk(#[from] ChunkError),
 
@@ -124,4 +156,4 @@ pub enum ExecuteError {
 
     #[error("json error: {0}")]
     JosnError(String),
-}   
+}

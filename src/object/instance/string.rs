@@ -1,6 +1,6 @@
 use crate::{
     NativeFunction, NativeData, ObjectHandle, ObjectInstanceData, ToNativeData,
-    vm::{ExecuteError, ExecuteResult, VirtualMachine},
+    vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine},
 };
 use super::ObjectHeap;
 
@@ -29,24 +29,24 @@ pub struct ObjectString;
 
 macro_rules! string_cmp_op {
     ($name:ident, $op:expr, $op_name:literal) => {
-        pub fn $name(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+        pub fn $name(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
             let lhs_s = vm.get_string_instance(lhs)?.clone();
             if let Ok(rhs_s) = vm.get_string_instance(rhs) {
                 return Ok(vm.obj_heap.alloc_bool_instance($op(lhs_s.as_str(), rhs_s.as_str())));
             }
-            Err(ExecuteError::BinaryOpTypeMismatch($op_name, "string", vm.value_type_name(rhs)))
+            Err(RuntimeErrorKind::BinaryOpTypeMismatch($op_name, "string", vm.value_type_name(rhs)))
         }
     };
 }
 
 impl ObjectString {
-    pub fn __add__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __add__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let lhs_s = vm.get_string_instance(lhs)?.clone();
         if let Ok(rhs_s) = vm.get_string_instance(rhs) {
             let result = format!("{}{}", lhs_s.as_str(), rhs_s.as_str());
             return Ok(vm.obj_heap.alloc_string_instance(result.into()));
         }
-        Err(ExecuteError::BinaryOpTypeMismatch("add", "string", vm.value_type_name(rhs)))
+        Err(RuntimeErrorKind::BinaryOpTypeMismatch("add", "string", vm.value_type_name(rhs)))
     }
 
     string_cmp_op!(__eq__, |a, b| a == b, "eq");
@@ -56,21 +56,21 @@ impl ObjectString {
     string_cmp_op!(__lt__, |a, b| a < b, "lt");
     string_cmp_op!(__le__, |a, b| a <= b, "le");
 
-    pub fn __not__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __not__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let s = vm.get_string_instance(receiver)?;
         Ok(vm.obj_heap.alloc_bool_instance(s.is_empty()))
     }
 
-    pub fn __str__(_vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __str__(_vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         Ok(receiver)
     }
 
-    pub fn __bool__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __bool__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let s = vm.get_string_instance(receiver)?;
         Ok(vm.obj_heap.alloc_bool_instance(!s.is_empty()))
     }
 
-    pub fn __hash__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __hash__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let s = vm.get_string_instance(receiver)?;
         use std::hash::Hasher;
         let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -78,84 +78,84 @@ impl ObjectString {
         Ok(vm.obj_heap.alloc_integer_instance(h.finish() as i64))
     }
 
-    pub fn __int__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __int__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let s = vm.get_string_instance(receiver)?;
         let val: i64 = s.as_str().parse().map_err(|_| {
-            ExecuteError::BadIntResult("string")
+            RuntimeErrorKind::BadIntResult("string")
         })?;
         Ok(vm.obj_heap.alloc_integer_instance(val))
     }
 
-    pub fn __float__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __float__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let s = vm.get_string_instance(receiver)?;
         let val: f64 = s.as_str().parse().map_err(|_| {
-            ExecuteError::BadFloatResult("string")
+            RuntimeErrorKind::BadFloatResult("string")
         })?;
         Ok(vm.obj_heap.alloc_float_instance(val))
     }
 
-    pub fn __len__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __len__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let s = vm.get_string_instance(receiver)?;
         Ok(vm.obj_heap.alloc_integer_instance(s.len() as i64))
     }
 
-    pub fn len(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn len(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         Self::__len__(vm, receiver)
     }
 
     /// `string.upper()` — convert all characters to uppercase.
-    pub fn upper(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn upper(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let s = vm.get_string_instance(receiver)?;
         Ok(vm.obj_heap.alloc_string_instance(s.to_uppercase().into()))
     }
 
     /// `string.lower()` — convert all characters to lowercase.
-    pub fn lower(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn lower(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let s = vm.get_string_instance(receiver)?;
         Ok(vm.obj_heap.alloc_string_instance(s.to_lowercase().into()))
     }
 
     /// `string.trim()` — remove leading and trailing whitespace.
-    pub fn trim(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn trim(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let s = vm.get_string_instance(receiver)?;
         Ok(vm.obj_heap.alloc_string_instance(s.trim().to_string().into()))
     }
 
     /// `string.trim_start()` — remove leading whitespace.
-    pub fn trim_start(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn trim_start(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let s = vm.get_string_instance(receiver)?;
         Ok(vm.obj_heap.alloc_string_instance(s.trim_start().to_string().into()))
     }
 
     /// `string.trim_end()` — remove trailing whitespace.
-    pub fn trim_end(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn trim_end(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let s = vm.get_string_instance(receiver)?;
         Ok(vm.obj_heap.alloc_string_instance(s.trim_end().to_string().into()))
     }
 
     /// `string.starts_with(prefix)` — return true if the string starts with `prefix`.
-    pub fn starts_with(vm: &mut VirtualMachine, receiver: ObjectHandle, prefix_handle: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn starts_with(vm: &mut VirtualMachine, receiver: ObjectHandle, prefix_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let s = vm.get_string_instance(receiver)?;
         let prefix = vm.get_string_instance(prefix_handle)?;
         Ok(vm.obj_heap.alloc_bool_instance(s.starts_with(prefix.as_str())))
     }
 
     /// `string.ends_with(suffix)` — return true if the string ends with `suffix`.
-    pub fn ends_with(vm: &mut VirtualMachine, receiver: ObjectHandle, suffix_handle: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn ends_with(vm: &mut VirtualMachine, receiver: ObjectHandle, suffix_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let s = vm.get_string_instance(receiver)?;
         let suffix = vm.get_string_instance(suffix_handle)?;
         Ok(vm.obj_heap.alloc_bool_instance(s.ends_with(suffix.as_str())))
     }
 
     /// `string.contains(sub)` — return true if the string contains `sub`.
-    pub fn contains(vm: &mut VirtualMachine, receiver: ObjectHandle, sub_handle: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn contains(vm: &mut VirtualMachine, receiver: ObjectHandle, sub_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let s = vm.get_string_instance(receiver)?;
         let sub = vm.get_string_instance(sub_handle)?;
         Ok(vm.obj_heap.alloc_bool_instance(s.contains(sub.as_str())))
     }
 
     /// `string.replace(old, new)` — replace all occurrences of `old` with `new`.
-    pub fn replace(vm: &mut VirtualMachine, receiver: ObjectHandle, old_handle: ObjectHandle, new_handle: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn replace(vm: &mut VirtualMachine, receiver: ObjectHandle, old_handle: ObjectHandle, new_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let s = vm.get_string_instance(receiver)?;
         let old = vm.get_string_instance(old_handle)?;
         let new = vm.get_string_instance(new_handle)?;
@@ -163,7 +163,7 @@ impl ObjectString {
     }
 
     /// `string.split(delim)` — split the string by `delim` and return a list.
-    pub fn split(vm: &mut VirtualMachine, receiver: ObjectHandle, delim_handle: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn split(vm: &mut VirtualMachine, receiver: ObjectHandle, delim_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let s = vm.get_string_instance(receiver)?.clone();
         let delim = vm.get_string_instance(delim_handle)?.clone();
         let parts: Vec<ObjectHandle> = s.split(delim.as_str())
@@ -173,7 +173,7 @@ impl ObjectString {
     }
 
     /// `string.substr(start, length)` — extract a substring.
-    pub fn substr(vm: &mut VirtualMachine, receiver: ObjectHandle, start_handle: ObjectHandle, length_handle: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn substr(vm: &mut VirtualMachine, receiver: ObjectHandle, start_handle: ObjectHandle, length_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let s = vm.get_string_instance(receiver)?.clone();
         let start = *vm.get_integer_instance(start_handle)?;
         let length = *vm.get_integer_instance(length_handle)?;
@@ -203,7 +203,7 @@ impl ObjectString {
 
     /// `string.find(sub)` — return the index of the first occurrence of `sub`,
     /// or -1 if not found.
-    pub fn find(vm: &mut VirtualMachine, receiver: ObjectHandle, sub_handle: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn find(vm: &mut VirtualMachine, receiver: ObjectHandle, sub_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let s = vm.get_string_instance(receiver)?;
         let sub = vm.get_string_instance(sub_handle)?;
         match s.find(sub.as_str()) {
@@ -214,7 +214,7 @@ impl ObjectString {
 
     /// `string.rfind(sub)` — return the index of the last occurrence of `sub`,
     /// or -1 if not found.
-    pub fn rfind(vm: &mut VirtualMachine, receiver: ObjectHandle, sub_handle: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn rfind(vm: &mut VirtualMachine, receiver: ObjectHandle, sub_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let s = vm.get_string_instance(receiver)?;
         let sub = vm.get_string_instance(sub_handle)?;
         match s.rfind(sub.as_str()) {
@@ -224,29 +224,29 @@ impl ObjectString {
     }
 
     /// `string.is_empty()` — return true if the string is empty.
-    pub fn is_empty(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn is_empty(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let s = vm.get_string_instance(receiver)?;
         Ok(vm.obj_heap.alloc_bool_instance(s.is_empty()))
     }
 
     /// `string.repeat(n)` — repeat the string `n` times.
-    pub fn repeat(vm: &mut VirtualMachine, receiver: ObjectHandle, n_handle: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn repeat(vm: &mut VirtualMachine, receiver: ObjectHandle, n_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let s = vm.get_string_instance(receiver)?.clone();
         let n = *vm.get_integer_instance(n_handle)?;
         if n < 0 {
-            return Err(ExecuteError::IndexOutOfRange(n, 0));
+            return Err(RuntimeErrorKind::IndexOutOfRange(n, 0));
         }
         let result = s.repeat(n as usize);
         Ok(vm.obj_heap.alloc_string_instance(result.into()))
     }
 
-    pub fn __getitem__(vm: &mut VirtualMachine, receiver: ObjectHandle, idx_handle: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __getitem__(vm: &mut VirtualMachine, receiver: ObjectHandle, idx_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let s = vm.get_string_instance(receiver)?.clone();
         let idx_val = *vm.get_integer_instance(idx_handle)?;
         let len = s.len();
         let idx = if idx_val < 0 { len as i64 + idx_val } else { idx_val };
         if idx < 0 || idx as usize >= len {
-            return Err(ExecuteError::IndexOutOfRange(idx, len));
+            return Err(RuntimeErrorKind::IndexOutOfRange(idx, len));
         }
         let ch = s.as_str()[idx as usize..idx as usize + 1].to_string();
         Ok(vm.obj_heap.alloc_string_instance(ch.into()))
@@ -254,7 +254,7 @@ impl ObjectString {
 
     // ---- iteration protocol ----
 
-    pub fn __iter__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __iter__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let iter = StringIterator { string_handle: receiver, byte_index: 0 };
         Ok(vm.obj_heap.alloc_instance(
             vm.obj_heap.string_iter_class,
@@ -262,7 +262,7 @@ impl ObjectString {
         ))
     }
 
-    pub fn iter_next(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn iter_next(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let (string_handle, byte_index) = {
             let iter = vm.get_native::<StringIterator>(receiver)?;
             (iter.string_handle, iter.byte_index)
@@ -288,7 +288,7 @@ impl ObjectString {
 
 // A free function that returns the receiver unchanged — used for iterator
 // `__iter__` implementations that just return `self`.
-fn identity_iter(_vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+fn identity_iter(_vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     Ok(receiver)
 }
 

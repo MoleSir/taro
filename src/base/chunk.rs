@@ -32,6 +32,12 @@ pub enum ChunkError {
 pub struct Chunk {
     pub codes: Vec<u8>,
     pub constants: Vec<ObjectHandle>,
+    /// Run-length encoded source-position table: (byte_offset, line, column).
+    /// Each entry means "from this byte offset onward, the source position is
+    /// (`line`, `column`)".  Both are 1-based.  Sorted by byte_offset.
+    /// Use [`Chunk::get_source_pos`] to look up the position for a given
+    /// instruction pointer.
+    pub line_runs: Vec<(usize, usize, usize)>,
 }
 
 impl Chunk {
@@ -39,6 +45,7 @@ impl Chunk {
         Self {
             codes: vec![],
             constants: vec![],
+            line_runs: vec![],
         }
     }
 }
@@ -52,7 +59,17 @@ impl Default for Chunk {
 impl Chunk {
     /// Encode and append a single instruction to this chunk.
     /// `heap` is needed to allocate string constants into the constant pool.
-    pub fn write_instruction(&mut self, inst: Instruction, heap: &mut ObjectHeap) {
+    /// `line` is the source line number for this instruction (1-based).
+    /// `column` is the source column for this instruction (1-based).
+    pub fn write_instruction(&mut self, inst: Instruction, line: usize, column: usize, heap: &mut ObjectHeap) {
+        // Record position info (run-length encoded by line *and* column so that
+        // different expressions on the same line get distinct caret positions).
+        if self.line_runs.is_empty()
+            || self.line_runs.last().map(|r| r.1) != Some(line)
+            || self.line_runs.last().map(|r| r.2) != Some(column)
+        {
+            self.line_runs.push((self.codes.len(), line, column));
+        }
         match inst {
             // simple opcodes
             Instruction::Return => self.write_op(ByteCode::Return),
@@ -452,5 +469,16 @@ impl Chunk {
             }
         } 
         Err(ChunkError::ExpectedStringConstant)
+    }
+
+    /// Look up the source position (line, column) for a given bytecode offset
+    /// (ip).  Returns `None` if no position info is available (e.g. empty chunk).
+    pub fn get_source_pos(&self, ip: usize) -> Option<(usize, usize)> {
+        // Binary search for the largest offset <= ip.
+        match self.line_runs.binary_search_by_key(&ip, |&(offset, _, _)| offset) {
+            Ok(i) => Some((self.line_runs[i].1, self.line_runs[i].2)),
+            Err(0) => None,
+            Err(i) => Some((self.line_runs[i - 1].1, self.line_runs[i - 1].2)),
+        }
     }
 }

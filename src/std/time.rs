@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use crate::{NativeFunction, ObjectHandle, ShrString};
-use crate::vm::{ExecuteError, ExecuteResult, VirtualMachine};
+use crate::vm::{RuntimeResult, RuntimeErrorKind, VirtualMachine};
 
 impl VirtualMachine {
     /// Create the `time` std module.
@@ -20,7 +20,7 @@ impl VirtualMachine {
     ///   timestamp (Unix seconds as float)
     ///
     /// All fields are in UTC.
-    pub(crate) fn create_time_module(&mut self) -> ExecuteResult<ObjectHandle> {
+    pub(crate) fn create_time_module(&mut self) -> RuntimeResult<ObjectHandle> {
         let time_fn   = self.obj_heap.alloc_native_fn("time",   NativeFunction::a0(time));
         let sleep_fn  = self.obj_heap.alloc_native_fn("sleep",  NativeFunction::a1(sleep));
         let now_fn    = self.obj_heap.alloc_native_fn("now",    NativeFunction::a0(now));
@@ -40,7 +40,7 @@ impl VirtualMachine {
 // =====================================================================
 
 /// `time.time()` — return the current Unix timestamp in seconds (f64).
-fn time(vm: &mut VirtualMachine) -> ExecuteResult<ObjectHandle> {
+fn time(vm: &mut VirtualMachine) -> RuntimeResult<ObjectHandle> {
     let dur = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap_or_default();
@@ -48,16 +48,16 @@ fn time(vm: &mut VirtualMachine) -> ExecuteResult<ObjectHandle> {
 }
 
 /// `time.sleep(secs)` — pause execution for `secs` seconds (may be fractional).
-fn sleep(vm: &mut VirtualMachine, secs: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+fn sleep(vm: &mut VirtualMachine, secs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     let s = if let Ok(v) = vm.get_float_instance(secs) {
         *v
     } else if let Ok(v) = vm.get_integer_instance(secs) {
         *v as f64
     } else {
-        return Err(ExecuteError::UnexpectedType("number", vm.value_type_name(secs)));
+        return Err(RuntimeErrorKind::UnexpectedType("number", vm.value_type_name(secs)));
     };
     if s < 0.0 {
-        return Err(ExecuteError::TimeError("sleep: negative duration".into()));
+        return Err(RuntimeErrorKind::TimeError("sleep: negative duration".into()));
     }
     std::thread::sleep(Duration::from_secs_f64(s));
     Ok(ObjectHandle::NIL)
@@ -69,7 +69,7 @@ fn sleep(vm: &mut VirtualMachine, secs: ObjectHandle) -> ExecuteResult<ObjectHan
 ///   year, month (1-12), day (1-31), hour (0-23), min (0-59),
 ///   sec (0-59, fractional), wday (0=Sun..6=Sat), yday (1-366),
 ///   timestamp (Unix seconds as float)
-fn now(vm: &mut VirtualMachine) -> ExecuteResult<ObjectHandle> {
+fn now(vm: &mut VirtualMachine) -> RuntimeResult<ObjectHandle> {
     let now_sys = SystemTime::now();
     let dur = now_sys.duration_since(UNIX_EPOCH).unwrap_or_default();
     let ts = dur.as_secs_f64();

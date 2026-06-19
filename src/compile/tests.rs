@@ -1,6 +1,6 @@
 use crate::{ByteCode, Chunk, Instruction, ObjectHandle, ObjectHeap};
 use super::*;
-use super::parse::ParseReason;
+use super::parse::ParseErrorKind;
 
 // ------------------------------------------------------------------------
 //  Helpers
@@ -172,7 +172,7 @@ fn test_string_invalid_escape_is_error() {
     match compile("\"hello\\xworld\";", &mut obj_heap) {
         Err(CompileError::Parse(errors)) => {
             assert!(
-                errors.iter().any(|e| matches!(e.reason, ParseReason::InvalidEscape('x'))),
+                errors.iter().any(|e| matches!(e.kind, ParseErrorKind::InvalidEscape('x'))),
                 "expected InvalidEscape error"
             );
         }
@@ -554,7 +554,7 @@ fn test_duplicate_local_is_error() {
     match compile(source, &mut obj_heap) {
         Err(CompileError::Parse(errors)) => {
             assert!(errors.iter().any(
-                |e| matches!(e.reason, ParseReason::VariableRedefine(_))
+                |e| matches!(e.kind, ParseErrorKind::VariableRedefine(_))
             ), "expected VariableRedefine error");
         }
         Err(CompileError::Scan(_)) => panic!("unexpected scan error"),
@@ -848,7 +848,7 @@ fn test_return_in_top_level_is_error() {
     match compile("return 5;", &mut obj_heap) {
         Err(CompileError::Parse(errors)) => {
             assert!(errors.iter().any(
-                |e| matches!(e.reason, ParseReason::ReturnInTop)
+                |e| matches!(e.kind, ParseErrorKind::ReturnInTop)
             ), "expected ReturnInTop error");
         }
         _ => panic!("expected compilation to fail for top-level return"),
@@ -1268,7 +1268,7 @@ fn test_for_in_missing_in_is_error() {
     let mut obj_heap = ObjectHeap::new();
     match compile("for x [1] {}", &mut obj_heap) {
         Err(CompileError::Parse(errors)) => {
-            assert!(errors.iter().any(|e| matches!(e.reason, ParseReason::ExpectedToken(_))));
+            assert!(errors.iter().any(|e| matches!(e.kind, ParseErrorKind::ExpectedToken(_))));
         }
         _ => panic!("expected parse error for missing 'in'"),
     }

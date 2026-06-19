@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use crate::{NativeFunction, ObjectHandle, ObjectInstanceData, ShrString};
 use crate::object::ObjectDict;
-use crate::vm::{ExecuteError, ExecuteResult, VirtualMachine};
+use crate::vm::{RuntimeResult, RuntimeErrorKind, VirtualMachine};
 
 impl VirtualMachine {
     /// Create the `json` std module.
@@ -12,7 +12,7 @@ impl VirtualMachine {
     /// |------------------|------------------------------------------|
     /// | `encode(value)`  | serialize a Taro value to a JSON string  |
     /// | `decode(string)` | parse a JSON string into a Taro value    |
-    pub(crate) fn create_json_module(&mut self) -> ExecuteResult<ObjectHandle> {
+    pub(crate) fn create_json_module(&mut self) -> RuntimeResult<ObjectHandle> {
         let encode_fn = self.obj_heap.alloc_native_fn("encode", NativeFunction::a1(encode));
         let decode_fn = self.obj_heap.alloc_native_fn("decode", NativeFunction::a1(decode));
 
@@ -48,13 +48,13 @@ impl VirtualMachine {
 ///
 /// Returns an error when the value (or any nested value) is not a
 /// plain-data type (e.g. a class instance, function, or native object).
-fn encode(vm: &mut VirtualMachine, value: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+fn encode(vm: &mut VirtualMachine, value: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     let mut out = String::new();
     encode_value(vm, value, &mut out)?;
     Ok(vm.obj_heap.alloc_string_instance(ShrString::new_string(&out)))
 }
 
-fn encode_value(vm: &VirtualMachine, handle: ObjectHandle, out: &mut String) -> ExecuteResult<()> {
+fn encode_value(vm: &VirtualMachine, handle: ObjectHandle, out: &mut String) -> RuntimeResult<()> {
     if handle.is_nil() {
         out.push_str("null");
         return Ok(());
@@ -113,11 +113,11 @@ fn encode_value(vm: &VirtualMachine, handle: ObjectHandle, out: &mut String) -> 
                     let key_str = match vm.obj_heap.get_instance(k) {
                         Some(ki) => match &ki.data {
                             ObjectInstanceData::String(s) => s.clone(),
-                            _ => return Err(ExecuteError::JosnError(
+                            _ => return Err(RuntimeErrorKind::JosnError(
                                 "json.encode: dict keys must be strings".into()
                             )),
                         },
-                        None => return Err(ExecuteError::JosnError(
+                        None => return Err(RuntimeErrorKind::JosnError(
                             "json.encode: dict keys must be strings".into()
                         )),
                     };
@@ -154,8 +154,8 @@ fn encode_value(vm: &VirtualMachine, handle: ObjectHandle, out: &mut String) -> 
     Ok(())
 }
 
-fn encode_error(type_name: &str) -> ExecuteError {
-    ExecuteError::JosnError(format!(
+fn encode_error(type_name: &str) -> RuntimeErrorKind {
+    RuntimeErrorKind::JosnError(format!(
         "json.encode: cannot serialize type '{type_name}'"
     ))
 }
@@ -194,16 +194,16 @@ fn encode_json_string(s: &str, out: &mut String) {
 ///   string → String
 ///   array  → List
 ///   object → Dict (string keys)
-fn decode(vm: &mut VirtualMachine, text: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+fn decode(vm: &mut VirtualMachine, text: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     let s = vm.get_string_instance(text)?;
 
     let value: serde_json::Value = serde_json::from_str(s.as_str())
-        .map_err(|e| ExecuteError::JosnError(format!("json.decode: {e}")))?;
+        .map_err(|e| RuntimeErrorKind::JosnError(format!("json.decode: {e}")))?;
 
     json_value_to_taro(vm, &value)
 }
 
-fn json_value_to_taro(vm: &mut VirtualMachine, v: &serde_json::Value) -> ExecuteResult<ObjectHandle> {
+fn json_value_to_taro(vm: &mut VirtualMachine, v: &serde_json::Value) -> RuntimeResult<ObjectHandle> {
     match v {
         serde_json::Value::Null => Ok(ObjectHandle::NIL),
 
@@ -215,7 +215,7 @@ fn json_value_to_taro(vm: &mut VirtualMachine, v: &serde_json::Value) -> Execute
             } else if let Some(f) = n.as_f64() {
                 Ok(vm.obj_heap.alloc_float_instance(f))
             } else {
-                Err(ExecuteError::JosnError(format!(
+                Err(RuntimeErrorKind::JosnError(format!(
                     "json.decode: unsupported number '{n}'"
                 )))
             }
@@ -229,7 +229,7 @@ fn json_value_to_taro(vm: &mut VirtualMachine, v: &serde_json::Value) -> Execute
             let items: Vec<ObjectHandle> = arr
                 .iter()
                 .map(|v| json_value_to_taro(vm, v))
-                .collect::<ExecuteResult<_>>()?;
+                .collect::<RuntimeResult<_>>()?;
             Ok(vm.obj_heap.alloc_list_instance(items))
         }
 

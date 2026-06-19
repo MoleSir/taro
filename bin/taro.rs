@@ -14,7 +14,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use taro_lang::compile::CompileError;
-use taro_lang::vm::{ExecuteError, InterpretError, VirtualMachine};
+use taro_lang::vm::{RuntimeError, RuntimeErrorKind, InterpretError, VirtualMachine};
 
 // ── constants ────────────────────────────────────────────────────────────────
 
@@ -147,7 +147,9 @@ fn main() -> ExitCode {
         Action::RunFile(path) => match run_file(&path) {
             Ok(()) => ExitCode::SUCCESS,
             Err(ExitError::Interpret(e)) => {
-                display_error(Some(&path), &e);
+                // Read source for snippet display.
+                let source = std::fs::read_to_string(&path).ok();
+                display_error(Some(&path), source.as_deref(), &e);
                 ExitCode::from(1)
             }
             Err(ExitError::Io(e)) => {
@@ -158,14 +160,14 @@ fn main() -> ExitCode {
         Action::RunCommand(code) => match run_command(&code) {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
-                display_error(None, &e);
+                display_error(None, Some(&code), &e);
                 ExitCode::from(1)
             }
         },
         Action::RunStdin => match run_stdin() {
             Ok(()) => ExitCode::SUCCESS,
             Err(e) => {
-                display_error(None, &e);
+                display_error(None, None, &e);
                 ExitCode::from(1)
             }
         },
@@ -193,39 +195,86 @@ impl From<anyhow::Error> for ExitError {
 
 // ── error display ────────────────────────────────────────────────────────────
 
-/// Pretty-print an interpretation error.  When a file path is provided and the
-/// error carries line information we show a source-code snippet.
-fn display_error(path: Option<&str>, error: &InterpretError) {
+/// Pretty-print an interpretation error with source context.
+///
+/// `path` is the file name (for labelling); `source` is the raw script text so
+/// we can show line snippets even without a file on disk (e.g. `-c` mode, REPL).
+fn display_error(path: Option<&str>, source: Option<&str>, error: &InterpretError) {
+    let label = path.unwrap_or("<source>");
     match error {
         InterpretError::Compile(CompileError::Scan(e)) => {
-            let label = path.unwrap_or("<source>");
-            eprintln!("{} [{label}]: {e}", red(&bold("scan error")));
+            eprintln!(
+                "{} [{label}:{}:{}]: {}",
+                red(&bold("scan error")),
+                e.line,
+                e.column,
+                e.kind,
+            );
+            if let Some(src) = source {
+                show_error_snippet(src, e.line, Some(e.column), &e.kind.to_string());
+            } else if let Some(p) = path {
+                show_file_line(p, e.line);
+            }
         }
         InterpretError::Compile(CompileError::Parse(errors)) => {
             for err in errors {
-                let label = path.unwrap_or("<source>");
                 eprintln!(
-                    "{} [{label}:{}] at '{}': {}",
+                    "{} [{label}:{}:{}] at '{}': {}",
                     red(&bold("parse error")),
                     err.line,
+                    err.column,
                     dim(&err.lexeme),
-                    red(&err.reason.to_string()),
+                    red(&err.kind.to_string()),
                 );
-                // If a file path is available, show the offending line.
-                if let Some(p) = path {
-                    show_source_line(p, err.line);
+                if let Some(src) = source {
+                    show_error_snippet(src, err.line, Some(err.column), &err.kind.to_string());
+                } else if let Some(p) = path {
+                    show_file_line(p, err.line);
                 }
             }
         }
         InterpretError::Runtime(e) => {
-            let label = path.unwrap_or("<source>");
-            eprintln!("{} [{label}]: {e}", red(&bold("runtime error")));
+            if let Some(line) = e.line {
+                eprintln!(
+                    "{} [{label}:{line}:{}]: {}",
+                    red(&bold("runtime error")),
+                    e.column.unwrap_or(1),
+                    e.reason,
+                );
+                if let Some(src) = source {
+                    show_error_snippet(src, line, e.column, &e.reason.to_string());
+                } else if let Some(p) = path {
+                    show_file_line(p, line);
+                }
+            } else {
+                eprintln!(
+                    "{} [{label}]: {}",
+                    red(&bold("runtime error")),
+                    e.reason,
+                );
+            }
         }
     }
 }
 
-/// Print one line of source with a gutter, dimmed so the user can see context.
-fn show_source_line(path: &str, line: usize) {
+/// Show a source line and a caret pointing to the error.
+/// `col_hint` is an optional 1-based column offset for the caret.
+fn show_error_snippet(source: &str, line: usize, col_hint: Option<usize>, message: &str) {
+    if let Some(source_line) = source.lines().nth(line.saturating_sub(1)) {
+        eprintln!(" {}", dim(&format!("{line:>4} │ {source_line}")));
+        // Build the caret line.
+        let gutter = dim(&format!("     │ "));
+        if let Some(col) = col_hint {
+            let padding = " ".repeat(col.saturating_sub(1));
+            eprintln!(" {}{}{}", gutter, padding, red(&format!("^ {message}")));
+        } else {
+            eprintln!(" {}{}", gutter, red(&format!("^ {message}")));
+        }
+    }
+}
+
+/// Print one line of source from a file (no caret, dimmed context).
+fn show_file_line(path: &str, line: usize) {
     if let Ok(content) = std::fs::read_to_string(path) {
         if let Some(source_line) = content.lines().nth(line.saturating_sub(1)) {
             eprintln!(" {}", dim(&format!("{line:>4} │ {source_line}")));
@@ -255,9 +304,11 @@ fn run_command(code: &str) -> Result<(), InterpretError> {
 
 fn run_stdin() -> Result<(), InterpretError> {
     let source = io::read_to_string(io::stdin()).map_err(|e| {
-        InterpretError::Runtime(ExecuteError::IoError(format!(
-            "failed to read stdin: {e}"
-        )))
+        InterpretError::Runtime(RuntimeError {
+            line: None,
+            column: None,
+            reason: RuntimeErrorKind::IoError(format!("failed to read stdin: {e}")),
+        })
     })?;
 
     let mut vm = VirtualMachine::new();
@@ -328,7 +379,7 @@ fn run_repl() -> anyhow::Result<()> {
                             }
                         }
                     }
-                    Err(e) => display_error(None, &e),
+                    Err(e) => display_error(None, Some(&buffer), &e),
                 }
 
                 buffer.clear();

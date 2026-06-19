@@ -1,5 +1,5 @@
 use crate::{Object, ObjectHandle, ObjectInstanceData, ObjectSet};
-use crate::vm::{ExecuteError, ExecuteResult, VirtualMachine};
+use crate::vm::{RuntimeResult, RuntimeErrorKind, VirtualMachine};
 use crate::{NativeFunction, Method};
 use std::collections::HashMap;
 
@@ -58,7 +58,7 @@ impl VirtualMachine {
 
 
 impl VirtualMachine {
-    pub fn print(&mut self, args: &[ObjectHandle]) -> ExecuteResult<ObjectHandle> {
+    pub fn print(&mut self, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
         for (i, &arg) in args.iter().enumerate() {
             if i == 0 {
                 print!("{}", self.__str__(arg)?);
@@ -71,7 +71,7 @@ impl VirtualMachine {
     }
 
     /// `input()` or `input("prompt")` — read a line from stdin.
-    pub fn input(&mut self, args: &[ObjectHandle]) -> ExecuteResult<ObjectHandle> {
+    pub fn input(&mut self, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
         if let Some(&prompt) = args.first() {
             print!("{}", self.__str__(prompt)?);
             use std::io::Write;
@@ -80,7 +80,7 @@ impl VirtualMachine {
         let mut line = String::new();
         std::io::stdin()
             .read_line(&mut line)
-            .map_err(|e| ExecuteError::IoError(format!("failed to read stdin: {}", e)))?;
+            .map_err(|e| RuntimeErrorKind::IoError(format!("failed to read stdin: {}", e)))?;
         // Trim the trailing newline (and optional \r).
         if line.ends_with('\n') {
             line.pop();
@@ -92,19 +92,19 @@ impl VirtualMachine {
     }
 
     /// `abs(value)` — return the absolute value of a number.
-    pub fn abs(&mut self, arg: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn abs(&mut self, arg: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let bi = self.get_instance(arg)?;
         match &bi.data {
             ObjectInstanceData::Integer(v) => Ok(self.obj_heap.alloc_integer_instance(v.wrapping_abs())),
             ObjectInstanceData::Float(v) => Ok(self.obj_heap.alloc_float_instance(v.abs())),
-            _ => Err(ExecuteError::UnexpectedType("number", self.value_type_name(arg))),
+            _ => Err(RuntimeErrorKind::UnexpectedType("number", self.value_type_name(arg))),
         }
     }
 
     /// `min(a, b, ...)` — return the smallest argument.
-    pub fn min(&mut self, args: &[ObjectHandle]) -> ExecuteResult<ObjectHandle> {
+    pub fn min(&mut self, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
         if args.is_empty() {
-            return Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: 0 });
+            return Err(RuntimeErrorKind::ArgumentCountMismatch { expected: 1, got: 0 });
         }
         let mut min_val = args[0];
         for &arg in &args[1..] {
@@ -117,9 +117,9 @@ impl VirtualMachine {
     }
 
     /// `max(a, b, ...)` — return the largest argument.
-    pub fn max(&mut self, args: &[ObjectHandle]) -> ExecuteResult<ObjectHandle> {
+    pub fn max(&mut self, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
         if args.is_empty() {
-            return Err(ExecuteError::ArgumentCountMismatch { expected: 1, got: 0 });
+            return Err(RuntimeErrorKind::ArgumentCountMismatch { expected: 1, got: 0 });
         }
         let mut max_val = args[0];
         for &arg in &args[1..] {
@@ -132,63 +132,63 @@ impl VirtualMachine {
     }
 
     /// `clock()` — return elapsed wall-clock time in seconds (fractional).
-    pub fn clock(&mut self) -> ExecuteResult<ObjectHandle> {
+    pub fn clock(&mut self) -> RuntimeResult<ObjectHandle> {
         let dur = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default();
         Ok(self.obj_heap.alloc_float_instance(dur.as_secs_f64()))
     }
 
-    pub fn len(&mut self, arg: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn len(&mut self, arg: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let n = self.__len__(arg)?;
         Ok(self.obj_heap.alloc_integer_instance(n))
     }
 
     /// `is_iter_end(value)` — return true if value is the iteration-end sentinel.
-    pub fn is_iter_end(&mut self, value: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn is_iter_end(&mut self, value: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         Ok(self.obj_heap.alloc_bool_instance(value.is_iter_end()))
     }
 
-    pub fn next(&mut self, iterator: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn next(&mut self, iterator: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         self.__next__(iterator)
     }
 
-    pub fn iter(&mut self, iterator: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn iter(&mut self, iterator: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         self.__iter__(iterator)
     }
 
-    pub fn str(&mut self, arg: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn str(&mut self, arg: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let s = self.__str__(arg)?;
         Ok(self.obj_heap.alloc_string_instance(s))
     }
 
-    pub fn bool(&mut self, arg: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn bool(&mut self, arg: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let b = self.__bool__(arg)?;
         Ok(self.obj_heap.alloc_bool_instance(b))
     }
 
-    pub fn int(&mut self, arg: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn int(&mut self, arg: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let n = self.__int__(arg)?;
         Ok(self.obj_heap.alloc_integer_instance(n))
     }
 
-    pub fn float(&mut self, arg: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn float(&mut self, arg: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let n = self.__float__(arg)?;
         Ok(self.obj_heap.alloc_float_instance(n))
     }
 
     /// list
-    pub fn list(&mut self, args: &[ObjectHandle]) -> ExecuteResult<ObjectHandle> {
+    pub fn list(&mut self, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
         Ok(self.obj_heap.alloc_list_instance(args.to_vec()))
     }
 
     /// dict
-    pub fn dict(&mut self) -> ExecuteResult<ObjectHandle> {
+    pub fn dict(&mut self) -> RuntimeResult<ObjectHandle> {
         Ok(self.obj_heap.alloc_dict_instance(std::collections::HashMap::new()))
     }
 
     /// `set(args...)` — create a new set from the given arguments.
-    pub fn set(&mut self, args: &[ObjectHandle]) -> ExecuteResult<ObjectHandle> {
+    pub fn set(&mut self, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
         let set_handle = self.obj_heap.alloc_set_instance(HashMap::new());
         for &item in args {
             ObjectSet::add(self, set_handle, item)?;
@@ -196,14 +196,14 @@ impl VirtualMachine {
         Ok(set_handle)
     }
 
-    pub fn exit(&mut self, arg: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn exit(&mut self, arg: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let n = self.__int__(arg)?;
         std::process::exit(n as i32)
     }
 
     /// `type(value)` — for Instance, return the class object;
     /// otherwise the type name string.
-    pub fn typeof_val(&mut self, arg: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn typeof_val(&mut self, arg: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let obj = self.obj_heap.get(arg);
         match obj {
             Object::Instance(inst) => return Ok(inst.class),

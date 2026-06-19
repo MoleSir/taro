@@ -434,7 +434,6 @@ dependencies = [
  "rustyline",
  "serde_json",
  "thiserror",
- "thiserrorctx",
 ]
 
 [[package]]
@@ -452,28 +451,6 @@ version = "2.0.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ebc4ee7f67670e9b64d05fa4253e753e016c6c95ff35b89b7941d6b856dec1d5"
 dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
-name = "thiserrorctx"
-version = "2.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7522c29540ae5b5cfdc64c3b8c45aa98b60e2a66f79f00b57fb53f1ca240e6e"
-dependencies = [
- "thiserror",
- "thiserrorctx-impl",
-]
-
-[[package]]
-name = "thiserrorctx-impl"
-version = "2.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d62fd101023f56ba3c696d496f2b6eb09d09a7661df6e9686781027b7f450800"
-dependencies = [
- "proc-macro-crate",
  "proc-macro2",
  "quote",
  "syn",

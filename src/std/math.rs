@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 use crate::{NativeFunction, ObjectHandle, ShrString};
-use crate::vm::{ExecuteError, ExecuteResult, VirtualMachine};
+use crate::vm::{RuntimeResult, RuntimeErrorKind, VirtualMachine};
 
 impl VirtualMachine {
     /// Create the `math` std module.
-    pub(crate) fn create_math_module(&mut self) -> ExecuteResult<ObjectHandle> {
+    pub(crate) fn create_math_module(&mut self) -> RuntimeResult<ObjectHandle> {
         // ---- function handles ----
         let sin     = self.obj_heap.alloc_native_fn("sin",     NativeFunction::a1(sin));
         let cos     = self.obj_heap.alloc_native_fn("cos",     NativeFunction::a1(cos));
@@ -65,37 +65,37 @@ impl VirtualMachine {
 //  Trig functions
 // =====================================================================
 
-fn sin(vm: &mut VirtualMachine, x: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+fn sin(vm: &mut VirtualMachine, x: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     let v = as_f64(vm, x, "sin")?;
     Ok(vm.obj_heap.alloc_float_instance(v.sin()))
 }
 
-fn cos(vm: &mut VirtualMachine, x: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+fn cos(vm: &mut VirtualMachine, x: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     let v = as_f64(vm, x, "cos")?;
     Ok(vm.obj_heap.alloc_float_instance(v.cos()))
 }
 
-fn tan(vm: &mut VirtualMachine, x: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+fn tan(vm: &mut VirtualMachine, x: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     let v = as_f64(vm, x, "tan")?;
     Ok(vm.obj_heap.alloc_float_instance(v.tan()))
 }
 
-fn asin(vm: &mut VirtualMachine, x: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+fn asin(vm: &mut VirtualMachine, x: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     let v = as_f64(vm, x, "asin")?;
     Ok(vm.obj_heap.alloc_float_instance(v.asin()))
 }
 
-fn acos(vm: &mut VirtualMachine, x: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+fn acos(vm: &mut VirtualMachine, x: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     let v = as_f64(vm, x, "acos")?;
     Ok(vm.obj_heap.alloc_float_instance(v.acos()))
 }
 
-fn atan(vm: &mut VirtualMachine, x: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+fn atan(vm: &mut VirtualMachine, x: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     let v = as_f64(vm, x, "atan")?;
     Ok(vm.obj_heap.alloc_float_instance(v.atan()))
 }
 
-fn atan2(vm: &mut VirtualMachine, y: ObjectHandle, x: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+fn atan2(vm: &mut VirtualMachine, y: ObjectHandle, x: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     let yv = as_f64(vm, y, "atan2")?;
     let xv = as_f64(vm, x, "atan2")?;
     Ok(vm.obj_heap.alloc_float_instance(yv.atan2(xv)))
@@ -105,38 +105,38 @@ fn atan2(vm: &mut VirtualMachine, y: ObjectHandle, x: ObjectHandle) -> ExecuteRe
 //  Power / exponential / log
 // =====================================================================
 
-fn sqrt(vm: &mut VirtualMachine, x: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+fn sqrt(vm: &mut VirtualMachine, x: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     let v = as_f64(vm, x, "sqrt")?;
     Ok(vm.obj_heap.alloc_float_instance(v.sqrt()))
 }
 
-fn pow(vm: &mut VirtualMachine, x: ObjectHandle, y: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+fn pow(vm: &mut VirtualMachine, x: ObjectHandle, y: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     let xv = as_f64(vm, x, "pow")?;
     let yv = as_f64(vm, y, "pow")?;
     Ok(vm.obj_heap.alloc_float_instance(xv.powf(yv)))
 }
 
-fn exp(vm: &mut VirtualMachine, x: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+fn exp(vm: &mut VirtualMachine, x: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     let v = as_f64(vm, x, "exp")?;
     Ok(vm.obj_heap.alloc_float_instance(v.exp()))
 }
 
-fn ln(vm: &mut VirtualMachine, x: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+fn ln(vm: &mut VirtualMachine, x: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     let v = as_f64(vm, x, "ln")?;
     Ok(vm.obj_heap.alloc_float_instance(v.ln()))
 }
 
-fn log2(vm: &mut VirtualMachine, x: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+fn log2(vm: &mut VirtualMachine, x: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     let v = as_f64(vm, x, "log2")?;
     Ok(vm.obj_heap.alloc_float_instance(v.log2()))
 }
 
-fn log10(vm: &mut VirtualMachine, x: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+fn log10(vm: &mut VirtualMachine, x: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     let v = as_f64(vm, x, "log10")?;
     Ok(vm.obj_heap.alloc_float_instance(v.log10()))
 }
 
-fn hypot(vm: &mut VirtualMachine, x: ObjectHandle, y: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+fn hypot(vm: &mut VirtualMachine, x: ObjectHandle, y: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     let xv = as_f64(vm, x, "hypot")?;
     let yv = as_f64(vm, y, "hypot")?;
     Ok(vm.obj_heap.alloc_float_instance(xv.hypot(yv)))
@@ -146,17 +146,17 @@ fn hypot(vm: &mut VirtualMachine, x: ObjectHandle, y: ObjectHandle) -> ExecuteRe
 //  Rounding
 // =====================================================================
 
-fn floor(vm: &mut VirtualMachine, x: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+fn floor(vm: &mut VirtualMachine, x: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     let v = as_f64(vm, x, "floor")?;
     Ok(vm.obj_heap.alloc_float_instance(v.floor()))
 }
 
-fn ceil(vm: &mut VirtualMachine, x: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+fn ceil(vm: &mut VirtualMachine, x: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     let v = as_f64(vm, x, "ceil")?;
     Ok(vm.obj_heap.alloc_float_instance(v.ceil()))
 }
 
-fn round(vm: &mut VirtualMachine, x: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+fn round(vm: &mut VirtualMachine, x: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     let v = as_f64(vm, x, "round")?;
     Ok(vm.obj_heap.alloc_float_instance(v.round()))
 }
@@ -165,23 +165,23 @@ fn round(vm: &mut VirtualMachine, x: ObjectHandle) -> ExecuteResult<ObjectHandle
 //  Conversion
 // =====================================================================
 
-fn degrees(vm: &mut VirtualMachine, rad: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+fn degrees(vm: &mut VirtualMachine, rad: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     let v = as_f64(vm, rad, "degrees")?;
     Ok(vm.obj_heap.alloc_float_instance(v.to_degrees()))
 }
 
-fn radians(vm: &mut VirtualMachine, deg: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+fn radians(vm: &mut VirtualMachine, deg: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     let v = as_f64(vm, deg, "radians")?;
     Ok(vm.obj_heap.alloc_float_instance(v.to_radians()))
 }
 
 /// Extract an `f64` from a numeric handle (int or float).
-fn as_f64(vm: &VirtualMachine, handle: ObjectHandle, fn_name: &'static str) -> ExecuteResult<f64> {
+fn as_f64(vm: &VirtualMachine, handle: ObjectHandle, fn_name: &'static str) -> RuntimeResult<f64> {
     if let Ok(v) = vm.get_integer_instance(handle) {
         Ok(*v as f64)
     } else if let Ok(v) = vm.get_float_instance(handle) {
         Ok(*v)
     } else {
-        Err(ExecuteError::BinaryOpTypeMismatch(fn_name, "float", vm.value_type_name(handle)))
+        Err(RuntimeErrorKind::BinaryOpTypeMismatch(fn_name, "float", vm.value_type_name(handle)))
     }
 }

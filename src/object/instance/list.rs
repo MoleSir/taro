@@ -1,6 +1,6 @@
 use crate::{
     NativeFunction, NativeData, ObjectHandle, ObjectInstanceData, ToNativeData,
-    vm::{ExecuteError, ExecuteResult, VirtualMachine},
+    vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine},
 };
 use super::ObjectHeap;
 
@@ -29,27 +29,27 @@ pub struct ObjectList;
 
 // A free function that returns the receiver unchanged — used for iterator
 // `__iter__` implementations that just return `self`.
-fn identity_iter(_vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+fn identity_iter(_vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     Ok(receiver)
 }
 
 impl ObjectList {
-    pub fn __not__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __not__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let items = vm.get_list_instance(receiver)?;
         Ok(vm.obj_heap.alloc_bool_instance(items.is_empty()))
     }
 
-    pub fn __add__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __add__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let lhs_items = vm.get_list_instance(lhs)?.clone();
         if let Ok(rhs_items) = vm.get_list_instance(rhs) {
             let mut new_items = lhs_items;
             new_items.extend_from_slice(rhs_items);
             return Ok(vm.obj_heap.alloc_list_instance(new_items));
         }
-        Err(ExecuteError::BinaryOpTypeMismatch("add", "list", vm.value_type_name(rhs)))
+        Err(RuntimeErrorKind::BinaryOpTypeMismatch("add", "list", vm.value_type_name(rhs)))
     }
 
-    pub fn __str__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __str__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let items = vm.get_list_instance(receiver)?.clone();
         let mut result = String::from("[");
         for (i, &item) in items.iter().enumerate() {
@@ -60,44 +60,44 @@ impl ObjectList {
         Ok(vm.obj_heap.alloc_string_instance(result.into()))
     }
 
-    pub fn __bool__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __bool__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let items = vm.get_list_instance(receiver)?;
         Ok(vm.obj_heap.alloc_bool_instance(!items.is_empty()))
     }
 
-    pub fn __len__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __len__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let items = vm.get_list_instance(receiver)?;
         Ok(vm.obj_heap.alloc_integer_instance(items.len() as i64))
     }
 
-    pub fn len(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn len(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         Self::__len__(vm, receiver)
     }
 
-    pub fn __getitem__(vm: &mut VirtualMachine, receiver: ObjectHandle, idx_handle: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __getitem__(vm: &mut VirtualMachine, receiver: ObjectHandle, idx_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let items = vm.get_list_instance(receiver).cloned()?;
         let idx_val = *vm.get_integer_instance(idx_handle)?;
         let len = items.len();
         let idx = if idx_val < 0 { len as i64 + idx_val } else { idx_val };
         if idx < 0 || idx as usize >= len {
-            return Err(ExecuteError::IndexOutOfRange(idx, len));
+            return Err(RuntimeErrorKind::IndexOutOfRange(idx, len));
         }
         Ok(items[idx as usize])
     }
 
-    pub fn __setitem__(vm: &mut VirtualMachine, receiver: ObjectHandle, idx_handle: ObjectHandle, value: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __setitem__(vm: &mut VirtualMachine, receiver: ObjectHandle, idx_handle: ObjectHandle, value: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let idx_val = *vm.get_integer_instance(idx_handle)?;
         let items = vm.get_list_instance_mut(receiver)?;
         let len = items.len();
         let idx = if idx_val < 0 { len as i64 + idx_val } else { idx_val };
         if idx < 0 || idx as usize >= len {
-            return Err(ExecuteError::IndexOutOfRange(idx, len));
+            return Err(RuntimeErrorKind::IndexOutOfRange(idx, len));
         }
         items[idx as usize] = value;
         Ok(value)
     }
 
-    pub fn __eq__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __eq__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         if let Ok(rhs_items) = vm.get_list_instance(rhs) {
             let lhs_items = vm.get_list_instance(lhs)?.clone();
             let rhs_items = rhs_items.clone();
@@ -115,27 +115,27 @@ impl ObjectList {
         Ok(vm.obj_heap.alloc_bool_instance(false))
     }
 
-    pub fn __ne__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __ne__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let eq = Self::__eq__(vm, lhs, rhs)?;
         let b = *vm.get_bool_instance(eq)?;
         Ok(vm.obj_heap.alloc_bool_instance(!b))
     }
 
     /// `list.append(value)` — add an item to the end of the list.
-    pub fn append(vm: &mut VirtualMachine, receiver: ObjectHandle, value: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn append(vm: &mut VirtualMachine, receiver: ObjectHandle, value: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let items = vm.get_list_instance_mut(receiver)?;
         items.push(value);
         Ok(value)
     }
 
     /// `list.pop()` — remove and return the last item.
-    pub fn pop(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn pop(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let items = vm.get_list_instance_mut(receiver)?;
-        items.pop().ok_or(ExecuteError::EmptyPop)
+        items.pop().ok_or(RuntimeErrorKind::EmptyPop)
     }
 
     /// `list.extend(other)` — extend this list with all items from another list.
-    pub fn extend(vm: &mut VirtualMachine, receiver: ObjectHandle, other: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn extend(vm: &mut VirtualMachine, receiver: ObjectHandle, other: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let other_items = vm.get_list_instance(other)?.clone();
         let items = vm.get_list_instance_mut(receiver)?;
         items.extend(other_items);
@@ -144,7 +144,7 @@ impl ObjectList {
 
     // ---- iteration protocol ----
 
-    pub fn __iter__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __iter__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let iter = ListIterator { list_handle: receiver, index: 0 };
         Ok(vm.obj_heap.alloc_instance(
             vm.obj_heap.list_iter_class,
@@ -152,7 +152,7 @@ impl ObjectList {
         ))
     }
 
-    pub fn iter_next(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn iter_next(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let (list_handle, idx) = {
             let iter = vm.get_native::<ListIterator>(receiver)?;
             (iter.list_handle, iter.index)

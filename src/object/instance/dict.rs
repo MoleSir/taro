@@ -1,6 +1,6 @@
 use crate::{
     NativeFunction, NativeData, ObjectHandle, ObjectInstanceData, ToNativeData,
-    vm::{ExecuteError, ExecuteResult, VirtualMachine},
+    vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine},
 };
 use super::ObjectHeap;
 
@@ -33,13 +33,13 @@ impl ToNativeData for DictKeyIterator {
 pub struct ObjectDict;
 
 impl ObjectDict {
-    pub fn __not__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __not__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let entries = vm.get_dict_instance(receiver)?;
         let is_empty = entries.values().all(|b| b.is_empty());
         Ok(vm.obj_heap.alloc_bool_instance(is_empty))
     }
 
-    pub fn __str__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __str__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let all_entries: Vec<(ObjectHandle, ObjectHandle)> = vm.get_dict_instance(receiver)?
             .values()
             .flat_map(|b| b.iter().copied())
@@ -58,23 +58,23 @@ impl ObjectDict {
         Ok(vm.obj_heap.alloc_string_instance(result.into()))
     }
 
-    pub fn __bool__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __bool__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let entries = vm.get_dict_instance(receiver)?;
         let has_any = entries.values().any(|b| !b.is_empty());
         Ok(vm.obj_heap.alloc_bool_instance(has_any))
     }
 
-    pub fn __len__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __len__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let entries = vm.get_dict_instance(receiver)?;
         let total: usize = entries.values().map(|b| b.len()).sum();
         Ok(vm.obj_heap.alloc_integer_instance(total as i64))
     }
 
-    pub fn len(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn len(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         Self::__len__(vm, receiver)
     }
 
-    pub fn __getitem__(vm: &mut VirtualMachine, receiver: ObjectHandle, key: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __getitem__(vm: &mut VirtualMachine, receiver: ObjectHandle, key: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let hash = vm.__hash__(key)?;
 
         let bucket = {
@@ -88,10 +88,10 @@ impl ObjectDict {
                 return Ok(v);
             }
         }
-        Err(ExecuteError::KeyNotFound)
+        Err(RuntimeErrorKind::KeyNotFound)
     }
 
-    pub fn __setitem__(vm: &mut VirtualMachine, receiver: ObjectHandle, key: ObjectHandle, value: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __setitem__(vm: &mut VirtualMachine, receiver: ObjectHandle, key: ObjectHandle, value: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let hash = vm.__hash__(key)?;
 
         let mut bucket = {
@@ -121,7 +121,7 @@ impl ObjectDict {
     }
 
     /// `dict.get(key)` — get a value by key, returning nil if not found.
-    pub fn get(vm: &mut VirtualMachine, receiver: ObjectHandle, key: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn get(vm: &mut VirtualMachine, receiver: ObjectHandle, key: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let hash = vm.__hash__(key)?;
 
         let bucket = {
@@ -139,7 +139,7 @@ impl ObjectDict {
     }
 
     /// `dict.keys()` — return a list of all keys.
-    pub fn keys(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn keys(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let keys: Vec<ObjectHandle> = vm.get_dict_instance(receiver)?
             .values()
             .flat_map(|b| b.iter().map(|&(k, _)| k))
@@ -148,7 +148,7 @@ impl ObjectDict {
     }
 
     /// `dict.values()` — return a list of all values.
-    pub fn values(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn values(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let values: Vec<ObjectHandle> = vm.get_dict_instance(receiver)?
             .values()
             .flat_map(|b| b.iter().map(|&(_, v)| v))
@@ -156,7 +156,7 @@ impl ObjectDict {
         Ok(vm.obj_heap.alloc_list_instance(values))
     }
 
-    pub fn contains(vm: &mut VirtualMachine, receiver: ObjectHandle, key: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn contains(vm: &mut VirtualMachine, receiver: ObjectHandle, key: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let hash = vm.__hash__(key)?;
         let entries = vm.get_dict_instance(receiver)?;
         if let Some(bucket) = entries.get(&hash).cloned() {
@@ -172,7 +172,7 @@ impl ObjectDict {
     }
 
     /// `dict.pop(key)` — remove a key and return its value.
-    pub fn pop(vm: &mut VirtualMachine, receiver: ObjectHandle, key: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn pop(vm: &mut VirtualMachine, receiver: ObjectHandle, key: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let hash = vm.__hash__(key)?;
 
         let mut bucket = {
@@ -202,13 +202,13 @@ impl ObjectDict {
                 }
                 Ok(removed.1)
             }
-            None => Err(ExecuteError::KeyNotFound),
+            None => Err(RuntimeErrorKind::KeyNotFound),
         }
     }
 
     // ---- iteration protocol ----
 
-    pub fn __iter__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __iter__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let keys: Vec<ObjectHandle> = vm.get_dict_instance(receiver)?
             .values()
             .flat_map(|b| b.iter().map(|&(k, _)| k))
@@ -219,7 +219,7 @@ impl ObjectDict {
         ))
     }
 
-    pub fn iter_next(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn iter_next(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let iter = vm.get_native_mut::<DictKeyIterator>(receiver)?;
         if iter.index < iter.keys.len() {
             let key = iter.keys[iter.index];
@@ -233,7 +233,7 @@ impl ObjectDict {
 
 // A free function that returns the receiver unchanged — used for iterator
 // `__iter__` implementations that just return `self`.
-fn identity_iter(_vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+fn identity_iter(_vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     Ok(receiver)
 }
 

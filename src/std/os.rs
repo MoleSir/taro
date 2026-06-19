@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::process::Command;
 use crate::{NativeFunction, ObjectHandle, ShrString};
 use crate::object::ObjectDict;
-use crate::vm::{ExecuteError, ExecuteResult, VirtualMachine};
+use crate::vm::{RuntimeResult, RuntimeErrorKind, VirtualMachine};
 
 impl VirtualMachine {
     /// Create the `os` std module.
@@ -20,7 +20,7 @@ impl VirtualMachine {
     /// | `pid`           | current process ID                           |
     /// | `tmpdir()`      | path to the system temp directory            |
     /// | `system(cmd)`   | run a shell command, return exit code        |
-    pub(crate) fn create_os_module(&mut self) -> ExecuteResult<ObjectHandle> {
+    pub(crate) fn create_os_module(&mut self) -> RuntimeResult<ObjectHandle> {
         // ---- function handles ----
         let args_fn    = self.obj_heap.alloc_native_fn("args",    NativeFunction::a0(args));
         let getenv_fn  = self.obj_heap.alloc_native_fn("getenv",  NativeFunction::a1(getenv));
@@ -57,7 +57,7 @@ impl VirtualMachine {
 ///
 /// Returns all arguments from `std::env::args()`, skipping the first one
 /// (the executable name).
-fn args(vm: &mut VirtualMachine) -> ExecuteResult<ObjectHandle> {
+fn args(vm: &mut VirtualMachine) -> RuntimeResult<ObjectHandle> {
     let items: Vec<ObjectHandle> = std::env::args()
         .skip(1)
         .map(|a| vm.obj_heap.alloc_string_instance(ShrString::new_string(&a)))
@@ -67,7 +67,7 @@ fn args(vm: &mut VirtualMachine) -> ExecuteResult<ObjectHandle> {
 
 /// `os.getenv(name)` — return the value of environment variable `name`,
 /// or nil if it is not set.
-fn getenv(vm: &mut VirtualMachine, name: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+fn getenv(vm: &mut VirtualMachine, name: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     let key = vm.get_string_instance(name)?;
     match std::env::var(key.as_str()) {
         Ok(val) => Ok(vm.obj_heap.alloc_string_instance(ShrString::new_string(&val))),
@@ -76,7 +76,7 @@ fn getenv(vm: &mut VirtualMachine, name: ObjectHandle) -> ExecuteResult<ObjectHa
 }
 
 /// `os.setenv(key, value)` — set an environment variable.
-fn setenv(vm: &mut VirtualMachine, key: ObjectHandle, value: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+fn setenv(vm: &mut VirtualMachine, key: ObjectHandle, value: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     let k = vm.get_string_instance(key)?;
     let v = vm.get_string_instance(value)?;
     // SAFETY: single-threaded VM — no concurrent env access.
@@ -85,7 +85,7 @@ fn setenv(vm: &mut VirtualMachine, key: ObjectHandle, value: ObjectHandle) -> Ex
 }
 
 /// `os.env()` — return a dict of all environment variables.
-fn env(vm: &mut VirtualMachine) -> ExecuteResult<ObjectHandle> {
+fn env(vm: &mut VirtualMachine) -> RuntimeResult<ObjectHandle> {
     let dict_handle = vm.obj_heap.alloc_dict_instance(HashMap::new());
     for (key, val) in std::env::vars() {
         let k = vm.obj_heap.alloc_string_instance(ShrString::new_string(&key));
@@ -96,36 +96,36 @@ fn env(vm: &mut VirtualMachine) -> ExecuteResult<ObjectHandle> {
 }
 
 /// `os.cwd()` — return the current working directory.
-fn cwd(vm: &mut VirtualMachine) -> ExecuteResult<ObjectHandle> {
+fn cwd(vm: &mut VirtualMachine) -> RuntimeResult<ObjectHandle> {
     let path = std::env::current_dir()
-        .map_err(|e| ExecuteError::OsError(format!("cannot get cwd: {}", e)))?;
+        .map_err(|e| RuntimeErrorKind::OsError(format!("cannot get cwd: {}", e)))?;
     Ok(vm.obj_heap.alloc_string_instance(
         ShrString::new_string(path.to_string_lossy().into_owned())
     ))
 }
 
 /// `os.chdir(path)` — change the current working directory.
-fn chdir(vm: &mut VirtualMachine, path: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+fn chdir(vm: &mut VirtualMachine, path: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     let s = vm.get_string_instance(path)?;
     std::env::set_current_dir(s.as_str())
-        .map_err(|e| ExecuteError::OsError(format!("cannot chdir to '{}': {}", s, e)))?;
+        .map_err(|e| RuntimeErrorKind::OsError(format!("cannot chdir to '{}': {}", s, e)))?;
     Ok(ObjectHandle::NIL)
 }
 
 /// `os.pid` — return the current process ID as an integer.
-fn pid(vm: &mut VirtualMachine) -> ExecuteResult<ObjectHandle> {
+fn pid(vm: &mut VirtualMachine) -> RuntimeResult<ObjectHandle> {
     Ok(vm.obj_heap.alloc_integer_instance(std::process::id() as i64))
 }
 
 /// `os.tmpdir()` — return the path to the system temporary directory.
-fn tmpdir(vm: &mut VirtualMachine) -> ExecuteResult<ObjectHandle> {
+fn tmpdir(vm: &mut VirtualMachine) -> RuntimeResult<ObjectHandle> {
     Ok(vm.obj_heap.alloc_string_instance(
         ShrString::new_string(std::env::temp_dir().to_string_lossy().into_owned())
     ))
 }
 
 /// `os.system(command)` — run a shell command and return its exit code.
-fn system(vm: &mut VirtualMachine, cmd: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+fn system(vm: &mut VirtualMachine, cmd: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     let s = vm.get_string_instance(cmd)?;
 
     let status = if cfg!(target_os = "windows") {
@@ -137,7 +137,7 @@ fn system(vm: &mut VirtualMachine, cmd: ObjectHandle) -> ExecuteResult<ObjectHan
             .args(["-c", s.as_str()])
             .status()
     }
-    .map_err(|e| ExecuteError::OsError(format!("system: failed to run '{}': {}", s, e)))?;
+    .map_err(|e| RuntimeErrorKind::OsError(format!("system: failed to run '{}': {}", s, e)))?;
 
     Ok(vm.obj_heap.alloc_integer_instance(status.code().unwrap_or(-1) as i64))
 }

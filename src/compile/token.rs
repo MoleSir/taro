@@ -3,6 +3,8 @@ pub struct Token<'a> {
     pub kind: TokenKind,
     pub lexeme: &'a str,
     pub line: usize,
+    /// 1-based column offset of the token start within its source line.
+    pub column: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

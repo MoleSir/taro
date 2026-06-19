@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use crate::{
     NativeFunction, NativeData, ObjectHandle, ObjectInstanceData, ToNativeData,
-    vm::{ExecuteError, ExecuteResult, VirtualMachine},
+    vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine},
 };
 use super::ObjectHeap;
 
@@ -38,7 +38,7 @@ impl ObjectSet {
     // ---- global constructor ----
 
     /// `set(args...)` — create a new set from the given arguments.
-    pub fn constructor(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> ExecuteResult<ObjectHandle> {
+    pub fn constructor(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
         let set_handle = vm.obj_heap.alloc_set_instance(HashMap::new());
         for &item in args {
             Self::add(vm, set_handle, item)?;
@@ -49,7 +49,7 @@ impl ObjectSet {
     // ---- core operations ----
 
     /// `s.add(item)` — add an item to the set.
-    pub fn add(vm: &mut VirtualMachine, receiver: ObjectHandle, item: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn add(vm: &mut VirtualMachine, receiver: ObjectHandle, item: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let hash = vm.__hash__(item)?;
 
         let mut bucket = {
@@ -73,7 +73,7 @@ impl ObjectSet {
     }
 
     /// `s.remove(item)` — remove an item from the set.
-    pub fn remove(vm: &mut VirtualMachine, receiver: ObjectHandle, item: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn remove(vm: &mut VirtualMachine, receiver: ObjectHandle, item: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let hash = vm.__hash__(item)?;
 
         let mut bucket = {
@@ -103,12 +103,12 @@ impl ObjectSet {
                 }
                 Ok(removed)
             }
-            None => Err(ExecuteError::KeyNotFound),
+            None => Err(RuntimeErrorKind::KeyNotFound),
         }
     }
 
     /// `s.contains(item)` — check if item is in the set.
-    pub fn contains(vm: &mut VirtualMachine, receiver: ObjectHandle, item: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn contains(vm: &mut VirtualMachine, receiver: ObjectHandle, item: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let hash = vm.__hash__(item)?;
 
         let bucket = {
@@ -127,7 +127,7 @@ impl ObjectSet {
 
     // ---- magic methods ----
 
-    pub fn __str__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __str__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let all_items: Vec<ObjectHandle> = vm.get_set_instance(receiver)?
             .values()
             .flat_map(|b| b.iter().copied())
@@ -144,19 +144,19 @@ impl ObjectSet {
         Ok(vm.obj_heap.alloc_string_instance(result.into()))
     }
 
-    pub fn __bool__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __bool__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let entries = vm.get_set_instance(receiver)?;
         let has_any = entries.values().any(|b| !b.is_empty());
         Ok(vm.obj_heap.alloc_bool_instance(has_any))
     }
 
-    pub fn __not__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __not__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let entries = vm.get_set_instance(receiver)?;
         let is_empty = entries.values().all(|b| b.is_empty());
         Ok(vm.obj_heap.alloc_bool_instance(is_empty))
     }
 
-    pub fn __len__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __len__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let entries = vm.get_set_instance(receiver)?;
         let total: usize = entries.values().map(|b| b.len()).sum();
         Ok(vm.obj_heap.alloc_integer_instance(total as i64))
@@ -164,7 +164,7 @@ impl ObjectSet {
 
     // ---- iteration protocol ----
 
-    pub fn __iter__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn __iter__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let items: Vec<ObjectHandle> = vm.get_set_instance(receiver)?
             .values()
             .flat_map(|b| b.iter().copied())
@@ -175,7 +175,7 @@ impl ObjectSet {
         ))
     }
 
-    pub fn iter_next(vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+    pub fn iter_next(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let iter = vm.get_native_mut::<SetKeyIterator>(receiver)?;
         if iter.index < iter.items.len() {
             let item = iter.items[iter.index];
@@ -189,7 +189,7 @@ impl ObjectSet {
 
 // A free function that returns the receiver unchanged — used for iterator
 // `__iter__` implementations that just return `self`.
-fn identity_iter(_vm: &mut VirtualMachine, receiver: ObjectHandle) -> ExecuteResult<ObjectHandle> {
+fn identity_iter(_vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     Ok(receiver)
 }
 
