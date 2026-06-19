@@ -1,0 +1,387 @@
+var TOKEN_LEFT_PAREN = "LEFT_PAREN";   // (
+var TOKEN_RIGHT_PAREN = "RIGHT_PAREN"; // )
+var TOKEN_MINUS = "MINUS";             //  -
+var TOKEN_PLUS = "PLUS";               //  +
+var TOKEN_SLASH = "SLASH";             //  /
+var TOKEN_STAR = "STAR";               // *
+var TOKEN_NUMBER = "NUMBER";           // 数字
+var TOKEN_EOF = "EOF";                 // 结束符
+
+class Token {
+    fun __init__(self, kind, lexeme, literal) {
+        self.kind = kind;
+        self.lexeme = lexeme;
+        self.literal = literal;
+    }
+}
+
+class Scanner {
+    fun __init__(self, source) {
+        self.source = source;
+        self.tokens = [];
+        self.start = 0;
+        self.current = 0;
+    }
+
+    fun scan_tokens(self) {
+        while !self.is_at_end() {
+            self.start = self.current;
+            self.scan_token();
+        }
+        self.tokens.append(Token(TOKEN_EOF, "", nil));
+        return self.tokens;
+    }
+
+    fun scan_token(self) {
+        var c = self.advance();
+        if c == "(" { self.add_token(TOKEN_LEFT_PAREN); } 
+        else if c == ")" { self.add_token(TOKEN_RIGHT_PAREN); }
+        else if c == "-" { self.add_token(TOKEN_MINUS); }
+        else if c == "+" { self.add_token(TOKEN_PLUS); }
+        else if c == "*" { self.add_token(TOKEN_STAR); }
+        else if c == "/" { self.add_token(TOKEN_SLASH); }
+        else if c == " " or c == "\r" or c == "\t" or c == "\n" { }
+        else if isdigit(c) {
+            self.number();
+        } else {
+            print("unkonw char");
+            exit(1);
+        }
+    }
+
+    fun number(self) {
+        while isdigit(self.peek()) {
+            self.advance();
+        }
+
+        var has_dot = false;
+        if self.peek() == "." and isdigit(self.peek_next()) {
+            has_dot = true;
+            self.advance();
+            while isdigit(self.peek()) {
+                self.advance();
+            }
+        }
+
+        var length = self.current - self.start;
+        var value_str = self.source.substr(self.start, length);
+        var value = nil;
+        if has_dot {
+            value = float(value_str);
+        } else {
+            value = int(value_str);
+        }
+
+        self.add_token(TOKEN_NUMBER, value);
+    }
+
+    fun advance(self) {
+        var c = self.source[self.current];
+        self.current = self.current + 1;
+        return c;
+    }
+
+    fun peek(self) {
+        if self.is_at_end() {
+            return "\0";
+        } else {
+            return self.source[self.current];
+        }
+    }
+
+    fun peek_next(self) {
+        if self.current + 1 >= len(self.source) {
+            return "\0";
+        } else {
+            return self.source[self.current + 1];
+        }
+    }
+
+    fun is_at_end(self) {
+        return self.current >= len(self.source);
+    }
+
+    fun add_token(self, kind, literal=nil) {
+        var length = self.current - self.start;
+        var text = self.source.substr(self.start, length);
+        self.tokens.append(Token(kind, text, literal));
+    }
+}
+
+fun isdigit(c) {
+    if c == "0" or c == "1" or c == "2" or c == "3" or c == "4" or c == "5" or c == "6" or c == "7" or c == "8" or c == "9" {
+        return true;
+    } else {
+        return false;
+    }
+}
+
+class Expr {
+    fun eval(self) {
+        print("unimplment");
+        exit(3);
+    }
+}
+
+class BinaryExpr extends Expr {
+    fun __init__(self, left, op, right) {
+        self.left = left;
+        self.op = op;
+        self.right = right;
+    }
+
+    fun eval(self) {
+        var left = self.left.eval();
+        var right = self.right.eval();
+        if self.op == TOKEN_PLUS {
+            return left + right;
+        } else if self.op == TOKEN_MINUS {
+            return left - right;
+        } else if self.op == TOKEN_STAR {
+            return left * right;
+        } else if self.op == TOKEN_SLASH {
+            if right == 0 {
+                print("divide by zero");
+                exit(3);
+            }
+            return left / right;
+        }
+        print("unkown binary op:", self.op);
+        exit(3);
+    }
+}
+
+class UnaryExpr extends Expr {
+    fun __init__(self, op, expr) {
+        self.op = op;
+        self.expr = expr;
+    }
+
+    fun eval(self) {
+        var value = self.expr.eval();
+        if self.op == TOKEN_MINUS {
+            value = -value;
+        }
+        return value;
+    }
+}
+
+class LiteralExpr extends Expr {
+    fun __init__(self, value) {
+        self.value = value;
+    }
+
+    fun eval(self) {
+        return self.value;
+    }
+}
+
+class GroupingExpr extends Expr {
+    fun __init__(self, expr) {
+        self.expr = expr;
+    }
+
+    fun eval(self) {
+        return self.expr.eval();
+    }
+}
+
+// expression -> term
+// term       -> factor ( ( "-" | "+" ) factor )*
+// factor     -> unary ( ( "/" | "*" ) unary )*
+// unary      -> "-" unary | primary
+// primary    -> NUMBER | "(" expression ")"
+class Parser {
+    fun __init__(self, tokens) {
+        self.tokens = tokens;
+        self.current = 0;
+    }
+
+    fun parse(self) {
+        return self.expression();
+    }
+
+    fun expression(self) {
+        return self.term();
+    }
+
+    fun term(self) {
+        var expr = self.factor();
+        while self.match([TOKEN_MINUS, TOKEN_PLUS]) {
+            var op = self.previous();
+            var right = self.factor();
+            expr = BinaryExpr(expr, op.kind, right); 
+        }
+        return expr;
+    }
+
+    fun factor(self) {
+        var expr = self.unary();
+        while self.match([TOKEN_SLASH, TOKEN_STAR]) {
+            var op = self.previous();
+            var right = self.unary();
+            expr = BinaryExpr(expr, op.kind, right);
+        }
+        return expr;
+    }
+
+    fun unary(self) {
+        if self.match([TOKEN_MINUS]) {
+            var op = self.previous();
+            var expr = self.unary();
+            return UnaryExpr(op.kind, expr);
+        }
+        return self.primary();
+    }
+
+    fun primary(self) {
+        if self.match([TOKEN_NUMBER]) {
+            return LiteralExpr(self.previous().literal);
+        }
+        if self.match([TOKEN_LEFT_PAREN]) {
+            var expr = self.expression();
+            self.consume(TOKEN_RIGHT_PAREN, "Expect ) after expr");
+            return GroupingExpr(expr);
+        }
+
+        print("syntx error: '", self.peek().lexeme, "' unkown mark");
+        exit(2);
+    }
+
+    fun match(self, kinds) {
+        for kind in kinds {
+            if self.check(kind) {
+                self.advance();
+                return true;
+            }
+        }
+        return false;
+    }
+
+    fun check(self, kind) {
+        if self.is_at_end() {
+            return false;
+        }
+        return self.peek().kind == kind;
+    }
+
+    fun advance(self) {
+        if !self.is_at_end() {
+            self.current = self.current + 1;
+        } 
+        return self.previous();
+    }
+
+    fun is_at_end(self) {
+        return self.peek().kind == TOKEN_EOF;
+    }
+
+    fun peek(self) {
+        return self.tokens[self.current];
+    }
+
+    fun previous(self) {
+        return self.tokens[self.current - 1];
+    }
+
+    fun consume(self, kind, messgae) {
+        if self.check(kind) {
+            return self.advance();
+        } else {
+            print("syntx error:", messgae);
+            exit(2);
+        }
+    }
+}
+
+fun eval_str(s) {
+    var scanner = Scanner(s);
+    var tokens = scanner.scan_tokens();
+    var parser = Parser(tokens);
+    var expr = parser.parse();
+    return expr.eval();
+}
+
+fun test(s, target) {
+    var real = eval_str(s);
+    if target != real {
+        var msg = "test failed: " + "eval '" + s + "' expect '" + str(target) + "' but got '" + str(real) + "'";
+        print(msg);
+        exit(4);
+    }
+}
+
+fun tests() {
+    print("=== 开始运行测试 ===");
+
+    // 1. 基础四则运算
+    test("1+1", 2);
+    test("10 - 3", 7);
+    test("4 * 5", 20);
+    test("20 / 4", 5);
+
+    // 2. 空白字符处理 (忽略空格、制表符、换行)
+    test("  2 \t + \n 3 \r  ", 5);
+
+    // 3. 浮点数 (小数) 解析
+    test("1.5 + 2.5", 4);
+    test("10.5 - 0.5", 10);
+    test("5 / 2", 2.5);
+
+    // 4. 左结合性测试 (Left Associativity)
+    // 如果实现成右结合，10-2-3 会变成 10-(2-3) = 11，左结合才是正确的 (10-2)-3 = 5
+    test("10 - 2 - 3", 5);
+    // 同样，24/2/3 应该是 (24/2)/3 = 4
+    test("24 / 2 / 3", 4);
+
+    // 5. 优先级测试 (Precedence)
+    // 乘除应该优先于加减
+    test("2 + 3 * 4", 14);
+    test("10 - 6 / 2", 7);
+    test("2 * 3 + 4 * 5", 26);
+    test("100 / 10 - 2 * 3", 4);
+
+    // 6. 括号分组 (Grouping)
+    // 括号应该拥有最高优先级
+    test("(2 + 3) * 4", 20);
+    test("10 / (2 + 3)", 2);
+    test("10 - (5 - 2)", 7);
+    test("((1 + 2) * 3) - 4", 5);
+
+    // 7. 一元操作符 (Unary)
+    // 负号
+    test("-5", -5);
+    test("-2 * 3", -6);
+    test("3 * -4", -12);
+    // 连续的一元操作符 (你的递归下降实现是可以完美支持这一点的)
+    test("--5", 5);
+    test("---5", -5);
+
+    // 8. 综合复杂表达式测试
+    // - (3 + 2) * - (10 - 8) / 2
+    // = -5 * -2 / 2
+    // = 10 / 2 = 5
+    test("- (3 + 2) * - (10 - 8) / 2", 5);
+    
+    // (10.5 + 1.5) * (20 - 10) / (-2 + 4)
+    // = 12 * 10 / 2 = 60
+    test("(10.5 + 1.5) * (20 - 10) / (-2 + 4)", 60);
+
+    print("=== 所有测试用例通过！ ===");
+}
+
+fun main() {
+    while true {
+        var line = input("> ");
+        if line.len() == 0 {
+            continue;
+        } 
+        if line == "quit" or line == "exit" {
+            break;
+        }
+        print(eval_str(line));
+    }
+}
+
+tests();
+main();
