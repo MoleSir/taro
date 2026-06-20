@@ -487,9 +487,13 @@ impl VirtualMachine {
                     ObjectInstanceData::Integer(_) => "integer",
                     ObjectInstanceData::Float(_) => "float",
                     ObjectInstanceData::String(_) => "string",
+                    ObjectInstanceData::StringIter(_) => "string iterator",
                     ObjectInstanceData::List(_) => "list",
+                    ObjectInstanceData::ListIter(_) => "list iterator",
                     ObjectInstanceData::Dict(_) => "dict",
+                    ObjectInstanceData::DictIter(_) => "dict iterator",
                     ObjectInstanceData::Set(_) => "set",
+                    ObjectInstanceData::SetIter(_) => "set iterator",
                     ObjectInstanceData::Fields(_) => "instance",
                     ObjectInstanceData::Native(_) => "native object",
                 }

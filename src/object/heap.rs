@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::LazyLock};
 
 use crate::{Chunk, ShrString};
-use super::{NativeFunction, Method, Object, ObjectBoundMethod, ObjectNativeFn, ObjectClass, ObjectClosure, ObjectFunction, ObjectInstance, ObjectInstanceData, ObjectUpvalue, register_int_builtins, register_float_builtins, register_bool_builtins, register_string_builtins, register_list_builtins, register_dict_builtins, register_set_builtins};
+use super::{NativeFunction, Method, Object, ObjectBoundMethod, ObjectNativeFn, ObjectClass, ObjectClosure, ObjectFunction, ObjectInstance, ObjectInstanceData, ObjectListIterator, ObjectDictIterator, ObjectSetIterator, ObjectStringIterator, ObjectUpvalue, register_int_builtins, register_float_builtins, register_bool_builtins, register_string_builtins, register_list_builtins, register_dict_builtins, register_set_builtins};
 
 /// Static nil object — backing for `ObjectHandle::NIL`.
 static NIL_OBJECT: LazyLock<Object> = LazyLock::new(|| {
@@ -105,10 +105,10 @@ impl ObjectHeap {
         heap.dict_class = heap.alloc_class("Dict");
         heap.set_class = heap.alloc_class("Set");
         heap.module_class = heap.alloc_class("Module");
-        heap.list_iter_class = heap.alloc_class("ListIterator");
-        heap.string_iter_class = heap.alloc_class("StringIterator");
-        heap.dict_iter_class = heap.alloc_class("DictIterator");
-        heap.set_iter_class = heap.alloc_class("SetIterator");
+        heap.list_iter_class = heap.alloc_class("ObjectListIterator");
+        heap.string_iter_class = heap.alloc_class("ObjectStringIterator");
+        heap.dict_iter_class = heap.alloc_class("ObjectDictIterator");
+        heap.set_iter_class = heap.alloc_class("ObjectSetIterator");
 
         // Allocate singleton bool instances (after bool_class exists).
         heap.true_instance = heap.alloc_instance(heap.bool_class, ObjectInstanceData::Bool(true));
@@ -347,6 +347,78 @@ impl ObjectHeap {
     impl_instance_data_getter!(set, Set, HashMap<u64, Vec<ObjectHandle>>, "set");
     impl_instance_data_getter!(fields, Fields, HashMap<ShrString, ObjectHandle>, "fields");
 
+    /// Return a reference to the list-iterator state stored in `handle`.
+    pub fn get_list_iter(&self, handle: ObjectHandle) -> Option<&ObjectListIterator> {
+        let inst = self.get_instance(handle)?;
+        match &inst.data {
+            ObjectInstanceData::ListIter(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    /// Return a mutable reference to the list-iterator state.
+    pub fn get_list_iter_mut(&mut self, handle: ObjectHandle) -> Option<&mut ObjectListIterator> {
+        let inst = self.get_instance_mut(handle)?;
+        match &mut inst.data {
+            ObjectInstanceData::ListIter(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    /// Return a reference to the dict-iterator state.
+    pub fn get_dict_iter(&self, handle: ObjectHandle) -> Option<&ObjectDictIterator> {
+        let inst = self.get_instance(handle)?;
+        match &inst.data {
+            ObjectInstanceData::DictIter(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    /// Return a mutable reference to the dict-iterator state.
+    pub fn get_dict_iter_mut(&mut self, handle: ObjectHandle) -> Option<&mut ObjectDictIterator> {
+        let inst = self.get_instance_mut(handle)?;
+        match &mut inst.data {
+            ObjectInstanceData::DictIter(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    /// Return a reference to the set-iterator state.
+    pub fn get_set_iter(&self, handle: ObjectHandle) -> Option<&ObjectSetIterator> {
+        let inst = self.get_instance(handle)?;
+        match &inst.data {
+            ObjectInstanceData::SetIter(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    /// Return a mutable reference to the set-iterator state.
+    pub fn get_set_iter_mut(&mut self, handle: ObjectHandle) -> Option<&mut ObjectSetIterator> {
+        let inst = self.get_instance_mut(handle)?;
+        match &mut inst.data {
+            ObjectInstanceData::SetIter(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    /// Return a reference to the string-iterator state.
+    pub fn get_string_iter(&self, handle: ObjectHandle) -> Option<&ObjectStringIterator> {
+        let inst = self.get_instance(handle)?;
+        match &inst.data {
+            ObjectInstanceData::StringIter(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    /// Return a mutable reference to the string-iterator state.
+    pub fn get_string_iter_mut(&mut self, handle: ObjectHandle) -> Option<&mut ObjectStringIterator> {
+        let inst = self.get_instance_mut(handle)?;
+        match &mut inst.data {
+            ObjectInstanceData::StringIter(v) => Some(v),
+            _ => None,
+        }
+    }
+
     /// Return a mutable reference to the native data stored in `handle`,
     /// downcast to `T`.  Returns `None` if the handle is not an Instance
     /// with `Native` data, or if the concrete type doesn't match `T`.
@@ -441,6 +513,22 @@ impl ObjectHeap {
                     self.mark_object(instance.class);
                     match &instance.data {
                         ObjectInstanceData::Nil | ObjectInstanceData::IterEnd | ObjectInstanceData::Bool(_) | ObjectInstanceData::Integer(_) | ObjectInstanceData::Float(_) => {}
+                        ObjectInstanceData::StringIter(iter) => {
+                            self.mark_object(iter.string_handle);
+                        }
+                        ObjectInstanceData::ListIter(iter) => {
+                            self.mark_object(iter.list_handle);
+                        }
+                        ObjectInstanceData::DictIter(iter) => {
+                            for &key in &iter.keys {
+                                self.mark_object(key);
+                            }
+                        }
+                        ObjectInstanceData::SetIter(iter) => {
+                            for &item in &iter.items {
+                                self.mark_object(item);
+                            }
+                        }
                         ObjectInstanceData::Native(native) => {
                             native.mark_inner_object(self);
                         }

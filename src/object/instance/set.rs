@@ -1,30 +1,22 @@
 use std::collections::HashMap;
 
 use crate::{
-    NativeFunction, NativeData, ObjectHandle, ObjectInstanceData, ToNativeData,
+    NativeFunction, ObjectHandle, ObjectInstanceData,
     vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine},
 };
 use super::ObjectHeap;
 
 // ========================================================================== //
-//  SetKeyIterator (native state)
+//  ObjectSetIterator (iterator state)
 // ========================================================================== //
 
-/// Native state for a set-key iterator.
+/// Iterator state for a set-key iterator.
 ///
 /// Items are collected eagerly at iterator-creation time so that each
 /// `__next__` call is O(1) — no per-step re-collection or cloning.
-struct SetKeyIterator {
-    items: Vec<ObjectHandle>,
-    index: usize,
-}
-
-impl ToNativeData for SetKeyIterator {
-    fn mark_inner_object(&self, heap: &mut ObjectHeap) {
-        for &item in &self.items {
-            heap.mark_object(item);
-        }
-    }
+pub struct ObjectSetIterator {
+    pub items: Vec<ObjectHandle>,
+    pub index: usize,
 }
 
 // ========================================================================== //
@@ -171,12 +163,12 @@ impl ObjectSet {
             .collect();
         Ok(vm.obj_heap.alloc_instance(
             vm.obj_heap.set_iter_class,
-            ObjectInstanceData::Native(NativeData::new(SetKeyIterator { items, index: 0 })),
+            ObjectInstanceData::SetIter(ObjectSetIterator { items, index: 0 }),
         ))
     }
 
     pub fn iter_next(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let iter = vm.get_native_mut::<SetKeyIterator>(receiver)?;
+        let iter = vm.get_set_iter_mut(receiver)?;
         if iter.index < iter.items.len() {
             let item = iter.items[iter.index];
             iter.index += 1;

@@ -6,7 +6,7 @@ mod utils;
 pub use error::*;
 #[cfg(test)]
 mod tests;
-use crate::{NativeFunction, Instruction, Method, Object, ObjectBoundMethod, ObjectNativeFn, ObjectClass, ObjectClosure, ObjectFunction, ObjectHandle, ObjectHeap, ObjectInstance, ObjectInstanceData, ObjectUpvalue, ShrString};
+use crate::{NativeFunction, Instruction, Method, Object, ObjectBoundMethod, ObjectNativeFn, ObjectClass, ObjectClosure, ObjectFunction, ObjectHandle, ObjectHeap, ObjectInstance, ObjectInstanceData, ObjectListIterator, ObjectDictIterator, ObjectSetIterator, ObjectStringIterator, ObjectUpvalue, ShrString};
 use std::collections::HashMap;
 
 pub struct VirtualMachine {
@@ -1099,5 +1099,47 @@ impl VirtualMachine {
         self.obj_heap
             .get_native::<T>(handle)
             .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "native", found: self.value_type_name(handle) }.into() )
+    }
+
+    pub fn get_list_iter(&self, handle: ObjectHandle) -> RuntimeResult<&ObjectListIterator> {
+        let found = self.value_type_name(handle);
+        self.obj_heap
+            .get_list_iter(handle)
+            .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "list iterator", found }.into())
+    }
+
+    pub fn get_list_iter_mut(&mut self, handle: ObjectHandle) -> RuntimeResult<&mut ObjectListIterator> {
+        let found = self.value_type_name(handle);
+        self.obj_heap
+            .get_list_iter_mut(handle)
+            .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "list iterator", found }.into())
+    }
+
+    pub fn get_dict_iter_mut(&mut self, handle: ObjectHandle) -> RuntimeResult<&mut ObjectDictIterator> {
+        let found = self.value_type_name(handle);
+        self.obj_heap
+            .get_dict_iter_mut(handle)
+            .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "dict iterator", found }.into())
+    }
+
+    pub fn get_set_iter_mut(&mut self, handle: ObjectHandle) -> RuntimeResult<&mut ObjectSetIterator> {
+        let found = self.value_type_name(handle);
+        self.obj_heap
+            .get_set_iter_mut(handle)
+            .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "set iterator", found }.into())
+    }
+
+    pub fn get_string_iter(&self, handle: ObjectHandle) -> RuntimeResult<&ObjectStringIterator> {
+        let found = self.value_type_name(handle);
+        self.obj_heap
+            .get_string_iter(handle)
+            .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "string iterator", found }.into())
+    }
+
+    pub fn get_string_iter_mut(&mut self, handle: ObjectHandle) -> RuntimeResult<&mut ObjectStringIterator> {
+        let found = self.value_type_name(handle);
+        self.obj_heap
+            .get_string_iter_mut(handle)
+            .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "string iterator", found }.into())
     }
 }

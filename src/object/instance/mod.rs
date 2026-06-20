@@ -8,10 +8,10 @@ mod set;
 pub use bool::{ObjectBool, register_bool_builtins};
 pub use int::{ObjectInt, register_int_builtins};
 pub use float::{ObjectFloat, register_float_builtins};
-pub use string::{ObjectString, register_string_builtins};
-pub use list::{ObjectList, register_list_builtins};
-pub use dict::{ObjectDict, register_dict_builtins};
-pub use set::{ObjectSet, register_set_builtins};
+pub use string::{ObjectString, ObjectStringIterator, register_string_builtins};
+pub use list::{ObjectList, ObjectListIterator, register_list_builtins};
+pub use dict::{ObjectDict, ObjectDictIterator, register_dict_builtins};
+pub use set::{ObjectSet, ObjectSetIterator, register_set_builtins};
 
 use std::any::Any;
 use std::collections::HashMap;
@@ -37,18 +37,25 @@ impl ObjectClass {
 pub enum ObjectInstanceData {
     Nil,
     IterEnd,
-    
+
     Bool(bool),
     Integer(i64),
     Float(f64),
+
     String(ShrString),
-    
+    StringIter(ObjectStringIterator),
+
     List(Vec<ObjectHandle>),
+    ListIter(ObjectListIterator),
+
     Dict(HashMap<u64, Vec<(ObjectHandle, ObjectHandle)>>),
+    DictIter(ObjectDictIterator),
+
     Set(HashMap<u64, Vec<ObjectHandle>>),
+    SetIter(ObjectSetIterator),
 
     Fields(HashMap<ShrString, ObjectHandle>),
-    
+
     Native(NativeData),
 }
 

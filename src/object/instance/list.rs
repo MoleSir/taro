@@ -1,23 +1,17 @@
 use crate::{
-    NativeFunction, NativeData, ObjectHandle, ObjectInstanceData, ToNativeData,
+    NativeFunction, ObjectHandle, ObjectInstanceData,
     vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine},
 };
 use super::ObjectHeap;
 
 // ========================================================================== //
-//  ListIterator (native state)
+//  ObjectListIterator (iterator state)
 // ========================================================================== //
 
-/// Native state for a list iterator.
-struct ListIterator {
-    list_handle: ObjectHandle,
-    index: usize,
-}
-
-impl ToNativeData for ListIterator {
-    fn mark_inner_object(&self, heap: &mut ObjectHeap) {
-        heap.mark_object(self.list_handle);
-    }
+/// Iterator state for a list.
+pub struct ObjectListIterator {
+    pub list_handle: ObjectHandle,
+    pub index: usize,
 }
 
 // ========================================================================== //
@@ -145,16 +139,16 @@ impl ObjectList {
     // ---- iteration protocol ----
 
     pub fn __iter__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let iter = ListIterator { list_handle: receiver, index: 0 };
+        let iter = ObjectListIterator { list_handle: receiver, index: 0 };
         Ok(vm.obj_heap.alloc_instance(
             vm.obj_heap.list_iter_class,
-            ObjectInstanceData::Native(NativeData::new(iter)),
+            ObjectInstanceData::ListIter(iter),
         ))
     }
 
     pub fn iter_next(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let (list_handle, idx) = {
-            let iter = vm.get_native::<ListIterator>(receiver)?;
+            let iter = vm.get_list_iter(receiver)?;
             (iter.list_handle, iter.index)
         };
         let items = vm.get_list_instance(list_handle)?;
@@ -164,7 +158,7 @@ impl ObjectList {
         let value = items[idx];
         // NLL drops `items` reference here; the &mut self borrow below is
         // now exclusive, allowing the index update.
-        let iter = vm.get_native_mut::<ListIterator>(receiver)?;
+        let iter = vm.get_list_iter_mut(receiver)?;
         iter.index = idx + 1;
         Ok(value)
     }

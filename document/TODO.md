@@ -7,7 +7,8 @@
 - [x] default arguments 
 - [x] source line in run time error
 - [ ] str formart
-- [ ] str len(?) slice 
+- [x] more str method
+- [ ] bytes
 - [x] std
   - [x] fs
   - [x] math

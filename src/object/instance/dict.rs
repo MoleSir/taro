@@ -1,28 +1,20 @@
 use crate::{
-    NativeFunction, NativeData, ObjectHandle, ObjectInstanceData, ToNativeData,
+    NativeFunction, ObjectHandle, ObjectInstanceData,
     vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine},
 };
 use super::ObjectHeap;
 
 // ========================================================================== //
-//  DictKeyIterator (native state)
+//  ObjectDictIterator (iterator state)
 // ========================================================================== //
 
-/// Native state for a dict-key iterator.
+/// Iterator state for a dict-key iterator.
 ///
 /// Keys are collected eagerly at iterator-creation time so that each
 /// `__next__` call is O(1) — no per-step re-collection or cloning.
-struct DictKeyIterator {
-    keys: Vec<ObjectHandle>,
-    index: usize,
-}
-
-impl ToNativeData for DictKeyIterator {
-    fn mark_inner_object(&self, heap: &mut ObjectHeap) {
-        for &key in &self.keys {
-            heap.mark_object(key);
-        }
-    }
+pub struct ObjectDictIterator {
+    pub keys: Vec<ObjectHandle>,
+    pub index: usize,
 }
 
 // ========================================================================== //
@@ -215,12 +207,12 @@ impl ObjectDict {
             .collect();
         Ok(vm.obj_heap.alloc_instance(
             vm.obj_heap.dict_iter_class,
-            ObjectInstanceData::Native(NativeData::new(DictKeyIterator { keys, index: 0 })),
+            ObjectInstanceData::DictIter(ObjectDictIterator { keys, index: 0 }),
         ))
     }
 
     pub fn iter_next(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let iter = vm.get_native_mut::<DictKeyIterator>(receiver)?;
+        let iter = vm.get_dict_iter_mut(receiver)?;
         if iter.index < iter.keys.len() {
             let key = iter.keys[iter.index];
             iter.index += 1;
