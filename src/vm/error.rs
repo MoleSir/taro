@@ -156,4 +156,7 @@ pub enum RuntimeErrorKind {
 
     #[error("json error: {0}")]
     JosnError(String),
+
+    #[error("FFI error: {0}")]
+    FfiError(String),
 }

@@ -640,6 +640,7 @@ impl VirtualMachine {
                 let source = include_str!("../std/logging.taro");
                 self.import_source_module(source, "std/logging")
             }
+            "ffi" => self.create_ffi_module(),
             "fs" => self.create_fs_module(),
             "itertools" => {
                 let source = include_str!("../std/itertools.taro");

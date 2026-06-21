@@ -1,3 +1,4 @@
+mod ffi;
 mod fs;
 mod json;
 mod math;
