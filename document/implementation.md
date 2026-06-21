@@ -17,7 +17,14 @@ src/
 │   └── object/
 │       ├── mod.rs            # Object enum & type-checking helpers
 │       ├── heap.rs           # ObjectHeap — allocation, GC mark/sweep, interning caches
-│       └── variants.rs       # Object variants (Function, Class, Instance, Closure, …)
+│       ├── variants.rs       # Object variants (Function, Class, Instance, Closure, …)
+│       └── instance/
+│           ├── mod.rs        # ObjectInstanceData enum (Bool, Int, Float, String, List, Dict, Set, Bytes, …)
+│           ├── list.rs       # List builtin methods
+│           ├── dict.rs       # Dict builtin methods
+│           ├── set.rs        # Set builtin methods
+│           ├── string.rs     # String builtin methods
+│           └── bytes.rs      # Bytes builtin methods
 ├── compile/
 │   ├── mod.rs                # Compiler entry point
 │   ├── parse.rs              # Parser — Pratt parsing, statement/expression compilation
@@ -32,11 +39,11 @@ src/
     ├── magic.rs              # Magic method bindings (__add__, __getitem__, …)
     ├── builtin.rs            # Global built-in functions & class registration
     │                         #   (print, str, len, type, abs, min, max, input, clock,
-    │                         #    is_iter_end, int, float, bool, list, dict, set, exit)
+    │                         #    is_iter_end, int, float, bool, list, dict, set, bytes, exit)
     ├── std/                  # Virtual std modules (no .taro file needed)
     │   ├── mod.rs            #   import_std_module dispatcher
     │   ├── argparse.taro     #   std/argparse — CLI argument parser (pure taro)
-    │   ├── fs.rs             #   std/fs — File class + standalone fs functions
+    │   ├── fs.rs             #   std/fs — File class (read/write/read_bytes/readline/seek/tell/close) + standalone functions
     │   ├── itertools.taro    #   std/itertools — lazy iterators (pure taro)
     │   ├── json.rs           #   std/json — JSON encode/decode via serde_json
     │   ├── logging.taro      #   std/logging — leveled logging with timestamps (pure taro)
@@ -99,7 +106,7 @@ The VM dispatch (`call_native_fn`) validates argument counts and extracts typed 
 
 - `ObjectHandle(usize)` — cheap Copy handle, index into `ObjectHeap.objects`.
 - Slot 0 is the nil sentinel; `ObjectHandle::NIL` never allocates.
-- `ObjectInstanceData` carries type-specific data (Bool, Integer, Float, String, List, Dict, Fields, Native).
+- `ObjectInstanceData` carries type-specific data (Bool, Integer, Float, String, List, Dict, Set, Bytes, Fields, Native).
 - `NativeObject` stores type-erased Rust data (`Box<T>` behind a raw pointer) — used by `FileData` in fs module.
 - Small integers (-5..256) and strings are interned via caches on `ObjectHeap`.
 
@@ -161,3 +168,17 @@ The `String` class implements 15+ built-in methods (in `src/object/instance/stri
 
 All search methods (`find`, `rfind`) return -1 when the substring is not found.
 `substr` supports negative start indices (count from end).
+
+### Bytes methods
+
+The `Bytes` class implements built-in methods (in `src/object/instance/bytes.rs`):
+
+| Category | Methods |
+|----------|---------|
+| Conversion | `hex()`, `decode(encoding)`, `to_list()` |
+| Creation | `from_string(s)`, `from_list(lst)` |
+| Introspection | `len()` |
+
+Bytes are stored as `Vec<u8>` and indexed by integer position (returns byte value as `i64`).
+Iteration yields integer byte values one at a time via `ObjectBytesIterator`.
+Bytes support hashing, making them usable as dict keys and set elements.

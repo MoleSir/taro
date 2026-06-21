@@ -32,8 +32,9 @@ impl VirtualMachine {
         self.register_native_method(file_class, "readline",  NativeFunction::a1(StdFileData::readline));
         self.register_native_method(file_class, "close",     NativeFunction::a1(StdFileData::close));
         self.register_native_method(file_class, "seek",      NativeFunction::a2(StdFileData::seek));
-        self.register_native_method(file_class, "tell",      NativeFunction::a1(StdFileData::tell));
-        self.register_native_method(file_class, "__str__",   NativeFunction::a1(StdFileData::__str__));
+        self.register_native_method(file_class, "tell",       NativeFunction::a1(StdFileData::tell));
+        self.register_native_method(file_class, "read_bytes", NativeFunction::a1(StdFileData::read_bytes));
+        self.register_native_method(file_class, "__str__",    NativeFunction::a1(StdFileData::__str__));
 
         // Standalone function handles.
         let exists = self.obj_heap.alloc_native_fn("exists", NativeFunction::a1(exists));
@@ -42,6 +43,7 @@ impl VirtualMachine {
         let remove = self.obj_heap.alloc_native_fn("remove", NativeFunction::a1(remove));
         let rename = self.obj_heap.alloc_native_fn("rename", NativeFunction::a2(rename));
         let read = self.obj_heap.alloc_native_fn("read", NativeFunction::a1(read));
+        let read_bytes = self.obj_heap.alloc_native_fn("read_bytes", NativeFunction::a1(read_bytes));
         let write = self.obj_heap.alloc_native_fn("write", NativeFunction::a2(write));
         let list_dir = self.obj_heap.alloc_native_fn("list_dir", NativeFunction::a1(list_dir));
         let mkdir = self.obj_heap.alloc_native_fn("mkdir", NativeFunction::a1(mkdir));
@@ -54,6 +56,7 @@ impl VirtualMachine {
         exports.insert(ShrString::new_str("remove"), remove);
         exports.insert(ShrString::new_str("rename"), rename);
         exports.insert(ShrString::new_str("read"), read);
+        exports.insert(ShrString::new_str("read_bytes"), read_bytes);
         exports.insert(ShrString::new_str("write"), write);
         exports.insert(ShrString::new_str("list_dir"), list_dir);
         exports.insert(ShrString::new_str("mkdir"), mkdir);
@@ -119,6 +122,15 @@ impl StdFileData {
         reader.read_to_string(&mut buf)
             .map_err(|e| RuntimeErrorKind::IoError(format!("read error: {}", e)))?;
         Ok(vm.obj_heap.alloc_string_instance(ShrString::new_string(&buf)))
+    }
+
+    fn read_bytes(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+        let reader = vm.get_native_mut::<StdFileData>(receiver)?.reader.as_mut()
+            .ok_or_else(|| RuntimeErrorKind::IoError("file is closed".into()))?;
+        let mut buf = Vec::new();
+        reader.read_to_end(&mut buf)
+            .map_err(|e| RuntimeErrorKind::IoError(format!("read error: {}", e)))?;
+        Ok(vm.obj_heap.alloc_bytes_instance(buf))
     }
 
     fn write(vm: &mut VirtualMachine, receiver: ObjectHandle, text: ObjectHandle) -> RuntimeResult<ObjectHandle> {
@@ -221,6 +233,13 @@ fn read(vm: &mut VirtualMachine, path: ObjectHandle) -> RuntimeResult<ObjectHand
     let content = std::fs::read_to_string(s.as_str())
         .map_err(|e| RuntimeErrorKind::IoError(format!("cannot read '{}': {}", s, e)))?;
     Ok(vm.obj_heap.alloc_string_instance(ShrString::new_string(&content)))
+}
+
+fn read_bytes(vm: &mut VirtualMachine, path: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+    let s = vm.get_string_instance(path)?;
+    let content = std::fs::read(s.as_str())
+        .map_err(|e| RuntimeErrorKind::IoError(format!("cannot read '{}': {}", s, e)))?;
+    Ok(vm.obj_heap.alloc_bytes_instance(content))
 }
 
 fn write(vm: &mut VirtualMachine, path: ObjectHandle, text: ObjectHandle) -> RuntimeResult<ObjectHandle> {

@@ -1,7 +1,7 @@
 use std::{collections::HashMap, sync::LazyLock};
 
 use crate::{Chunk, ShrString};
-use super::{NativeFunction, Method, Object, ObjectBoundMethod, ObjectNativeFn, ObjectClass, ObjectClosure, ObjectFunction, ObjectInstance, ObjectInstanceData, ObjectListIterator, ObjectDictIterator, ObjectSetIterator, ObjectStringIterator, ObjectUpvalue, register_int_builtins, register_float_builtins, register_bool_builtins, register_string_builtins, register_list_builtins, register_dict_builtins, register_set_builtins};
+use super::{NativeFunction, Method, Object, ObjectBoundMethod, ObjectNativeFn, ObjectClass, ObjectClosure, ObjectFunction, ObjectInstance, ObjectInstanceData, ObjectListIterator, ObjectDictIterator, ObjectSetIterator, ObjectStringIterator, ObjectBytesIterator, ObjectUpvalue, register_int_builtins, register_float_builtins, register_bool_builtins, register_string_builtins, register_list_builtins, register_dict_builtins, register_set_builtins, register_bytes_builtins};
 
 /// Static nil object — backing for `ObjectHandle::NIL`.
 static NIL_OBJECT: LazyLock<Object> = LazyLock::new(|| {
@@ -47,6 +47,7 @@ pub struct ObjectHeap {
     pub list_class: ObjectHandle,
     pub dict_class: ObjectHandle,
     pub set_class: ObjectHandle,
+    pub bytes_class: ObjectHandle,
     pub module_class: ObjectHandle,
     /// Class handle for `net.Socket` — stored here so `Server.accept()` can
     /// create new Socket instances without needing access to the net module.
@@ -62,6 +63,7 @@ pub struct ObjectHeap {
     pub string_iter_class: ObjectHandle,
     pub dict_iter_class: ObjectHandle,
     pub set_iter_class: ObjectHandle,
+    pub bytes_iter_class: ObjectHandle,
 }
 
 impl ObjectHeap {
@@ -86,6 +88,7 @@ impl ObjectHeap {
             list_class: ObjectHandle::NIL,
             dict_class: ObjectHandle::NIL,
             set_class: ObjectHandle::NIL,
+            bytes_class: ObjectHandle::NIL,
             module_class: ObjectHandle::NIL,
             socket_class: ObjectHandle::NIL,
             true_instance: ObjectHandle::NIL,
@@ -94,6 +97,7 @@ impl ObjectHeap {
             string_iter_class: ObjectHandle::NIL,
             dict_iter_class: ObjectHandle::NIL,
             set_iter_class: ObjectHandle::NIL,
+            bytes_iter_class: ObjectHandle::NIL,
         };
 
         heap.nil_class = heap.alloc_class("Nil");
@@ -104,11 +108,13 @@ impl ObjectHeap {
         heap.list_class = heap.alloc_class("List");
         heap.dict_class = heap.alloc_class("Dict");
         heap.set_class = heap.alloc_class("Set");
+        heap.bytes_class = heap.alloc_class("Bytes");
         heap.module_class = heap.alloc_class("Module");
         heap.list_iter_class = heap.alloc_class("ObjectListIterator");
         heap.string_iter_class = heap.alloc_class("ObjectStringIterator");
         heap.dict_iter_class = heap.alloc_class("ObjectDictIterator");
         heap.set_iter_class = heap.alloc_class("ObjectSetIterator");
+        heap.bytes_iter_class = heap.alloc_class("ObjectBytesIterator");
 
         // Allocate singleton bool instances (after bool_class exists).
         heap.true_instance = heap.alloc_instance(heap.bool_class, ObjectInstanceData::Bool(true));
@@ -122,6 +128,7 @@ impl ObjectHeap {
         register_list_builtins(&mut heap);
         register_dict_builtins(&mut heap);
         register_set_builtins(&mut heap);
+        register_bytes_builtins(&mut heap);
 
         heap
     }
@@ -225,6 +232,11 @@ impl ObjectHeap {
     #[inline]
     pub fn alloc_set_instance(&mut self, items: HashMap<u64, Vec<ObjectHandle>>) -> ObjectHandle {
         self.alloc_instance(self.set_class, ObjectInstanceData::Set(items))
+    }
+
+    #[inline]
+    pub fn alloc_bytes_instance(&mut self, data: Vec<u8>) -> ObjectHandle {
+        self.alloc_instance(self.bytes_class, ObjectInstanceData::Bytes(data))
     }
 
     /// Register a native method on a builtin class.
@@ -345,6 +357,7 @@ impl ObjectHeap {
     impl_instance_data_getter!(list, List, Vec<ObjectHandle>, "list");
     impl_instance_data_getter!(dict, Dict, HashMap<u64, Vec<(ObjectHandle, ObjectHandle)>>, "dict");
     impl_instance_data_getter!(set, Set, HashMap<u64, Vec<ObjectHandle>>, "set");
+    impl_instance_data_getter!(bytes, Bytes, Vec<u8>, "bytes");
     impl_instance_data_getter!(fields, Fields, HashMap<ShrString, ObjectHandle>, "fields");
 
     /// Return a reference to the list-iterator state stored in `handle`.
@@ -415,6 +428,24 @@ impl ObjectHeap {
         let inst = self.get_instance_mut(handle)?;
         match &mut inst.data {
             ObjectInstanceData::StringIter(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    /// Return a reference to the bytes-iterator state.
+    pub fn get_bytes_iter(&self, handle: ObjectHandle) -> Option<&ObjectBytesIterator> {
+        let inst = self.get_instance(handle)?;
+        match &inst.data {
+            ObjectInstanceData::BytesIter(v) => Some(v),
+            _ => None,
+        }
+    }
+
+    /// Return a mutable reference to the bytes-iterator state.
+    pub fn get_bytes_iter_mut(&mut self, handle: ObjectHandle) -> Option<&mut ObjectBytesIterator> {
+        let inst = self.get_instance_mut(handle)?;
+        match &mut inst.data {
+            ObjectInstanceData::BytesIter(v) => Some(v),
             _ => None,
         }
     }
@@ -529,11 +560,17 @@ impl ObjectHeap {
                                 self.mark_object(item);
                             }
                         }
+                        ObjectInstanceData::BytesIter(iter) => {
+                            self.mark_object(iter.bytes_handle);
+                        }
                         ObjectInstanceData::Native(native) => {
                             native.mark_inner_object(self);
                         }
                         ObjectInstanceData::String(_s) => {
                             // ShrString is internally Arc'd — no ObjectHandle refs
+                        }
+                        ObjectInstanceData::Bytes(_data) => {
+                            // Vec<u8> — no ObjectHandle refs
                         }
                         ObjectInstanceData::List(items) => {
                             for &item in items {

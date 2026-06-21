@@ -8,7 +8,7 @@
 - [x] source line in run time error
 - [ ] str formart
 - [x] more str method
-- [ ] bytes
+- [x] bytes
 - [x] std
   - [x] fs
   - [x] math

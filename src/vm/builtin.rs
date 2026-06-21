@@ -1,4 +1,4 @@
-use crate::{Object, ObjectHandle, ObjectInstanceData, ObjectSet};
+use crate::{Object, ObjectHandle, ObjectInstanceData, ObjectSet, ObjectBytes};
 use crate::vm::{RuntimeResult, RuntimeErrorKind, VirtualMachine};
 use crate::{NativeFunction, Method};
 use std::collections::HashMap;
@@ -12,6 +12,7 @@ impl VirtualMachine {
         self.register_builtin_class("List", self.obj_heap.list_class);
         self.register_builtin_class("Dict", self.obj_heap.dict_class);
         self.register_builtin_class("Set", self.obj_heap.set_class);
+        self.register_builtin_class("Bytes", self.obj_heap.bytes_class);
         self.register_builtin_class("Bool", self.obj_heap.bool_class);
 
         // ---- global native functions ----
@@ -32,6 +33,7 @@ impl VirtualMachine {
         self.register_native_fn("list",  NativeFunction::var(VirtualMachine::list));
         self.register_native_fn("dict",  NativeFunction::a0(VirtualMachine::dict));
         self.register_native_fn("set",   NativeFunction::var(VirtualMachine::set));
+        self.register_native_fn("bytes", NativeFunction::a1(VirtualMachine::bytes));
 
         // IterEnd sentinel — signals end of iteration in __next__.
         self.globals.insert("IterEnd".into(), ObjectHandle::ITER_END);
@@ -194,6 +196,31 @@ impl VirtualMachine {
             ObjectSet::add(self, set_handle, item)?;
         }
         Ok(set_handle)
+    }
+
+    /// `bytes(value)` — create bytes from a string or list of ints.
+    pub fn bytes(&mut self, arg: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+        // Snapshot what we need to decide, then drop the immutable borrow.
+        let is_string = matches!(
+            self.obj_heap.get(arg),
+            Object::Instance(inst) if matches!(&inst.data, ObjectInstanceData::String(_))
+        );
+        let is_list = matches!(
+            self.obj_heap.get(arg),
+            Object::Instance(inst) if matches!(&inst.data, ObjectInstanceData::List(_))
+        );
+
+        if is_string {
+            let s = self.get_string_instance(arg)?.as_str().to_string();
+            ObjectBytes::from_string(self, s.as_str())
+        } else if is_list {
+            ObjectBytes::from_list(self, arg)
+        } else {
+            Err(RuntimeErrorKind::UnexpectedType(
+                "string or list of ints",
+                self.value_type_name(arg),
+            ))
+        }
     }
 
     pub fn exit(&mut self, arg: ObjectHandle) -> RuntimeResult<ObjectHandle> {

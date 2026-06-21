@@ -14,6 +14,7 @@ pub use string::{ObjectString, ObjectStringIterator, register_string_builtins};
 pub use list::{ObjectList, ObjectListIterator, register_list_builtins};
 pub use dict::{ObjectDict, ObjectDictIterator, register_dict_builtins};
 pub use set::{ObjectSet, ObjectSetIterator, register_set_builtins};
+pub use bytes::{ObjectBytes, ObjectBytesIterator, register_bytes_builtins};
 
 use std::any::Any;
 use std::collections::HashMap;
@@ -56,6 +57,9 @@ pub enum ObjectInstanceData {
 
     Set(HashMap<u64, Vec<ObjectHandle>>),
     SetIter(ObjectSetIterator),
+
+    Bytes(Vec<u8>),
+    BytesIter(ObjectBytesIterator),
 
     Fields(HashMap<ShrString, ObjectHandle>),
 
@@ -108,6 +112,12 @@ impl IntoObjectInstance for Vec<ObjectHandle> {
     }
 }
 
+impl IntoObjectInstance for Vec<u8> {
+    fn into_object_instance(self, vm: &mut VirtualMachine) -> ObjectHandle {
+        vm.obj_heap.alloc_bytes_instance(self)
+    }
+}
+
 impl IntoObjectInstance for ObjectHandle {
     fn into_object_instance(self, _vm: &mut VirtualMachine) -> ObjectHandle {
         self
@@ -153,6 +163,12 @@ impl<'a> FromObjectInstance<'a> for &'a std::collections::HashMap<u64, Vec<(Obje
 impl<'a> FromObjectInstance<'a> for &'a std::collections::HashMap<u64, Vec<ObjectHandle>> {
     fn from_object_instance(vm: &'a VirtualMachine, handle: ObjectHandle) -> RuntimeResult<Self> {
         vm.get_set_instance(handle)
+    }
+}
+
+impl<'a> FromObjectInstance<'a> for &'a Vec<u8> {
+    fn from_object_instance(vm: &'a VirtualMachine, handle: ObjectHandle) -> RuntimeResult<Self> {
+        vm.get_bytes_instance(handle)
     }
 }
 

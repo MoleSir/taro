@@ -6,7 +6,7 @@ mod utils;
 pub use error::*;
 #[cfg(test)]
 mod tests;
-use crate::{NativeFunction, Instruction, Method, Object, ObjectBoundMethod, ObjectNativeFn, ObjectClass, ObjectClosure, ObjectFunction, ObjectHandle, ObjectHeap, ObjectInstance, ObjectInstanceData, ObjectListIterator, ObjectDictIterator, ObjectSetIterator, ObjectStringIterator, ObjectUpvalue, ShrString};
+use crate::{NativeFunction, Instruction, Method, Object, ObjectBoundMethod, ObjectNativeFn, ObjectClass, ObjectClosure, ObjectFunction, ObjectHandle, ObjectHeap, ObjectInstance, ObjectInstanceData, ObjectListIterator, ObjectDictIterator, ObjectSetIterator, ObjectStringIterator, ObjectBytesIterator, ObjectUpvalue, ShrString};
 use std::collections::HashMap;
 
 pub struct VirtualMachine {
@@ -1086,6 +1086,7 @@ impl VirtualMachine {
     impl_getters!(list_instance, Vec<ObjectHandle>);
     impl_getters!(dict_instance, HashMap<u64, Vec<(ObjectHandle, ObjectHandle)>>);
     impl_getters!(set_instance, HashMap<u64, Vec<ObjectHandle>>);
+    impl_getters!(bytes_instance, Vec<u8>);
     impl_getters!(fields_instance, HashMap<ShrString, ObjectHandle>);
 
     pub fn get_native_mut<T: crate::ToNativeData>(&mut self, handle: ObjectHandle) -> RuntimeResult<&mut T> {
@@ -1127,6 +1128,20 @@ impl VirtualMachine {
         self.obj_heap
             .get_set_iter_mut(handle)
             .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "set iterator", found }.into())
+    }
+
+    pub fn get_bytes_iter(&self, handle: ObjectHandle) -> RuntimeResult<&ObjectBytesIterator> {
+        let found = self.value_type_name(handle);
+        self.obj_heap
+            .get_bytes_iter(handle)
+            .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "bytes iterator", found }.into())
+    }
+
+    pub fn get_bytes_iter_mut(&mut self, handle: ObjectHandle) -> RuntimeResult<&mut ObjectBytesIterator> {
+        let found = self.value_type_name(handle);
+        self.obj_heap
+            .get_bytes_iter_mut(handle)
+            .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "bytes iterator", found }.into())
     }
 
     pub fn get_string_iter(&self, handle: ObjectHandle) -> RuntimeResult<&ObjectStringIterator> {

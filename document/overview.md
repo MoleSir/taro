@@ -10,7 +10,9 @@ Taro is a small, class-based scripting language with closures, garbage collectio
 - Strings: `"hello"`, concatenation with `+`
 - Lists: `[1, 2, 3]`, indexing, nested lists
 - Dicts: `{"key": value}`, key-value storage, indexing by key
-- Objects: functions, classes, instances, closures, bound methods, lists, dicts
+- Bytes: binary data, created with `bytes("...")` or `bytes([...])`
+- Sets: unique elements, created with `set(args...)`
+- Objects: functions, classes, instances, closures, bound methods, lists, dicts, bytes, sets
 
 ## Variables and scope
 
@@ -101,6 +103,60 @@ print(d.pop("a"));          // 1 — remove and return value
 ```
 
 Dict keys use `Value` equality and hashing — same-type comparisons apply.
+
+## Bytes
+
+```taro
+var b = bytes("hello");         // from string → UTF-8 bytes
+print(b);                        // b"hello"
+print(len(b));                   // 5
+print(b[0]);                     // 104 (ASCII 'h')
+print(b[-1]);                    // 111 (ASCII 'o')
+
+var c = bytes([65, 66, 67]);    // from list of ints (0–255)
+print(c);                        // b"ABC"
+print(bool(bytes([])));         // false
+print(bool(bytes("x")));        // true
+
+// Bytes methods
+print(b.hex());                  // "68656c6c6f"
+print(b.decode("utf-8"));       // "hello"
+print(b.to_list());              // [104, 101, 108, 108, 111]
+
+// Equality and concatenation
+print(bytes("ab") == bytes("ab"));   // true
+print(bytes("ab") + bytes("cd"));    // b"abcd"
+
+// Membership test
+print(104 in b);                 // true ('h')
+
+// Iteration yields integer byte values
+for byte in bytes("Hi") {
+    print(byte);                 // 72, 105
+}
+```
+
+Bytes support hashing, so they can be used as dict keys or set elements.
+
+## Sets
+
+```taro
+var s = set(1, 2, 3);           // create a set
+print(len(s));                   // 3
+print(2 in s);                   // true
+print(4 in s);                   // false
+s.add(4);                        // add an element
+print(4 in s);                   // true
+s.remove(2);                     // remove an element
+print(2 in s);                   // false
+print(bool(set()));              // false
+print(bool(set(1)));             // true
+
+// Iteration
+for item in s {
+    print(item);
+}
+```
 
 ## Control flow
 
@@ -340,6 +396,8 @@ Comparison fallback mechanism: `!=` works with only `__eq__`, `>=` works with on
 | `clock()` | Wall-clock time in seconds since Unix epoch (as float). |
 | `list(a, b, ...)` | Create a list from the given arguments (variadic). |
 | `dict()` | Create an empty dict. |
+| `set(a, b, ...)` | Create a set from the given arguments (variadic). |
+| `bytes(value)` | Create bytes from a string (UTF-8 encode) or list of ints (0–255). |
 | `is_iter_end(value)` | Return `true` if the value is the `IterEnd` sentinel (used to detect end of iteration in custom iterators). |
 
 ## Builtin methods
@@ -366,6 +424,10 @@ List, Dict, and String objects have builtin methods callable via dot syntax:
 | String | `str.is_empty()` | Return `true` if the string is empty. |
 | String | `str.repeat(n)` | Repeat the string `n` times. |
 | String | `str.len()` | Return the string length in bytes. |
+| Bytes | `bytes.hex()` | Return hex string representation. |
+| Bytes | `bytes.decode(enc)` | Decode bytes to string (supports `"utf-8"`). |
+| Bytes | `bytes.to_list()` | Return list of integer byte values. |
+| Bytes | `bytes.len()` | Return the number of bytes. |
 
 Methods can be assigned to variables and called later (bound methods):
 
@@ -517,6 +579,7 @@ import "std/fs";
 // Standalone convenience functions
 fs.write("/tmp/hello.txt", "Hello from Taro!");
 print(fs.read("/tmp/hello.txt"));
+print(fs.read_bytes("/tmp/hello.txt")); // b"Hello from Taro!"
 print(fs.exists("/tmp/hello.txt"));     // true
 print(fs.is_file("/tmp/hello.txt"));    // true
 print(fs.is_dir("/tmp"));               // true
@@ -536,6 +599,8 @@ print(g.readline());                    // line1
 print(g.tell());                        // 6
 g.seek(0);
 print(g.read());                        // all content
+g.seek(0);
+print(g.read_bytes());                  // all content as bytes
 g.close();
 
 print(str(g));                          // <File path='...' mode='r' status=closed>

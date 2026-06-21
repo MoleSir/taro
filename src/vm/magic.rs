@@ -494,6 +494,8 @@ impl VirtualMachine {
                     ObjectInstanceData::DictIter(_) => "dict iterator",
                     ObjectInstanceData::Set(_) => "set",
                     ObjectInstanceData::SetIter(_) => "set iterator",
+                    ObjectInstanceData::Bytes(_) => "bytes",
+                    ObjectInstanceData::BytesIter(_) => "bytes iterator",
                     ObjectInstanceData::Fields(_) => "instance",
                     ObjectInstanceData::Native(_) => "native object",
                 }
