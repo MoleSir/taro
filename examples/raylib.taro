@@ -1,30 +1,125 @@
 import "std/ffi";
 
-var lib = ffi.dlopen("libraylib.so.6.0.0");
+// 注意：Windows 上可能是 raylib.dll，Mac 上可能是 libraylib.dylib
+var lib = ffi.dlopen("examples/libraylib.so.6.0.0");
 
-// Bind once — CIF is cached, no per-call string parsing
-var init_window        = ffi.bind(lib, "InitWindow", "void", ["int32", "int32", "cstring"]);
-var close_window       = ffi.bind(lib, "CloseWindow", "void", []);
-var window_should_close = ffi.bind(lib, "WindowShouldClose", "bool", []);
-var begin_drawing      = ffi.bind(lib, "BeginDrawing", "void", []);
-var end_drawing        = ffi.bind(lib, "EndDrawing", "void", []);
-
-// Color = { r: u8, g: u8, b: u8, a: u8 }
+// ==========================================
+// 1. 结构体定义 (Struct Definitions)
+// ==========================================
+// Color { r: u8, g: u8, b: u8, a: u8 }
 var Color = ffi.struct_def(["uint8", "uint8", "uint8", "uint8"]);
+
+// Vector2 { x: float, y: float }
+var Vector2 = ffi.struct_def(["float", "float"]);
+
+// Rectangle { x: float, y: float, width: float, height: float }
+var Rectangle = ffi.struct_def(["float", "float", "float", "float"]);
+
+
+// ==========================================
+// 2. 核心模块 (Core)
+// ==========================================
+var init_window         = ffi.bind(lib, "InitWindow", "void", ["int32", "int32", "cstring"]);
+var close_window        = ffi.bind(lib, "CloseWindow", "void", []);
+var window_should_close = ffi.bind(lib, "WindowShouldClose", "bool", []);
+var set_target_fps      = ffi.bind(lib, "SetTargetFPS", "void", ["int32"]);
+var get_frame_time      = ffi.bind(lib, "GetFrameTime", "float", []);
+
+
+// ==========================================
+// 3. 绘图与渲染 (Drawing)
+// ==========================================
+var begin_drawing    = ffi.bind(lib, "BeginDrawing", "void", []);
+var end_drawing      = ffi.bind(lib, "EndDrawing", "void", []);
 var clear_background = ffi.bind(lib, "ClearBackground", "void", [Color]);
 
-init_window(800, 450, "raylib [core] example - basic window");
+
+// ==========================================
+// 4. 2D 形状 (Shapes)
+// ==========================================
+var draw_pixel         = ffi.bind(lib, "DrawPixel", "void", ["int32", "int32", Color]);
+var draw_line          = ffi.bind(lib, "DrawLine", "void", ["int32", "int32", "int32", "int32", Color]);
+var draw_circle        = ffi.bind(lib, "DrawCircle", "void", ["int32", "int32", "float", Color]);
+var draw_rectangle     = ffi.bind(lib, "DrawRectangle", "void", ["int32", "int32", "int32", "int32", Color]);
+var draw_rectangle_rec = ffi.bind(lib, "DrawRectangleRec", "void", [Rectangle, Color]);
+
+
+// ==========================================
+// 5. 文本渲染 (Text)
+// ==========================================
+var draw_text    = ffi.bind(lib, "DrawText", "void", ["cstring", "int32", "int32", "int32", Color]);
+var measure_text = ffi.bind(lib, "MeasureText", "int32", ["cstring", "int32"]);
+
+
+// ==========================================
+// 6. 输入检测 (Input: Keyboard & Mouse)
+// ==========================================
+var is_key_pressed   = ffi.bind(lib, "IsKeyPressed", "bool", ["int32"]);
+var is_key_down      = ffi.bind(lib, "IsKeyDown", "bool", ["int32"]);
+
+var get_mouse_x      = ffi.bind(lib, "GetMouseX", "int32", []);
+var get_mouse_y      = ffi.bind(lib, "GetMouseY", "int32", []);
+var is_mouse_button_down = ffi.bind(lib, "IsMouseButtonDown", "bool", ["int32"]);
+
+
+// ==========================================
+// 常用常量 (Constants)
+// ==========================================
+var KEY_RIGHT = 262;
+var KEY_LEFT  = 263;
+var KEY_DOWN  = 264;
+var KEY_UP    = 265;
+var MOUSE_BUTTON_LEFT = 0;
+
+
+// ==========================================
+// 交互小游戏 / 动画测试
+// ==========================================
+
+init_window(800, 600, "Taro FFI + Raylib Example!");
+set_target_fps(60);
+
+// 小球的初始状态
+var ball_x = 400;
+var ball_y = 300;
+var speed = 5;
+
+// 预先分配颜色结构体 (避免在每一帧循环里重复触发GC分配)
+var bg_color    = ffi.struct_new(Color, [245, 245, 245, 255]); // RAYWHITE
+var ball_color  = ffi.struct_new(Color, [230, 41, 55, 255]);   // RED
+var text_color  = ffi.struct_new(Color, [80, 80, 80, 255]);    // DARKGRAY
+var mouse_color = ffi.struct_new(Color, [0, 121, 241, 255]);   // BLUE
 
 while !window_should_close() {
-    begin_drawing();
+    
+    // --- 1. 更新逻辑 ---
+    if is_key_down(KEY_RIGHT) { ball_x = ball_x + speed; }
+    if is_key_down(KEY_LEFT)  { ball_x = ball_x - speed; }
+    if is_key_down(KEY_DOWN)  { ball_y = ball_y + speed; }
+    if is_key_down(KEY_UP)    { ball_y = ball_y - speed; }
 
-    var bg = ffi.struct_new(Color, [245, 245, 245, 255]);
-    clear_background(bg);
+    var mouse_x = get_mouse_x();
+    var mouse_y = get_mouse_y();
+
+    // --- 2. 绘制逻辑 ---
+    begin_drawing();
+    
+    clear_background(bg_color);
+
+    // 绘制说明文本
+    draw_text("Use ARROW KEYS to move the red ball.", 10, 10, 20, text_color);
+    draw_text("Click mouse to draw a blue circle.", 10, 40, 20, text_color);
+
+    // 绘制一个受键盘控制的实心圆 (int32, int32, float, Color)
+    draw_circle(ball_x, ball_y, 25.0, ball_color);
+
+    // 如果按下鼠标左键，在鼠标位置绘制一个矩形
+    if is_mouse_button_down(MOUSE_BUTTON_LEFT) {
+        draw_rectangle(mouse_x - 15, mouse_y - 15, 30, 30, mouse_color);
+    }
 
     end_drawing();
 }
 
 close_window();
-
-
 ffi.dlclose(lib);
