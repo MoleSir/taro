@@ -1,4 +1,5 @@
 use crate::{
+    native_a1,
     NativeFunction, ObjectHandle, ObjectInstanceData,
     vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine},
 };
@@ -28,10 +29,7 @@ fn identity_iter(_vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeRes
 }
 
 impl ObjectList {
-    pub fn __not__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let items = vm.get_list_instance(receiver)?;
-        Ok(vm.obj_heap.alloc_bool_instance(items.is_empty()))
-    }
+    native_a1!(__not__, items: &Vec<ObjectHandle>, { items.is_empty() });
 
     pub fn __add__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let lhs_items = vm.get_list_instance(lhs)?.clone();
@@ -54,19 +52,11 @@ impl ObjectList {
         Ok(vm.obj_heap.alloc_string_instance(result.into()))
     }
 
-    pub fn __bool__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let items = vm.get_list_instance(receiver)?;
-        Ok(vm.obj_heap.alloc_bool_instance(!items.is_empty()))
-    }
+    native_a1!(__bool__, items: &Vec<ObjectHandle>, { !items.is_empty() });
 
-    pub fn __len__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let items = vm.get_list_instance(receiver)?;
-        Ok(vm.obj_heap.alloc_integer_instance(items.len() as i64))
-    }
+    native_a1!(__len__, items: &Vec<ObjectHandle>, { items.len() as i64 });
 
-    pub fn len(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        Self::__len__(vm, receiver)
-    }
+    pub fn len(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> { Self::__len__(vm, receiver) }
 
     pub fn __getitem__(vm: &mut VirtualMachine, receiver: ObjectHandle, idx_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let items = vm.get_list_instance(receiver).cloned()?;

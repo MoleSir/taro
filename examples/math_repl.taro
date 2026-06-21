@@ -40,8 +40,8 @@ class Scanner {
         else if c == "+" { self.add_token(TOKEN_PLUS); }
         else if c == "*" { self.add_token(TOKEN_STAR); }
         else if c == "/" { self.add_token(TOKEN_SLASH); }
-        else if c == " " or c == "\r" or c == "\t" or c == "\n" { }
-        else if isdigit(c) {
+        else if c.is_whitespace() { }
+        else if c.is_digit() {
             self.number();
         } else {
             print("unkonw char");
@@ -50,15 +50,15 @@ class Scanner {
     }
 
     fun number(self) {
-        while isdigit(self.peek()) {
+        while self.peek().is_digit() {
             self.advance();
         }
 
         var has_dot = false;
-        if self.peek() == "." and isdigit(self.peek_next()) {
+        if self.peek() == "." and self.peek_next().is_digit() {
             has_dot = true;
             self.advance();
-            while isdigit(self.peek()) {
+            while self.peek().is_digit() {
                 self.advance();
             }
         }
@@ -105,14 +105,6 @@ class Scanner {
         var length = self.current - self.start;
         var text = self.source.substr(self.start, length);
         self.tokens.append(Token(kind, text, literal));
-    }
-}
-
-fun isdigit(c) {
-    if c == "0" or c == "1" or c == "2" or c == "3" or c == "4" or c == "5" or c == "6" or c == "7" or c == "8" or c == "9" {
-        return true;
-    } else {
-        return false;
     }
 }
 

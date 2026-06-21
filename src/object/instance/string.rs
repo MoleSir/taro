@@ -1,6 +1,7 @@
 use crate::{
-    NativeFunction, ObjectHandle, ObjectInstanceData,
+    native_a1, native_a2, native_a3,
     vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine},
+    NativeFunction, ObjectHandle, ObjectInstanceData, ShrString,
 };
 use super::ObjectHeap;
 
@@ -75,10 +76,7 @@ impl ObjectString {
         Ok(receiver)
     }
 
-    pub fn __bool__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?;
-        Ok(vm.obj_heap.alloc_bool_instance(!s.is_empty()))
-    }
+    native_a1!(__bool__, s: &ShrString, { !s.is_empty() });
 
     pub fn __hash__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let s = vm.get_string_instance(receiver)?;
@@ -104,33 +102,17 @@ impl ObjectString {
         Ok(vm.obj_heap.alloc_float_instance(val))
     }
 
-    /// `len(string)` / `string.len()` — return the number of Unicode characters.
-    pub fn __len__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?;
-        Ok(vm.obj_heap.alloc_integer_instance(char_count(s.as_str()) as i64))
-    }
+    native_a1!(__len__, s: &ShrString, { char_count(s.as_str()) as i64 });
 
     pub fn len(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         Self::__len__(vm, receiver)
     }
 
-    /// `string.byte_len()` — return the number of bytes in the UTF-8 encoding.
-    pub fn byte_len(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?;
-        Ok(vm.obj_heap.alloc_integer_instance(s.len() as i64))
-    }
+    native_a1!(byte_len, s: &ShrString, { s.len() as i64 });
 
-    /// `string.upper()` — convert all characters to uppercase.
-    pub fn upper(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?;
-        Ok(vm.obj_heap.alloc_string_instance(s.to_uppercase().into()))
-    }
+    native_a1!(upper, s: &ShrString, { s.to_uppercase() });
 
-    /// `string.lower()` — convert all characters to lowercase.
-    pub fn lower(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?;
-        Ok(vm.obj_heap.alloc_string_instance(s.to_lowercase().into()))
-    }
+    native_a1!(lower, s: &ShrString, { s.to_lowercase() });
 
     /// `string.capitalize()` — first character uppercase, rest lowercase.
     pub fn capitalize(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
@@ -146,12 +128,7 @@ impl ObjectString {
         }
     }
 
-    /// `string.casefold()` — aggressive case-folding for caseless matching.
-    pub fn casefold(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?;
-        // Rust's to_lowercase is a reasonable approximation of casefold.
-        Ok(vm.obj_heap.alloc_string_instance(s.to_lowercase().into()))
-    }
+    native_a1!(casefold, s: &ShrString, { s.to_lowercase() });
 
     /// `string.swapcase()` — swap the case of each character.
     pub fn swapcase(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
@@ -205,34 +182,10 @@ impl ObjectString {
         Ok(vm.obj_heap.alloc_string_instance(s.trim_end().to_string().into()))
     }
 
-    /// `string.starts_with(prefix)` — return true if the string starts with `prefix`.
-    pub fn starts_with(vm: &mut VirtualMachine, receiver: ObjectHandle, prefix_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?;
-        let prefix = vm.get_string_instance(prefix_handle)?;
-        Ok(vm.obj_heap.alloc_bool_instance(s.starts_with(prefix.as_str())))
-    }
-
-    /// `string.ends_with(suffix)` — return true if the string ends with `suffix`.
-    pub fn ends_with(vm: &mut VirtualMachine, receiver: ObjectHandle, suffix_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?;
-        let suffix = vm.get_string_instance(suffix_handle)?;
-        Ok(vm.obj_heap.alloc_bool_instance(s.ends_with(suffix.as_str())))
-    }
-
-    /// `string.contains(sub)` — return true if the string contains `sub`.
-    pub fn contains(vm: &mut VirtualMachine, receiver: ObjectHandle, sub_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?;
-        let sub = vm.get_string_instance(sub_handle)?;
-        Ok(vm.obj_heap.alloc_bool_instance(s.contains(sub.as_str())))
-    }
-
-    /// `string.replace(old, new)` — replace all occurrences of `old` with `new`.
-    pub fn replace(vm: &mut VirtualMachine, receiver: ObjectHandle, old_handle: ObjectHandle, new_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?;
-        let old = vm.get_string_instance(old_handle)?;
-        let new = vm.get_string_instance(new_handle)?;
-        Ok(vm.obj_heap.alloc_string_instance(s.replace(old.as_str(), new.as_str()).into()))
-    }
+    native_a2!(starts_with, s: &ShrString, prefix: ShrString, { s.starts_with(prefix.as_str()) });
+    native_a2!(ends_with, s: &ShrString, suffix: ShrString, { s.ends_with(suffix.as_str()) });
+    native_a2!(contains, s: &ShrString, sub: ShrString, { s.contains(sub.as_str()) });
+    native_a3!(replace, s: &ShrString, old: ShrString, new: ShrString, { s.replace(old.as_str(), new.as_str()) });
 
     /// `string.split(delim)` — split the string by `delim` and return a list.
     pub fn split(vm: &mut VirtualMachine, receiver: ObjectHandle, delim_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
@@ -360,46 +313,23 @@ impl ObjectString {
         Ok(vm.obj_heap.alloc_string_instance(result.to_string().into()))
     }
 
-    /// `string.find(sub)` — return the character index of the first occurrence
-    /// of `sub`, or -1 if not found.
-    pub fn find(vm: &mut VirtualMachine, receiver: ObjectHandle, sub_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?;
-        let sub = vm.get_string_instance(sub_handle)?;
+    native_a2!(find, s: &ShrString, sub: ShrString, {
         match s.find(sub.as_str()) {
-            Some(byte_idx) => {
-                let char_idx = byte_to_char_index(s.as_str(), byte_idx);
-                Ok(vm.obj_heap.alloc_integer_instance(char_idx as i64))
-            }
-            None => Ok(vm.obj_heap.alloc_integer_instance(-1)),
+            Some(byte_idx) => byte_to_char_index(s.as_str(), byte_idx) as i64,
+            None => -1,
         }
-    }
+    });
 
-    /// `string.rfind(sub)` — return the character index of the last occurrence
-    /// of `sub`, or -1 if not found.
-    pub fn rfind(vm: &mut VirtualMachine, receiver: ObjectHandle, sub_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?;
-        let sub = vm.get_string_instance(sub_handle)?;
+    native_a2!(rfind, s: &ShrString, sub: ShrString, {
         match s.rfind(sub.as_str()) {
-            Some(byte_idx) => {
-                let char_idx = byte_to_char_index(s.as_str(), byte_idx);
-                Ok(vm.obj_heap.alloc_integer_instance(char_idx as i64))
-            }
-            None => Ok(vm.obj_heap.alloc_integer_instance(-1)),
+            Some(byte_idx) => byte_to_char_index(s.as_str(), byte_idx) as i64,
+            None => -1,
         }
-    }
+    });
 
-    /// `string.count(sub)` — return the number of non-overlapping occurrences of `sub`.
-    pub fn count(vm: &mut VirtualMachine, receiver: ObjectHandle, sub_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?;
-        let sub = vm.get_string_instance(sub_handle)?;
-        Ok(vm.obj_heap.alloc_integer_instance(s.matches(sub.as_str()).count() as i64))
-    }
+    native_a2!(count, s: &ShrString, sub: ShrString, { s.matches(sub.as_str()).count() as i64 });
 
-    /// `string.is_empty()` — return true if the string is empty.
-    pub fn is_empty(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?;
-        Ok(vm.obj_heap.alloc_bool_instance(s.is_empty()))
-    }
+    native_a1!(is_empty, s: &ShrString, { s.is_empty() });
 
     /// `string.repeat(n)` — repeat the string `n` times.
     pub fn repeat(vm: &mut VirtualMachine, receiver: ObjectHandle, n_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
@@ -412,19 +342,9 @@ impl ObjectString {
         Ok(vm.obj_heap.alloc_string_instance(result.into()))
     }
 
-    /// `string.removeprefix(prefix)` — remove `prefix` if the string starts with it.
-    pub fn removeprefix(vm: &mut VirtualMachine, receiver: ObjectHandle, prefix_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?;
-        let prefix = vm.get_string_instance(prefix_handle)?;
-        Ok(vm.obj_heap.alloc_string_instance(s.strip_prefix(prefix.as_str()).unwrap_or(s.as_str()).to_string().into()))
-    }
+    native_a2!(removeprefix, s: &ShrString, prefix: ShrString, { s.strip_prefix(prefix.as_str()).unwrap_or(s.as_str()).to_string() });
 
-    /// `string.removesuffix(suffix)` — remove `suffix` if the string ends with it.
-    pub fn removesuffix(vm: &mut VirtualMachine, receiver: ObjectHandle, suffix_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?;
-        let suffix = vm.get_string_instance(suffix_handle)?;
-        Ok(vm.obj_heap.alloc_string_instance(s.strip_suffix(suffix.as_str()).unwrap_or(s.as_str()).to_string().into()))
-    }
+    native_a2!(removesuffix, s: &ShrString, suffix: ShrString, { s.strip_suffix(suffix.as_str()).unwrap_or(s.as_str()).to_string() });
 
     /// `string.center(width, fillchar)` — center the string in a field of `width`
     /// characters, padding with `fillchar` (must be a single character).
@@ -503,40 +423,13 @@ impl ObjectString {
 
     // ---- character-class predicates (a1) ----
 
-    pub fn is_alnum(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?;
-        Ok(vm.obj_heap.alloc_bool_instance(!s.is_empty() && s.chars().all(|c| c.is_alphanumeric())))
-    }
-
-    pub fn is_alpha(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?;
-        Ok(vm.obj_heap.alloc_bool_instance(!s.is_empty() && s.chars().all(|c| c.is_alphabetic())))
-    }
-
-    pub fn is_ascii(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?;
-        Ok(vm.obj_heap.alloc_bool_instance(s.is_ascii()))
-    }
-
-    pub fn is_decimal(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?;
-        Ok(vm.obj_heap.alloc_bool_instance(!s.is_empty() && s.chars().all(|c| c.is_ascii_digit())))
-    }
-
-    pub fn is_digit(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?;
-        Ok(vm.obj_heap.alloc_bool_instance(!s.is_empty() && s.chars().all(|c| c.is_ascii_digit())))
-    }
-
-    pub fn is_numeric(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?;
-        Ok(vm.obj_heap.alloc_bool_instance(!s.is_empty() && s.chars().all(|c| c.is_numeric())))
-    }
-
-    pub fn is_space(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?;
-        Ok(vm.obj_heap.alloc_bool_instance(!s.is_empty() && s.chars().all(|c| c.is_whitespace())))
-    }
+    native_a1!(is_alnum, s: &ShrString, { !s.is_empty() && s.chars().all(|c| c.is_alphanumeric()) });
+    native_a1!(is_alpha, s: &ShrString, { !s.is_empty() && s.chars().all(|c| c.is_alphabetic()) });
+    native_a1!(is_ascii, s: &ShrString, { s.is_ascii() });
+    native_a1!(is_decimal, s: &ShrString, { !s.is_empty() && s.chars().all(|c| c.is_ascii_digit()) });
+    native_a1!(is_digit, s: &ShrString, { !s.is_empty() && s.chars().all(|c| c.is_ascii_digit()) });
+    native_a1!(is_numeric, s: &ShrString, { !s.is_empty() && s.chars().all(|c| c.is_numeric()) });
+    native_a1!(is_space, s: &ShrString, { !s.is_empty() && s.chars().all(|c| c.is_whitespace()) });
 
     /// `string.is_lower()` — at least one cased character exists and all cased
     /// characters are lowercase.

@@ -1,7 +1,9 @@
 use crate::{
+    native_a1,
     NativeFunction, ObjectHandle, ObjectInstanceData,
     vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine},
 };
+use std::collections::HashMap;
 use super::ObjectHeap;
 
 // ========================================================================== //
@@ -25,11 +27,7 @@ pub struct ObjectDictIterator {
 pub struct ObjectDict;
 
 impl ObjectDict {
-    pub fn __not__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let entries = vm.get_dict_instance(receiver)?;
-        let is_empty = entries.values().all(|b| b.is_empty());
-        Ok(vm.obj_heap.alloc_bool_instance(is_empty))
-    }
+    native_a1!(__not__, entries: &HashMap<u64, Vec<(ObjectHandle, ObjectHandle)>>, { entries.values().all(|b| b.is_empty()) });
 
     pub fn __str__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let all_entries: Vec<(ObjectHandle, ObjectHandle)> = vm.get_dict_instance(receiver)?
@@ -50,21 +48,11 @@ impl ObjectDict {
         Ok(vm.obj_heap.alloc_string_instance(result.into()))
     }
 
-    pub fn __bool__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let entries = vm.get_dict_instance(receiver)?;
-        let has_any = entries.values().any(|b| !b.is_empty());
-        Ok(vm.obj_heap.alloc_bool_instance(has_any))
-    }
+    native_a1!(__bool__, entries: &HashMap<u64, Vec<(ObjectHandle, ObjectHandle)>>, { entries.values().any(|b| !b.is_empty()) });
 
-    pub fn __len__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let entries = vm.get_dict_instance(receiver)?;
-        let total: usize = entries.values().map(|b| b.len()).sum();
-        Ok(vm.obj_heap.alloc_integer_instance(total as i64))
-    }
+    native_a1!(__len__, entries: &HashMap<u64, Vec<(ObjectHandle, ObjectHandle)>>, { entries.values().map(|b| b.len()).sum::<usize>() as i64 });
 
-    pub fn len(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        Self::__len__(vm, receiver)
-    }
+    pub fn len(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> { Self::__len__(vm, receiver) }
 
     pub fn __getitem__(vm: &mut VirtualMachine, receiver: ObjectHandle, key: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let hash = vm.__hash__(key)?;
