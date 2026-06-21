@@ -429,7 +429,7 @@ impl ObjectString {
     native_a1!(is_decimal, s: &ShrString, { !s.is_empty() && s.chars().all(|c| c.is_ascii_digit()) });
     native_a1!(is_digit, s: &ShrString, { !s.is_empty() && s.chars().all(|c| c.is_ascii_digit()) });
     native_a1!(is_numeric, s: &ShrString, { !s.is_empty() && s.chars().all(|c| c.is_numeric()) });
-    native_a1!(is_space, s: &ShrString, { !s.is_empty() && s.chars().all(|c| c.is_whitespace()) });
+    native_a1!(is_whitespace, s: &ShrString, { !s.is_empty() && s.chars().all(|c| c.is_whitespace()) });
 
     /// `string.is_lower()` — at least one cased character exists and all cased
     /// characters are lowercase.
@@ -574,7 +574,7 @@ pub fn register_string_builtins(heap: &mut ObjectHeap) {
     heap.register_native_method(sc, "is_decimal",   NativeFunction::a1(ObjectString::is_decimal));
     heap.register_native_method(sc, "is_digit",     NativeFunction::a1(ObjectString::is_digit));
     heap.register_native_method(sc, "is_numeric",   NativeFunction::a1(ObjectString::is_numeric));
-    heap.register_native_method(sc, "is_space",     NativeFunction::a1(ObjectString::is_space));
+    heap.register_native_method(sc, "is_whitespace",NativeFunction::a1(ObjectString::is_whitespace));
     heap.register_native_method(sc, "is_lower",     NativeFunction::a1(ObjectString::is_lower));
     heap.register_native_method(sc, "is_upper",     NativeFunction::a1(ObjectString::is_upper));
     heap.register_native_method(sc, "is_title",     NativeFunction::a1(ObjectString::is_title));
@@ -611,17 +611,6 @@ pub fn register_string_builtins(heap: &mut ObjectHeap) {
     heap.register_native_method(sc, "rstrip",         NativeFunction::a1(ObjectString::trim_end));
     heap.register_native_method(sc, "index_of",       NativeFunction::a2(ObjectString::find));
     heap.register_native_method(sc, "last_index_of",  NativeFunction::a2(ObjectString::rfind));
-    // Python-style character-class aliases
-    heap.register_native_method(sc, "isalnum",    NativeFunction::a1(ObjectString::is_alnum));
-    heap.register_native_method(sc, "isalpha",    NativeFunction::a1(ObjectString::is_alpha));
-    heap.register_native_method(sc, "isascii",    NativeFunction::a1(ObjectString::is_ascii));
-    heap.register_native_method(sc, "isdecimal",  NativeFunction::a1(ObjectString::is_decimal));
-    heap.register_native_method(sc, "isdigit",    NativeFunction::a1(ObjectString::is_digit));
-    heap.register_native_method(sc, "isnumeric",  NativeFunction::a1(ObjectString::is_numeric));
-    heap.register_native_method(sc, "isspace",    NativeFunction::a1(ObjectString::is_space));
-    heap.register_native_method(sc, "islower",    NativeFunction::a1(ObjectString::is_lower));
-    heap.register_native_method(sc, "isupper",    NativeFunction::a1(ObjectString::is_upper));
-    heap.register_native_method(sc, "istitle",    NativeFunction::a1(ObjectString::is_title));
 
     // String-iterator class
     let sic = heap.string_iter_class;
@@ -1268,10 +1257,10 @@ mod tests {
     #[test]
     fn test_is_space() {
         let mut vm = VirtualMachine::new();
-        assert!(call_a1_bool(&mut vm, ObjectString::is_space, "   "));
-        assert!(call_a1_bool(&mut vm, ObjectString::is_space, "\t\n\r"));
-        assert!(!call_a1_bool(&mut vm, ObjectString::is_space, " a "));
-        assert!(!call_a1_bool(&mut vm, ObjectString::is_space, ""));
+        assert!(call_a1_bool(&mut vm, ObjectString::is_whitespace, "   "));
+        assert!(call_a1_bool(&mut vm, ObjectString::is_whitespace, "\t\n\r"));
+        assert!(!call_a1_bool(&mut vm, ObjectString::is_whitespace, " a "));
+        assert!(!call_a1_bool(&mut vm, ObjectString::is_whitespace, ""));
     }
 
     #[test]

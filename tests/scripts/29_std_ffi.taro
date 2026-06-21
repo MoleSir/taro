@@ -3,42 +3,44 @@
 // === 1. Import std/ffi ===
 print("=== import std/ffi ===");
 import "std/ffi";
-print(ffi);                       // module instance
+print(ffi != nil);                // true
 
 // === 2. dlopen — load libm ===
 print("=== dlopen libm ===");
 var lib = ffi.dlopen("libm.so.6");
-print(lib);                       // library handle
 print(lib != nil);                // true
 
-// === 3. dlsym — get cos function ===
-print("=== dlsym cos ===");
-var cos = ffi.dlsym(lib, "cos");
-print(cos);                       // pointer address (integer)
-print(cos != 0);                  // true
-
-// === 4. call — cos(0.0) ===
-print("=== call cos(0.0) ===");
-var r = ffi.call(cos, "double", ["double"], [0.0]);
+// === 3. bind — cos function ===
+print("=== bind cos ===");
+var cos = ffi.bind(lib, "cos", "double", ["double"]);
+print(cos != nil);                // true
+var r = cos(0.0);
 print(r);                         // 1.0
 
-// === 5. call — cos(pi) ===
-print("=== call cos(pi) ===");
-var r2 = ffi.call(cos, "double", ["double"], [3.141592653589793]);
+// === 4. bind — cos(pi) ===
+print("=== bind cos(pi) ===");
+var r2 = cos(3.141592653589793);
 print(r2);                        // ~-1.0
 
-// === 6. call — libc abs(int) ===
-print("=== call libc abs ===");
+// === 5. bind — libc abs ===
+print("=== bind libc abs ===");
 var libc = ffi.dlopen("libc.so.6");
-var abs_fn = ffi.dlsym(libc, "abs");
-var a = ffi.call(abs_fn, "int32", ["int32"], [-42]);
+var abs_fn = ffi.bind(libc, "abs", "int32", ["int32"]);
+var a = abs_fn(-42);
 print(a);                         // 42
 
-// === 7. call — void return ===
-print("=== call void fn ===");
-var srand = ffi.dlsym(libc, "srand");
-var v = ffi.call(srand, "void", ["uint32"], [12345]);
+// === 6. bind — void return ===
+print("=== bind void fn ===");
+var srand = ffi.bind(libc, "srand", "void", ["uint32"]);
+var v = srand(12345);
 print(v);                         // nil
+
+// === 7. struct_def and struct_new ===
+print("=== struct def/new ===");
+var Color = ffi.struct_def(["uint8", "uint8", "uint8", "uint8"]);
+print(Color != nil);              // true
+var c = ffi.struct_new(Color, [255, 128, 64, 255]);
+print(c != nil);                  // true
 
 // === 8. cleanup ===
 print("=== cleanup ===");

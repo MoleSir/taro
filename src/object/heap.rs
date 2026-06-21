@@ -52,6 +52,9 @@ pub struct ObjectHeap {
     /// Class handle for `net.Socket` — stored here so `Server.accept()` can
     /// create new Socket instances without needing access to the net module.
     pub socket_class: ObjectHandle,
+    /// Class handle for FFI bound-function objects.  Registered with a `__call__`
+    /// native method so that `ffi.bind(...)` results are directly callable.
+    pub bound_fn_class: ObjectHandle,
 
     /// Singleton instances for `true` and `false` so repeated use of
     /// boolean literals doesn't allocate.
@@ -91,6 +94,7 @@ impl ObjectHeap {
             bytes_class: ObjectHandle::NIL,
             module_class: ObjectHandle::NIL,
             socket_class: ObjectHandle::NIL,
+            bound_fn_class: ObjectHandle::NIL,
             true_instance: ObjectHandle::NIL,
             false_instance: ObjectHandle::NIL,
             list_iter_class: ObjectHandle::NIL,
@@ -115,6 +119,7 @@ impl ObjectHeap {
         heap.dict_iter_class = heap.alloc_class("ObjectDictIterator");
         heap.set_iter_class = heap.alloc_class("ObjectSetIterator");
         heap.bytes_iter_class = heap.alloc_class("ObjectBytesIterator");
+        heap.bound_fn_class = heap.alloc_class("BoundFn");
 
         // Allocate singleton bool instances (after bool_class exists).
         heap.true_instance = heap.alloc_instance(heap.bool_class, ObjectInstanceData::Bool(true));

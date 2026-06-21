@@ -1,0 +1,30 @@
+import "std/ffi";
+
+var lib = ffi.dlopen("libraylib.so.6.0.0");
+
+// Bind once — CIF is cached, no per-call string parsing
+var init_window        = ffi.bind(lib, "InitWindow", "void", ["int32", "int32", "cstring"]);
+var close_window       = ffi.bind(lib, "CloseWindow", "void", []);
+var window_should_close = ffi.bind(lib, "WindowShouldClose", "bool", []);
+var begin_drawing      = ffi.bind(lib, "BeginDrawing", "void", []);
+var end_drawing        = ffi.bind(lib, "EndDrawing", "void", []);
+
+// Color = { r: u8, g: u8, b: u8, a: u8 }
+var Color = ffi.struct_def(["uint8", "uint8", "uint8", "uint8"]);
+var clear_background = ffi.bind(lib, "ClearBackground", "void", [Color]);
+
+init_window(800, 450, "raylib [core] example - basic window");
+
+while !window_should_close() {
+    begin_drawing();
+
+    var bg = ffi.struct_new(Color, [245, 245, 245, 255]);
+    clear_background(bg);
+
+    end_drawing();
+}
+
+close_window();
+
+
+ffi.dlclose(lib);

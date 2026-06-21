@@ -8,10 +8,21 @@
 //! ```taro
 //! import "std/ffi";
 //!
-//! lib  = ffi.dlopen("libm.so.6");        // load a dynamic library
-//! func = ffi.dlsym(lib, "cos");           // get a function pointer (int64)
-//! val  = ffi.call(func, "double", ["double"], [0.0]);  // => 1.0
-//! ffi.dlclose(lib);                       // close the library
+//! // Low-level: raw dlopen/dlsym/call
+//! lib  = ffi.dlopen("libm.so.6");
+//! func = ffi.dlsym(lib, "cos");
+//! val  = ffi.call(func, "double", ["double"], [0.0]);
+//!
+//! // High-level: bind caches the CIF — no per-call string parsing
+//! cos = ffi.bind(lib, "cos", "double", ["double"]);
+//! val = cos(0.0);               // callable directly
+//!
+//! // Struct support
+//! Color = ffi.struct_def(["uint8", "uint8", "uint8", "uint8"]);
+//! c     = ffi.struct_new(Color, [255, 0, 0, 255]);
+//! clear_bg = ffi.bind(lib, "ClearBackground", "void", [Color]);
+//! clear_bg(c);                  // struct by value
+//! ffi.dlclose(lib);
 //! ```
 
 use std::collections::HashMap;
@@ -24,8 +35,6 @@ use crate::vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine};
 // LibraryHandle — stores a loaded dynamic library on the GC heap
 // ---------------------------------------------------------------------------
 
-/// Wrapper so a [`libloading::Library`] can be stored inside a Taro
-/// `ObjectInstanceData::Native` slot.
 struct LibraryHandle {
     lib: libloading::Library,
 }
@@ -37,8 +46,129 @@ impl LibraryHandle {
 }
 
 impl crate::object::ToNativeData for LibraryHandle {
-    fn mark_inner_object(&self, _heap: &mut crate::object::ObjectHeap) {
-        // LibraryHandle owns no ObjectHandle references.
+    fn mark_inner_object(&self, _heap: &mut crate::object::ObjectHeap) {}
+}
+
+// ---------------------------------------------------------------------------
+// StructDef — C struct layout descriptor
+// ---------------------------------------------------------------------------
+
+struct StructDef {
+    field_types: Vec<String>,
+    offsets: Vec<usize>,
+    size: usize,
+    #[allow(dead_code)]
+    alignment: usize,
+}
+
+impl StructDef {
+    fn from_field_types(type_names: &[String]) -> RuntimeResult<Self> {
+        let mut offsets = Vec::with_capacity(type_names.len());
+        let mut offset: usize = 0;
+        let mut max_align: usize = 1;
+
+        for name in type_names {
+            let (size, align) = scalar_size_align(name)?;
+            offset = (offset + align - 1) / align * align;
+            offsets.push(offset);
+            offset += size;
+            if align > max_align {
+                max_align = align;
+            }
+        }
+        let total_size = (offset + max_align - 1) / max_align * max_align;
+        Ok(Self {
+            field_types: type_names.to_vec(),
+            offsets,
+            size: total_size,
+            alignment: max_align,
+        })
+    }
+}
+
+impl crate::object::ToNativeData for StructDef {
+    fn mark_inner_object(&self, _heap: &mut crate::object::ObjectHeap) {}
+}
+
+// ---------------------------------------------------------------------------
+// StructValue — a concrete struct instance (raw bytes)
+// ---------------------------------------------------------------------------
+
+struct StructValue {
+    data: Vec<u8>,
+}
+
+impl StructValue {
+    fn new(data: Vec<u8>) -> Self {
+        Self { data }
+    }
+}
+
+impl crate::object::ToNativeData for StructValue {
+    fn mark_inner_object(&self, _heap: &mut crate::object::ObjectHeap) {}
+}
+
+// ---------------------------------------------------------------------------
+// ArgTypeInfo — pre-parsed type descriptor (no strings at call time)
+// ---------------------------------------------------------------------------
+
+/// Describes a single argument's C type for marshalling.  Pre-parsed at
+/// `bind` time so that per-call marshalling does zero string comparisons.
+#[derive(Clone)]
+enum ArgTypeInfo {
+    Scalar(String),
+    Struct(Vec<String>), // field type names
+}
+
+impl ArgTypeInfo {
+    fn to_ffi_type(&self) -> RuntimeResult<libffi::middle::Type> {
+        match self {
+            ArgTypeInfo::Scalar(s) => str_to_ffi_type(s),
+            ArgTypeInfo::Struct(fields) => {
+                let tys: Vec<libffi::middle::Type> = fields
+                    .iter()
+                    .map(|s| str_to_ffi_type(s))
+                    .collect::<RuntimeResult<_>>()?;
+                Ok(libffi::middle::Type::structure(tys))
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// BoundFunction — a callable C function with pre-parsed type info
+// ---------------------------------------------------------------------------
+
+/// Stored on the GC heap as `Native` data.  At call time we rebuild the
+/// `libffi::Cif` from the pre-parsed `arg_infos` — the rebuild is cheap
+/// (no string parsing), and it sidesteps borrow-checker issues with caching
+/// the CIF itself.
+struct BoundFunction {
+    func_ptr: *const c_void,
+    arg_infos: Vec<ArgTypeInfo>,
+    ret_type: String,
+}
+
+unsafe impl Send for BoundFunction {}
+unsafe impl Sync for BoundFunction {}
+
+impl crate::object::ToNativeData for BoundFunction {
+    fn mark_inner_object(&self, _heap: &mut crate::object::ObjectHeap) {}
+}
+
+// ---------------------------------------------------------------------------
+// Scalar type helpers
+// ---------------------------------------------------------------------------
+
+fn scalar_size_align(name: &str) -> RuntimeResult<(usize, usize)> {
+    match name {
+        "int8" | "uint8" | "bool" => Ok((1, 1)),
+        "int16" | "uint16" => Ok((2, 2)),
+        "int32" | "uint32" | "float" => Ok((4, 4)),
+        "int64" | "uint64" | "double" | "pointer" | "cstring" => Ok((8, 8)),
+        _ => Err(RuntimeErrorKind::FfiError(format!(
+            "unknown C type '{name}'"
+        ))),
     }
 }
 
@@ -46,13 +176,6 @@ impl crate::object::ToNativeData for LibraryHandle {
 // C-value storage for argument marshalling
 // ---------------------------------------------------------------------------
 
-/// Heterogeneous storage for C argument values.
-///
-/// Each variant holds a Rust-native representation of a C value.  We build a
-/// `Vec<CValue>` from the Taro arguments, then borrow each element to produce
-/// the `libffi::middle::Arg` slice required by `Cif::call`.  The `CValue`s
-/// **must** outlive the actual FFI call — which is guaranteed because they are
-/// locals in `ffi_call_impl`.
 enum CValue {
     I8(i8),
     I16(i16),
@@ -65,18 +188,15 @@ enum CValue {
     F32(f32),
     F64(f64),
     Bool(u8),
-    /// `*const c_void` (generic pointer / function pointer / opaque address).
     Pointer(*const c_void),
-    /// NUL-terminated C string.  `cstring` owns the allocation; `ptr` is the
-    /// pointer we actually pass to `arg()` so we can take a stable reference.
     CString {
         _cstring: CString,
         ptr: *const c_char,
     },
+    Struct { ptr: *const u8 },
 }
 
 impl CValue {
-    /// Return a [`libffi::middle::Arg`] borrowing this value.
     fn as_arg(&self) -> libffi::middle::Arg {
         match self {
             CValue::I8(v) => libffi::middle::arg(v),
@@ -92,6 +212,7 @@ impl CValue {
             CValue::Bool(v) => libffi::middle::arg(v),
             CValue::Pointer(v) => libffi::middle::arg(v),
             CValue::CString { ptr, .. } => libffi::middle::arg(ptr),
+            CValue::Struct { ptr } => libffi::middle::arg(ptr),
         }
     }
 }
@@ -100,7 +221,6 @@ impl CValue {
 // Type-name → libffi Type mapping
 // ---------------------------------------------------------------------------
 
-/// Map a C type name string to the corresponding [`libffi::middle::Type`].
 fn str_to_ffi_type(s: &str) -> RuntimeResult<libffi::middle::Type> {
     match s {
         "int8" => Ok(libffi::middle::Type::i8()),
@@ -114,7 +234,7 @@ fn str_to_ffi_type(s: &str) -> RuntimeResult<libffi::middle::Type> {
         "float" => Ok(libffi::middle::Type::f32()),
         "double" => Ok(libffi::middle::Type::f64()),
         "pointer" => Ok(libffi::middle::Type::pointer()),
-        "cstring" => Ok(libffi::middle::Type::pointer()), // char* = pointer
+        "cstring" => Ok(libffi::middle::Type::pointer()),
         "bool" => Ok(libffi::middle::Type::u8()),
         _ => Err(RuntimeErrorKind::FfiError(format!(
             "unknown C type '{s}'. Supported: int8 int16 int32 int64 uint8 uint16 uint32 uint64 float double pointer cstring bool"
@@ -122,8 +242,6 @@ fn str_to_ffi_type(s: &str) -> RuntimeResult<libffi::middle::Type> {
     }
 }
 
-/// Map the return-type name to an ffi Type.  `"void"` is only valid here
-/// (not for arguments).
 fn str_to_ret_ffi_type(s: &str) -> RuntimeResult<libffi::middle::Type> {
     if s == "void" {
         Ok(libffi::middle::Type::void())
@@ -133,10 +251,9 @@ fn str_to_ret_ffi_type(s: &str) -> RuntimeResult<libffi::middle::Type> {
 }
 
 // ---------------------------------------------------------------------------
-// Taro value ↔ C value conversion
+// Taro value → C value conversion
 // ---------------------------------------------------------------------------
 
-/// Convert a single Taro value into a [`CValue`] according to `type_name`.
 fn taro_to_cvalue(
     vm: &VirtualMachine,
     handle: ObjectHandle,
@@ -204,7 +321,30 @@ fn taro_to_cvalue(
     }
 }
 
-/// Extract an `f64` from a numeric handle (int or float).
+/// Convert a Taro value to a `CValue` given an [`ArgTypeInfo`].
+fn taro_to_cvalue_by_info(
+    vm: &VirtualMachine,
+    handle: ObjectHandle,
+    info: &ArgTypeInfo,
+) -> RuntimeResult<CValue> {
+    match info {
+        ArgTypeInfo::Scalar(s) => taro_to_cvalue(vm, handle, s),
+        ArgTypeInfo::Struct(_) => taro_to_struct_cvalue(vm, handle),
+    }
+}
+
+fn taro_to_struct_cvalue(
+    vm: &VirtualMachine,
+    handle: ObjectHandle,
+) -> RuntimeResult<CValue> {
+    let sv = vm.obj_heap
+        .get_native::<StructValue>(handle)
+        .ok_or_else(|| RuntimeErrorKind::FfiError(
+            "expected struct value".into()
+        ))?;
+    Ok(CValue::Struct { ptr: sv.data.as_ptr() })
+}
+
 fn as_f64(vm: &VirtualMachine, handle: ObjectHandle) -> RuntimeResult<f64> {
     if let Ok(v) = vm.get_integer_instance(handle) {
         Ok(*v as f64)
@@ -219,15 +359,41 @@ fn as_f64(vm: &VirtualMachine, handle: ObjectHandle) -> RuntimeResult<f64> {
 }
 
 // ---------------------------------------------------------------------------
-// Core FFI call implementation
+// Arg-type descriptor for ffi.call (string or StructDef handle)
 // ---------------------------------------------------------------------------
 
-/// Dynamically call a C function via libffi.
-///
-/// * `func_ptr_raw` — raw function pointer address (obtained from `dlsym`).
-/// * `ret_type_str`  — C return-type name.
-/// * `arg_type_handles` — list of string handles naming C argument types.
-/// * `arg_handles`       — list of Taro values to pass as arguments.
+enum ArgTypeDescriptor {
+    Scalar(String),
+    Struct(StructDefRef),
+}
+
+struct StructDefRef {
+    field_types: Vec<String>,
+}
+
+impl From<&StructDef> for StructDefRef {
+    fn from(def: &StructDef) -> Self {
+        Self {
+            field_types: def.field_types.clone(),
+        }
+    }
+}
+
+impl StructDefRef {
+    fn to_ffi_type(&self) -> RuntimeResult<libffi::middle::Type> {
+        let fields: Vec<libffi::middle::Type> = self
+            .field_types
+            .iter()
+            .map(|s| str_to_ffi_type(s))
+            .collect::<RuntimeResult<_>>()?;
+        Ok(libffi::middle::Type::structure(fields))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Low-level ffi.call implementation
+// ---------------------------------------------------------------------------
+
 fn ffi_call_impl(
     vm: &mut VirtualMachine,
     func_ptr_raw: i64,
@@ -235,46 +401,137 @@ fn ffi_call_impl(
     arg_type_handles: &[ObjectHandle],
     arg_handles: &[ObjectHandle],
 ) -> RuntimeResult<ObjectHandle> {
-    // Resolve argument type strings.
-    let mut arg_type_strs: Vec<String> = Vec::with_capacity(arg_type_handles.len());
+    let mut arg_descs: Vec<ArgTypeDescriptor> = Vec::with_capacity(arg_type_handles.len());
     for &h in arg_type_handles {
-        let s = vm.get_string_instance(h)?.as_str().to_string();
-        arg_type_strs.push(s);
+        if let Some(def) = vm.obj_heap.get_native::<StructDef>(h) {
+            arg_descs.push(ArgTypeDescriptor::Struct(def.into()));
+        } else if let Ok(s) = vm.get_string_instance(h) {
+            arg_descs.push(ArgTypeDescriptor::Scalar(s.as_str().to_string()));
+        } else {
+            return Err(RuntimeErrorKind::FfiError(format!(
+                "expected type string or struct def, got {}",
+                vm.value_type_name(h)
+            )));
+        }
     }
 
-    if arg_handles.len() != arg_type_strs.len() {
+    if arg_handles.len() != arg_descs.len() {
         return Err(RuntimeErrorKind::FfiError(format!(
             "argument count mismatch: {} value(s) but {} type(s)",
             arg_handles.len(),
-            arg_type_strs.len()
+            arg_descs.len()
         )));
     }
 
-    // --- Build CIF (Call Interface) ---
     let mut ffi_arg_types: Vec<libffi::middle::Type> = Vec::new();
-    for s in &arg_type_strs {
-        ffi_arg_types.push(str_to_ffi_type(s)?);
+    for desc in &arg_descs {
+        match desc {
+            ArgTypeDescriptor::Scalar(s) => ffi_arg_types.push(str_to_ffi_type(s)?),
+            ArgTypeDescriptor::Struct(def) => ffi_arg_types.push(def.to_ffi_type()?),
+        }
     }
     let ffi_ret_type = str_to_ret_ffi_type(ret_type_str)?;
     let cif = libffi::middle::Cif::new(ffi_arg_types, ffi_ret_type);
 
-    // --- Marshal arguments into C values ---
     let mut c_values: Vec<CValue> = Vec::with_capacity(arg_handles.len());
-    for (i, (&handle, type_str)) in arg_handles.iter().zip(&arg_type_strs).enumerate() {
-        let cv = taro_to_cvalue(vm, handle, type_str)
-            .map_err(|e| {
-                RuntimeErrorKind::FfiError(format!(
-                    "argument {i}: {e}"
-                ))
-            })?;
+    for (i, (desc, &value_handle)) in arg_descs.iter().zip(arg_handles).enumerate() {
+        let cv = match desc {
+            ArgTypeDescriptor::Scalar(type_str) => {
+                taro_to_cvalue(vm, value_handle, type_str)
+                    .map_err(|e| RuntimeErrorKind::FfiError(format!("argument {i}: {e}")))?
+            }
+            ArgTypeDescriptor::Struct(_def) => {
+                taro_to_struct_cvalue(vm, value_handle)
+                    .map_err(|e| RuntimeErrorKind::FfiError(format!("argument {i}: {e}")))?
+            }
+        };
         c_values.push(cv);
     }
 
-    // Build Arg slice (references into c_values).
-    let args: Vec<libffi::middle::Arg> = c_values.iter().map(|cv| cv.as_arg()).collect();
-    let code_ptr = libffi::middle::CodePtr(func_ptr_raw as *mut c_void);
+    dispatch_call(vm, &cif, ret_type_str, func_ptr_raw as *mut c_void, &c_values)
+}
 
-    // --- Call (dispatch on return type at compile time) ---
+// ---------------------------------------------------------------------------
+// Bound function call — invoked via __call__ on the BoundFn class
+// ---------------------------------------------------------------------------
+
+/// Native method behind `BoundFn.__call__`.  Receives `(self, args...)`,
+/// extracts the [`BoundFunction`], marshals the remaining arguments and
+/// invokes the cached CIF.
+fn bound_fn_call(
+    vm: &mut VirtualMachine,
+    args: &[ObjectHandle],
+) -> RuntimeResult<ObjectHandle> {
+    if args.is_empty() {
+        return Err(RuntimeErrorKind::FfiError(
+            "bound function call: missing self".into(),
+        ));
+    }
+
+    let self_handle = args[0];
+    let user_args = &args[1..];
+
+    // Snapshot everything we need from the BoundFunction so we can release
+    // the immutable borrow on vm.obj_heap before we need &mut vm for dispatch.
+    let (func_ptr, expected, arg_infos, ret_type) = {
+        let bound = vm.obj_heap
+            .get_native::<BoundFunction>(self_handle)
+            .ok_or_else(|| RuntimeErrorKind::FfiError(
+                "bound function call: self is not a BoundFunction".into(),
+            ))?;
+        (
+            bound.func_ptr,
+            bound.arg_infos.len(),
+            bound.arg_infos.clone(),
+            bound.ret_type.clone(),
+        )
+    };
+
+    if user_args.len() != expected {
+        return Err(RuntimeErrorKind::FfiError(format!(
+            "bound function expects {expected} argument(s), got {}",
+            user_args.len()
+        )));
+    }
+
+    // Marshal arguments using the cached type info (needs &vm only).
+    let mut c_values: Vec<CValue> = Vec::with_capacity(expected);
+    for (i, (info, &handle)) in arg_infos.iter().zip(user_args).enumerate() {
+        let cv = taro_to_cvalue_by_info(vm, handle, info)
+            .map_err(|e| RuntimeErrorKind::FfiError(format!("argument {i}: {e}")))?;
+        c_values.push(cv);
+    }
+
+    // Rebuild the CIF from the type info — the CIF is cheap to build and this
+    // avoids storing a non-Send+Sync object on the GC heap.
+    let mut ffi_arg_types = Vec::with_capacity(arg_infos.len());
+    for info in &arg_infos {
+        ffi_arg_types.push(info.to_ffi_type()?);
+    }
+    let ffi_ret = str_to_ret_ffi_type(&ret_type)?;
+    let cif = libffi::middle::Cif::new(ffi_arg_types, ffi_ret);
+
+    dispatch_call(
+        vm,
+        &cif,
+        &ret_type,
+        func_ptr as *mut c_void,
+        &c_values,
+    )
+}
+
+/// Common tail: build `Arg` slice, construct `CodePtr`, call through `Cif`,
+/// and convert the return value back to a Taro object.
+fn dispatch_call(
+    vm: &mut VirtualMachine,
+    cif: &libffi::middle::Cif,
+    ret_type_str: &str,
+    func_ptr: *mut c_void,
+    c_values: &[CValue],
+) -> RuntimeResult<ObjectHandle> {
+    let args: Vec<libffi::middle::Arg> = c_values.iter().map(|cv| cv.as_arg()).collect();
+    let code_ptr = libffi::middle::CodePtr(func_ptr);
+
     let result: ObjectHandle = match ret_type_str {
         "void" => {
             unsafe { cif.call::<()>(code_ptr, &args) };
@@ -350,73 +607,45 @@ fn ffi_call_impl(
 // Native-function implementations (exported to Taro)
 // ---------------------------------------------------------------------------
 
-fn dlopen(
-    vm: &mut VirtualMachine,
-    path: ObjectHandle,
-) -> RuntimeResult<ObjectHandle> {
+fn dlopen(vm: &mut VirtualMachine, path: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     let path_str = vm.get_string_instance(path)?;
     let lib = unsafe { libloading::Library::new(path_str.as_str()) }
         .map_err(|e| RuntimeErrorKind::FfiError(format!("dlopen: {e}")))?;
 
-    // Allocate a Fields instance to represent the library object.  We embed the
-    // LibraryHandle as native data so the library is kept alive as long as the
-    // Taro object exists.
     let lib_handle = LibraryHandle::new(lib);
     let native = crate::object::NativeData::new(lib_handle);
-
-    // Use a class-less instance with Native data — the caller just needs the
-    // handle for dlsym/dlclose.
     let obj = vm.obj_heap.alloc_instance(
-        vm.obj_heap.module_class, // reuse module_class as a generic container
+        vm.obj_heap.module_class,
         crate::object::ObjectInstanceData::Native(native),
     );
     Ok(obj)
 }
 
-fn dlsym(
-    vm: &mut VirtualMachine,
-    library_handle: ObjectHandle,
-    name: ObjectHandle,
-) -> RuntimeResult<ObjectHandle> {
+fn dlsym(vm: &mut VirtualMachine, library_handle: ObjectHandle, name: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     let name_str = vm.get_string_instance(name)?;
     let lib = vm.obj_heap
         .get_native::<LibraryHandle>(library_handle)
         .ok_or_else(|| RuntimeErrorKind::FfiError("dlsym: not a library handle".into()))?;
 
     unsafe {
-        // Convert name to a null-terminated byte string for dlsym.
         let symbol: libloading::Symbol<*const c_void> = lib.lib
             .get(name_str.as_str().as_bytes())
             .map_err(|e| RuntimeErrorKind::FfiError(format!("dlsym('{}'): {e}", name_str)))?;
 
-        // Return the raw function pointer as an int64.
         let ptr_addr = *symbol as usize as i64;
         Ok(vm.obj_heap.alloc_integer_instance(ptr_addr))
     }
 }
 
-fn dlclose(
-    vm: &mut VirtualMachine,
-    library_handle: ObjectHandle,
-) -> RuntimeResult<ObjectHandle> {
-    // Take ownership of the library, which will drop it (and close the library).
+fn dlclose(vm: &mut VirtualMachine, library_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     let lib = vm.obj_heap
         .get_native::<LibraryHandle>(library_handle)
         .ok_or_else(|| RuntimeErrorKind::FfiError("dlclose: not a library handle".into()))?;
-
-    // Note: the actual `dlclose` happens when the GC collects the library
-    // handle.  We can't force-close a Library that's behind a shared (GC-managed)
-    // reference — this matches the safe semantics of the language (no
-    // use-after-free by construction).
     let _ = lib;
     Ok(ObjectHandle::NIL)
 }
 
-fn call(
-    vm: &mut VirtualMachine,
-    args: &[ObjectHandle],
-) -> RuntimeResult<ObjectHandle> {
-    // Signature: ffi.call(func_ptr, ret_type, arg_types_list, args_list)
+fn ffi_call(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
     if args.len() < 3 {
         return Err(RuntimeErrorKind::FfiError(
             "ffi.call(func_ptr, ret_type, arg_types, args) — need at least 3 arguments".into(),
@@ -425,11 +654,7 @@ fn call(
 
     let func_ptr = vm.get_integer_instance(args[0]).copied()?;
     let ret_type = vm.get_string_instance(args[1])?.as_str().to_string();
-
-    // args[2] is the list of argument-type strings.
     let arg_types_list: Vec<ObjectHandle> = vm.get_list_instance(args[2])?.clone();
-
-    // args[3] is the list of actual Taro values.
     let arg_values: Vec<ObjectHandle> =
         if args.len() > 3 {
             vm.get_list_instance(args[3])?.clone()
@@ -441,22 +666,221 @@ fn call(
 }
 
 // ---------------------------------------------------------------------------
+// struct_def & struct_new
+// ---------------------------------------------------------------------------
+
+fn struct_def(
+    vm: &mut VirtualMachine,
+    field_types_list: ObjectHandle,
+) -> RuntimeResult<ObjectHandle> {
+    let handles = vm.get_list_instance(field_types_list)?;
+    let mut type_names = Vec::with_capacity(handles.len());
+    for &h in handles {
+        let s = vm.get_string_instance(h)?.as_str().to_string();
+        type_names.push(s);
+    }
+
+    let def = StructDef::from_field_types(&type_names)?;
+    let native = crate::object::NativeData::new(def);
+    let obj = vm.obj_heap.alloc_instance(
+        vm.obj_heap.module_class,
+        crate::object::ObjectInstanceData::Native(native),
+    );
+    Ok(obj)
+}
+
+fn struct_new(
+    vm: &mut VirtualMachine,
+    def_handle: ObjectHandle,
+    values_list: ObjectHandle,
+) -> RuntimeResult<ObjectHandle> {
+    let def = vm.obj_heap
+        .get_native::<StructDef>(def_handle)
+        .ok_or_else(|| RuntimeErrorKind::FfiError(
+            "struct_new: first argument must be a struct def".into(),
+        ))?;
+
+    let value_handles = vm.get_list_instance(values_list)?;
+
+    if value_handles.len() != def.field_types.len() {
+        return Err(RuntimeErrorKind::FfiError(format!(
+            "struct_new: expected {} values, got {}",
+            def.field_types.len(),
+            value_handles.len()
+        )));
+    }
+
+    let mut data = vec![0u8; def.size];
+    for (i, (&value_handle, field_type)) in value_handles.iter().zip(&def.field_types).enumerate() {
+        let offset = def.offsets[i];
+        write_scalar_to_buffer(vm, value_handle, field_type, &mut data, offset)
+            .map_err(|e| RuntimeErrorKind::FfiError(format!(
+                "struct_new field {i}: {e}"
+            )))?;
+    }
+
+    let sv = StructValue::new(data);
+    let native = crate::object::NativeData::new(sv);
+    let obj = vm.obj_heap.alloc_instance(
+        vm.obj_heap.module_class,
+        crate::object::ObjectInstanceData::Native(native),
+    );
+    Ok(obj)
+}
+
+fn write_scalar_to_buffer(
+    vm: &VirtualMachine,
+    handle: ObjectHandle,
+    type_name: &str,
+    buf: &mut [u8],
+    offset: usize,
+) -> RuntimeResult<()> {
+    match type_name {
+        "int8" | "uint8" | "bool" => {
+            let v = vm.get_integer_instance(handle).copied()? as i8;
+            buf[offset] = v.to_ne_bytes()[0];
+        }
+        "int16" | "uint16" => {
+            let v = vm.get_integer_instance(handle).copied()? as i16;
+            buf[offset..offset + 2].copy_from_slice(&v.to_ne_bytes());
+        }
+        "int32" | "uint32" => {
+            let v = vm.get_integer_instance(handle).copied()? as i32;
+            buf[offset..offset + 4].copy_from_slice(&v.to_ne_bytes());
+        }
+        "int64" | "uint64" => {
+            let v = vm.get_integer_instance(handle).copied()?;
+            buf[offset..offset + 8].copy_from_slice(&v.to_ne_bytes());
+        }
+        "float" => {
+            let v = as_f64(vm, handle)? as f32;
+            buf[offset..offset + 4].copy_from_slice(&v.to_ne_bytes());
+        }
+        "double" => {
+            let v = as_f64(vm, handle)?;
+            buf[offset..offset + 8].copy_from_slice(&v.to_ne_bytes());
+        }
+        "pointer" | "cstring" => {
+            let v = vm.get_integer_instance(handle).copied()?;
+            buf[offset..offset + 8].copy_from_slice(&v.to_ne_bytes());
+        }
+        _ => return Err(RuntimeErrorKind::FfiError(format!(
+            "struct field type not supported: '{type_name}'"
+        ))),
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------
+// ffi.bind — create a cached, callable bound function
+// ---------------------------------------------------------------------------
+
+/// `ffi.bind(lib, symbol_name, ret_type, arg_types) -> BoundFunction`
+///
+/// Resolves the symbol, parses/stores the type descriptors, builds and caches
+/// the `libffi::Cif`, and returns a `BoundFn` instance that can be called
+/// directly from Taro (via its `__call__` method).
+fn bind(
+    vm: &mut VirtualMachine,
+    library_handle: ObjectHandle,
+    name: ObjectHandle,
+    ret_type: ObjectHandle,
+    arg_types_list: ObjectHandle,
+) -> RuntimeResult<ObjectHandle> {
+    // --- Resolve function pointer ---
+    let name_str = vm.get_string_instance(name)?;
+    let lib = vm.obj_heap
+        .get_native::<LibraryHandle>(library_handle)
+        .ok_or_else(|| RuntimeErrorKind::FfiError("bind: not a library handle".into()))?;
+
+    let func_ptr: *const c_void = unsafe {
+        let symbol: libloading::Symbol<*const c_void> = lib.lib
+            .get(name_str.as_str().as_bytes())
+            .map_err(|e| RuntimeErrorKind::FfiError(format!(
+                "bind('{}'): {e}", name_str
+            )))?;
+        *symbol
+    };
+
+    // --- Parse return type ---
+    let ret_type_str = vm.get_string_instance(ret_type)?.as_str().to_string();
+    // Validate the return type is known.
+    str_to_ret_ffi_type(&ret_type_str)?;
+
+    // --- Parse argument types ---
+    let arg_type_handles = vm.get_list_instance(arg_types_list)?;
+    let mut arg_infos = Vec::with_capacity(arg_type_handles.len());
+    for &h in arg_type_handles {
+        if let Some(def) = vm.obj_heap.get_native::<StructDef>(h) {
+            arg_infos.push(ArgTypeInfo::Struct(def.field_types.clone()));
+        } else if let Ok(s) = vm.get_string_instance(h) {
+            let type_str = s.as_str().to_string();
+            // Validate the scalar type.
+            str_to_ffi_type(&type_str)?;
+            arg_infos.push(ArgTypeInfo::Scalar(type_str));
+        } else {
+            return Err(RuntimeErrorKind::FfiError(format!(
+                "bind: expected type string or struct def, got {}",
+                vm.value_type_name(h)
+            )));
+        }
+    }
+
+    // --- Build BoundFunction ---
+    let bound = BoundFunction {
+        func_ptr,
+        arg_infos,
+        ret_type: ret_type_str,
+    };
+    let native = crate::object::NativeData::new(bound);
+    let obj = vm.obj_heap.alloc_instance(
+        vm.obj_heap.bound_fn_class,
+        crate::object::ObjectInstanceData::Native(native),
+    );
+    Ok(obj)
+}
+
+// ---------------------------------------------------------------------------
 // Module factory
 // ---------------------------------------------------------------------------
 
 impl VirtualMachine {
-    /// Create the `ffi` std module.
     pub(crate) fn create_ffi_module(&mut self) -> RuntimeResult<ObjectHandle> {
-        let dlopen_fn = self.obj_heap.alloc_native_fn("dlopen", NativeFunction::a1(dlopen));
-        let dlsym_fn = self.obj_heap.alloc_native_fn("dlsym", NativeFunction::a2(dlsym));
-        let dlclose_fn = self.obj_heap.alloc_native_fn("dlclose", NativeFunction::a1(dlclose));
-        let call_fn = self.obj_heap.alloc_native_fn("call", NativeFunction::var(call));
+        // Ensure the bound-function class exists and register __call__.
+        // The class may have been GC'd between heap init and module import,
+        // so recreate it lazily if needed.
+        if self.obj_heap.get_class(self.obj_heap.bound_fn_class).is_none() {
+            self.obj_heap.bound_fn_class = self.obj_heap.alloc_class("BoundFn");
+        }
+        let bound_call_fn = self.obj_heap.alloc_native_fn(
+            "__call__",
+            NativeFunction::var(bound_fn_call),
+        );
+        let bfc = self.obj_heap
+            .get_class_mut(self.obj_heap.bound_fn_class)
+            .expect("BoundFn class must exist");
+        bfc.methods.insert(
+            ShrString::new_str("__call__"),
+            crate::object::Method::Native(bound_call_fn),
+        );
+
+        // Export functions.
+        let dlopen_fn      = self.obj_heap.alloc_native_fn("dlopen", NativeFunction::a1(dlopen));
+        let dlsym_fn       = self.obj_heap.alloc_native_fn("dlsym", NativeFunction::a2(dlsym));
+        let dlclose_fn     = self.obj_heap.alloc_native_fn("dlclose", NativeFunction::a1(dlclose));
+        let call_fn        = self.obj_heap.alloc_native_fn("call", NativeFunction::var(ffi_call));
+        let struct_def_fn  = self.obj_heap.alloc_native_fn("struct_def", NativeFunction::a1(struct_def));
+        let struct_new_fn  = self.obj_heap.alloc_native_fn("struct_new", NativeFunction::a2(struct_new));
+        let bind_fn        = self.obj_heap.alloc_native_fn("bind", NativeFunction::a4(bind));
 
         let mut exports: HashMap<ShrString, ObjectHandle> = HashMap::new();
         exports.insert(ShrString::new_str("dlopen"), dlopen_fn);
         exports.insert(ShrString::new_str("dlsym"), dlsym_fn);
         exports.insert(ShrString::new_str("dlclose"), dlclose_fn);
         exports.insert(ShrString::new_str("call"), call_fn);
+        exports.insert(ShrString::new_str("struct_def"), struct_def_fn);
+        exports.insert(ShrString::new_str("struct_new"), struct_new_fn);
+        exports.insert(ShrString::new_str("bind"), bind_fn);
 
         let module = self.obj_heap.alloc_fields_instance(self.obj_heap.module_class, exports);
         Ok(module)
@@ -473,7 +897,6 @@ mod tests {
 
     #[test]
     fn ffi_import_module() {
-        // Basic smoke test: importing "std/ffi" must succeed.
         let mut vm = VirtualMachine::new();
         vm.interpret(r#"import "std/ffi";"#).unwrap();
     }
@@ -487,10 +910,7 @@ mod tests {
             ffi.dlopen("/nonexistent/lib_does_not_exist.so");
             "#,
         );
-        assert!(
-            result.is_err(),
-            "dlopen of nonexistent library should fail"
-        );
+        assert!(result.is_err(), "dlopen of nonexistent library should fail");
     }
 
     #[test]
@@ -537,5 +957,86 @@ mod tests {
             "##
         );
         vm.interpret(&source).expect("ffi_call_void_return should succeed");
+    }
+
+    #[test]
+    fn ffi_struct_def_and_new() {
+        let mut vm = VirtualMachine::new();
+        let source = r#"
+            import "std/ffi";
+            var Color = ffi.struct_def(["uint8", "uint8", "uint8", "uint8"]);
+            var c = ffi.struct_new(Color, [255, 0, 0, 255]);
+            print(c);
+        "#;
+        vm.interpret(source).expect("ffi_struct_def_and_new should succeed");
+    }
+
+    #[test]
+    fn ffi_bind_cos() {
+        let lib_path = if cfg!(target_os = "linux") {
+            "libm.so.6"
+        } else if cfg!(target_os = "macos") {
+            "libSystem.dylib"
+        } else {
+            return;
+        };
+
+        let mut vm = VirtualMachine::new();
+        let source = format!(
+            r##"
+            import "std/ffi";
+            var lib = ffi.dlopen("{lib_path}");
+            var cos = ffi.bind(lib, "cos", "double", ["double"]);
+            var r = cos(0.0);
+            print(r);
+            "##
+        );
+        vm.interpret(&source).expect("ffi_bind_cos should succeed");
+    }
+
+    #[test]
+    fn ffi_bind_abs() {
+        let lib_path = if cfg!(target_os = "linux") {
+            "libc.so.6"
+        } else if cfg!(target_os = "macos") {
+            "libSystem.dylib"
+        } else {
+            return;
+        };
+
+        let mut vm = VirtualMachine::new();
+        let source = format!(
+            r##"
+            import "std/ffi";
+            var lib = ffi.dlopen("{lib_path}");
+            var abs = ffi.bind(lib, "abs", "int32", ["int32"]);
+            var r = abs(-42);
+            print(r);
+            "##
+        );
+        vm.interpret(&source).expect("ffi_bind_abs should succeed");
+    }
+
+    #[test]
+    fn ffi_bind_void_return() {
+        let lib_path = if cfg!(target_os = "linux") {
+            "libc.so.6"
+        } else if cfg!(target_os = "macos") {
+            "libSystem.dylib"
+        } else {
+            return;
+        };
+
+        let mut vm = VirtualMachine::new();
+        let source = format!(
+            r##"
+            import "std/ffi";
+            var lib = ffi.dlopen("{lib_path}");
+            var srand = ffi.bind(lib, "srand", "void", ["uint32"]);
+            var r = srand(42);
+            print(r);
+            "##
+        );
+        vm.interpret(&source).expect("ffi_bind_void_return should succeed");
     }
 }
