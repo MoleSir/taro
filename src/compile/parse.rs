@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use super::token::{Token, TokenKind};
 use crate::{Chunk, Instruction, ObjectHandle, ObjectHeap, ShrString, UpvalueDesc};
 
@@ -188,6 +190,10 @@ pub struct Parser<'a> {
     /// Stack of active loop contexts.  Non-empty when parsing the body of a
     /// `while` or `for` loop — `break` / `continue` consult the top-most entry.
     loop_stack:   Vec<LoopContext>,
+    /// Names of global variables that have been explicitly declared with
+    /// `var`, `fun`, `class`, or `import` at the top level.  Used to reject
+    /// assignments to undeclared names.
+    declared_globals: HashSet<ShrString>,
 }
 
 /// Result of resolving a variable name to a local slot or upvalue.
@@ -264,6 +270,9 @@ pub enum ParseErrorKind {
 
     #[error("invalid default value — only constant literals (numbers, strings, bools, nil) are supported")]
     InvalidDefaultValue,
+
+    #[error("undefined variable '{0}' — use 'var' to declare it first")]
+    UndefinedVariable(String),
 }
 
 #[derive(Debug)]
@@ -371,6 +380,7 @@ impl<'a> Parser<'a> {
             units: vec![unit],
             current_unit: 0,
             loop_stack: vec![],
+            declared_globals: HashSet::new(),
         }
     }
 
@@ -384,6 +394,7 @@ impl<'a> Parser<'a> {
             units: vec![unit],
             current_unit: 0,
             loop_stack: vec![],
+            declared_globals: HashSet::new(),
         }
     }
 
@@ -524,7 +535,9 @@ impl<'a> Parser<'a> {
             self.add_variable_to_scope(ShrString::new_string(module_name.clone()))?;
             self.mark_local_initialized();
         } else {
-            self.emit(Instruction::DefineGlobal(ShrString::new_string(module_name)));
+            let name = ShrString::new_string(module_name.clone());
+            self.declared_globals.insert(name.clone());
+            self.emit(Instruction::DefineGlobal(name));
         }
 
         self.consume(TokenKind::Semicolon, "Expect ';' after import.")?;
@@ -568,8 +581,9 @@ impl<'a> Parser<'a> {
         if self.cur_unit().scope_depth > 0 {
             self.mark_local_initialized();
         } else {
-            assert!(var_name.is_some());
-            self.emit(Instruction::DefineGlobal(var_name.unwrap()));
+            let name = var_name.unwrap();
+            self.declared_globals.insert(name.clone());
+            self.emit(Instruction::DefineGlobal(name));
         }
         Ok(())
     }
@@ -1529,6 +1543,13 @@ impl<'a> Parser<'a> {
             }
             None => {
                 if can_assign && self.match_token(TokenKind::Equal) {
+                    // Require explicit declaration with `var` before assignment.
+                    if !self.declared_globals.contains(&name) {
+                        bail_error_at_previous!(
+                            self,
+                            ParseErrorKind::UndefinedVariable(name.to_string())
+                        );
+                    }
                     self.parse_expression()?;
                     self.emit(Instruction::SetGlobal(name));
                 } else {

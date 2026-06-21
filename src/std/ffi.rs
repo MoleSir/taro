@@ -507,9 +507,9 @@ mod tests {
         let source = format!(
             r##"
             import "std/ffi";
-            lib = ffi.dlopen("{lib_path}");
-            cos = ffi.dlsym(lib, "cos");
-            r = ffi.call(cos, "double", ["double"], [0.0]);
+            var lib = ffi.dlopen("{lib_path}");
+            var cos = ffi.dlsym(lib, "cos");
+            var r = ffi.call(cos, "double", ["double"], [0.0]);
             print(r);
             "##
         );
@@ -530,9 +530,9 @@ mod tests {
         let source = format!(
             r##"
             import "std/ffi";
-            lib = ffi.dlopen("{lib_path}");
-            srand = ffi.dlsym(lib, "srand");
-            result = ffi.call(srand, "void", ["uint32"], [42]);
+            var lib = ffi.dlopen("{lib_path}");
+            var srand = ffi.dlsym(lib, "srand");
+            var result = ffi.call(srand, "void", ["uint32"], [42]);
             print(result);
             "##
         );
