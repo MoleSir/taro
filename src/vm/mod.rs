@@ -424,17 +424,22 @@ impl VirtualMachine {
                             self.pop_stack()?;
                             self.push_stack(value);
                         } else {
-                            let method = {
-                                let class = self.get_class(instance.class)?;
-                                class
-                                    .methods
-                                    .get(&field_name)
-                                    .copied()
-                                    .ok_or_else(|| RuntimeErrorKind::UndefinedProperty(field_name.to_string()))?
-                            };
-                            let receiver = self.pop_stack()?;
-                            let bound = self.obj_heap.alloc_bound_method(receiver, method);
-                            self.push_stack(bound);
+                            // Try a regular method first.
+                            let class = self.get_class(instance.class)?;
+                            let method = class.methods.get(&field_name).copied();
+                            if let Some(m) = method {
+                                let receiver = self.pop_stack()?;
+                                let bound = self.obj_heap.alloc_bound_method(receiver, m);
+                                self.push_stack(bound);
+                            } else if let Some(_magic) = class.methods.get("__getattr__").copied() {
+                                // Fall back to __getattr__(self, field_name).
+                                let receiver = self.pop_stack()?;
+                                let name_handle = self.obj_heap.alloc_string_instance(ShrString::new_string(field_name.as_str()));
+                                let result = self.dispatch_magic(receiver, "__getattr__", &[name_handle])?;
+                                self.push_stack(result);
+                            } else {
+                                return Err(RuntimeErrorKind::UndefinedProperty(field_name.to_string()));
+                            }
                         }
                     }
                     Object::Class(class) => {
@@ -460,15 +465,26 @@ impl VirtualMachine {
 
             Instruction::SetProperty(field_name) => {
                 let value = self.peek_stack(0)?;
-                let instance = self.peek_stack(1)?;
-                let type_name = self.value_type_name(value);
-                let instance = self.get_instance_mut(instance)?;
-                let fields = instance.get_data_mut::<ObjectFields>().ok_or(RuntimeErrorKind::CannotSetProperty(type_name))?;
-                fields.fields.insert(field_name, value);
+                let instance_handle = self.peek_stack(1)?;
 
-                let value = self.pop_stack()?;
-                self.pop_stack()?;
-                self.push_stack(value);
+                // If the instance has ObjectFields, use the fast path.
+                {
+                    let instance = self.get_instance_mut(instance_handle)?;
+                    if let Some(fields) = instance.get_data_mut::<ObjectFields>() {
+                        fields.fields.insert(field_name, value);
+                        let value = self.pop_stack()?;
+                        self.pop_stack()?;
+                        self.push_stack(value);
+                    } else {
+                        // Not ObjectFields — try __setattr__ magic method.
+                        let _ = instance; // release borrow before dispatch_magic
+                        let name_handle = self.obj_heap.alloc_string_instance(ShrString::new_string(field_name.as_str()));
+                        self.dispatch_magic(instance_handle, "__setattr__", &[name_handle, value])?;
+                        let value = self.pop_stack()?;
+                        self.pop_stack()?;
+                        self.push_stack(value);
+                    }
+                }
             }
 
             Instruction::Inherit => {

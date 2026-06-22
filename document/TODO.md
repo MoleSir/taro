@@ -24,3 +24,11 @@
   - [ ] path
   - [x] logging
   - [x] argparse
+
+
+impl:
+
+- [x] 整理 vm 中的 magic
+- [x] __new__ 和 __init__ 的各种情况
+- [x] __init__ 应该没有返回值
+- [x] 缓存 Struct 值？  

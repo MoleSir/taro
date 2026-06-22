@@ -1,18 +1,18 @@
-//! C struct definition, creation, and marshalling.
+//! C struct definition, creation, and field access.
 //!
-//! Struct instances use `ObjectFields` for storage, which enables native
-//! `.field` property access via the VM's existing GetProperty path — no VM
-//! changes needed.  A hidden `__struct_def__` field stores a back-link to the
-//! [`StructDef`] so that FFI marshalling can recover type metadata and rebuild
-//! the raw byte buffer on demand.
+//! Struct instances carry a dedicated [`Struct`] `ObjectInstanceData` that
+//! stores the back-link to the [`StructDef`] and the named field values.
+//! Property access (`.field`) is routed through `__getattr__` / `__setattr__`
+//! magic methods registered on the `Struct` class — the VM dispatches to
+//! these when the instance data is not `ObjectFields`.
 
 use std::alloc::Layout;
 use std::any::Any;
 use std::collections::HashMap;
 
-use crate::object::ObjectFields;
+use crate::object::ObjectHeap;
 use crate::vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine};
-use crate::{impl_object_instance_data, ObjectHandle, ObjectInstanceData, ShrString};
+use crate::{ObjectHandle, ObjectInstanceData, ShrString};
 
 use super::types::CType;
 
@@ -33,6 +33,19 @@ pub(super) struct StructDef {
     pub(super) alignment: usize,
 }
 
+impl ObjectInstanceData for StructDef {
+    fn mark_references(&self, _heap: &mut ObjectHeap) {}
+    fn type_name(&self) -> &'static str {
+        "StructDef"
+    }
+    fn as_any_ref(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
 impl StructDef {
     pub(super) fn __new__(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
         let class = args[0];
@@ -40,6 +53,35 @@ impl StructDef {
         let descriptors = parse_struct_descriptors(vm, field_descriptors)?;
         let def = StructDef::from_descriptors(&descriptors)?;
         Ok(vm.obj_heap.alloc_instance(class, def))
+    }
+
+    pub(super) fn __init__(_vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
+        Ok(args[0])
+    }
+
+    pub(super) fn __call__(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
+        if args.is_empty() {
+            return Err(RuntimeErrorKind::FfiError("struct call: missing self".into()));
+        }
+    
+        let self_handle = args[0];
+        let field_values = &args[1..];
+        let struct_def = vm.get_native::<StructDef>(self_handle)?;
+    
+        if field_values.len() != struct_def.field_types.len() {
+            return Err(RuntimeErrorKind::FfiError(format!("struct expects {} value(s), got {}", struct_def.field_types.len(), field_values.len())));
+        }
+
+        let mut fields = HashMap::with_capacity(struct_def.field_names.len());
+        for (i, name) in struct_def.field_names.iter().enumerate() {
+            let value = field_values[i];
+            fields.insert(ShrString::new_string(name.as_str()), value);
+        }
+
+        let instance_data = Struct { struct_def: self_handle, fields };
+
+        let class = vm.lookup_module_export(self_handle, &ShrString::new_str("Struct")).expect("must exit");
+        Ok(vm.obj_heap.alloc_instance(class, instance_data))
     }
 
     /// Build a struct layout from field descriptors.
@@ -72,29 +114,80 @@ impl StructDef {
     }
 }
 
-impl_object_instance_data!(StructDef, "StructDef");
+// ===========================================================================
+// Struct — concrete struct instance (named fields + def back-link)
+// ===========================================================================
+
+pub(super) struct Struct {
+    pub(super) struct_def: ObjectHandle,
+    pub(super) fields: HashMap<ShrString, ObjectHandle>,
+}
+
+impl ObjectInstanceData for Struct {
+    fn mark_references(&self, heap: &mut ObjectHeap) {
+        heap.mark_object(self.struct_def);
+        for (_, &value) in &self.fields {
+            heap.mark_object(value);
+        }
+    }
+
+    fn type_name(&self) -> &'static str {
+        "StructInstance"
+    }
+
+    fn as_any_ref(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
+impl Struct {
+    pub(super) fn __new__(_vm: &mut VirtualMachine, _args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
+        Err(RuntimeErrorKind::FfiError("Struct cannot be constructed directly; use ffi.struct_new()".into()))
+    }
+
+    pub(super) fn __getattr__(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
+        // args: [self, field_name_string]
+        if args.len() < 2 {
+            return Err(RuntimeErrorKind::FfiError("__getattr__ requires 2 arguments (self, name)".into()));
+        }
+        let self_handle = args[0];
+        let field_name = vm.get_string_instance(args[1])?.as_str().to_string();
+
+        let data = vm
+            .obj_heap
+            .get_native::<Struct>(self_handle)
+            .ok_or_else(|| RuntimeErrorKind::FfiError("__getattr__: not a struct instance".into()))?;
+
+        let key = ShrString::new_string(field_name.as_str());
+        data.fields.get(&key).copied().ok_or_else(|| RuntimeErrorKind::FfiError(format!("struct has no field '{field_name}'")))
+    }
+
+    pub(super) fn __setattr__(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
+        // args: [self, field_name_string, value]
+        if args.len() < 3 {
+            return Err(RuntimeErrorKind::FfiError("__setattr__ requires 3 arguments (self, name, value)".into()));
+        }
+        let self_handle = args[0];
+        let field_name = vm.get_string_instance(args[1])?.as_str().to_string();
+        let value = args[2];
+
+        let data = vm
+            .obj_heap
+            .get_native_mut::<Struct>(self_handle)
+            .ok_or_else(|| RuntimeErrorKind::FfiError("__setattr__: not a struct instance".into()))?;
+
+        data.fields.insert(ShrString::new_string(field_name.as_str()), value);
+        Ok(ObjectHandle::NIL)
+    }
+}
 
 // ===========================================================================
 // struct_def — define a C struct layout
 // ===========================================================================
-//
-// Accepts two formats:
-//
-//   1. Positional list:        ffi.struct_def(["uint8", "uint8", "uint8"])
-//      → fields named "0", "1", "2"
-//
-//   2. Named-pair list:        ffi.struct_def([["r","uint8"], ["g","uint8"]])
-//      → fields named "r", "g" (order preserved)
 
-pub(super) fn struct_def(vm: &mut VirtualMachine, field_descriptors: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-    let descriptors = parse_struct_descriptors(vm, field_descriptors)?;
-    let def = StructDef::from_descriptors(&descriptors)?;
-
-    let class = vm
-        .lookup_loaded_module_export("std/ffi", &ShrString::new_str("__StructDef__"))
-        .ok_or_else(|| RuntimeErrorKind::FfiError("StructDef class not found in ffi module".into()))?;
-    Ok(vm.obj_heap.alloc_instance(class, def))
-}
 
 /// Parse the `struct_def` argument into `(name, type)` pairs.
 fn parse_struct_descriptors(vm: &VirtualMachine, handle: ObjectHandle) -> RuntimeResult<Vec<(String, String)>> {
@@ -141,107 +234,4 @@ fn parse_struct_descriptors(vm: &VirtualMachine, handle: ObjectHandle) -> Runtim
     }
 
     Ok(descriptors)
-}
-
-// ===========================================================================
-// struct_new — create a struct instance (positional values)
-// ===========================================================================
-
-pub(super) fn struct_new(vm: &mut VirtualMachine, def_handle: ObjectHandle, values_list: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-    let (field_types, field_names) = {
-        let def = vm
-            .obj_heap
-            .get_native::<StructDef>(def_handle)
-            .ok_or_else(|| RuntimeErrorKind::FfiError("struct_new: first argument must be a struct def".into()))?;
-        (def.field_types.clone(), def.field_names.clone())
-    };
-
-    let value_handles: Vec<ObjectHandle> = vm
-        .get_list_instance(values_list)
-        .map_err(|_| RuntimeErrorKind::FfiError("struct_new: second argument must be a list of values".into()))?
-        .clone();
-
-    if value_handles.len() != field_types.len() {
-        return Err(RuntimeErrorKind::FfiError(format!("struct_new: expected {} values, got {}", field_types.len(), value_handles.len())));
-    }
-
-    build_struct_instance(vm, def_handle, &field_names, &field_types, &value_handles)
-}
-
-// ===========================================================================
-// StructDef.__call__ — create struct via Color(r, g, b, a) syntax
-// ===========================================================================
-
-pub(super) fn struct_def_call(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
-    if args.is_empty() {
-        return Err(RuntimeErrorKind::FfiError("struct call: missing self".into()));
-    }
-
-    let self_handle = args[0];
-    let field_values = &args[1..];
-
-    let (field_types, field_names) = {
-        let def = vm
-            .obj_heap
-            .get_native::<StructDef>(self_handle)
-            .ok_or_else(|| RuntimeErrorKind::FfiError("struct call: self is not a StructDef".into()))?;
-        (def.field_types.clone(), def.field_names.clone())
-    };
-
-    if field_values.len() != field_types.len() {
-        return Err(RuntimeErrorKind::FfiError(format!("struct expects {} value(s), got {}", field_types.len(), field_values.len())));
-    }
-
-    build_struct_instance(vm, self_handle, &field_names, &field_types, field_values)
-}
-
-// ===========================================================================
-// Shared: build an ObjectFields-based struct instance
-// ===========================================================================
-
-pub(super) struct Struct {
-    pub(super) struct_def: ObjectHandle,
-    pub(super) fields: HashMap<ShrString, ObjectHandle>,
-}
-
-impl ObjectInstanceData for Struct {
-    fn type_name(&self) -> &'static str {
-        "StructInstance"
-    }
-
-    fn mark_references(&self, heap: &mut crate::ObjectHeap) {
-        heap.mark_object(self.struct_def);
-    }
-
-        fn as_any_ref(&self) -> &dyn Any {
-        self
-    }
-    fn as_any_mut(&mut self) -> &mut dyn Any {
-        self
-    }
-}
-
-fn build_struct_instance(
-    vm: &mut VirtualMachine,
-    def_handle: ObjectHandle,
-    field_names: &[String],
-    field_types: &[CType],
-    values: &[ObjectHandle],
-) -> RuntimeResult<ObjectHandle> {
-    let mut fields: HashMap<ShrString, ObjectHandle> = HashMap::with_capacity(field_names.len() + 1);
-
-    for (i, name) in field_names.iter().enumerate() {
-        let value = values[i];
-        let _ = (field_types, value);
-        fields.insert(ShrString::new_string(name.as_str()), value);
-    }
-
-    // Back-link to the StructDef so FFI marshalling can recover type info.
-    fields.insert(ShrString::new_str("__struct_def__"), def_handle);
-
-    let instance_data = ObjectFields { fields };
-    let class = vm
-        .lookup_module_export(def_handle, &ShrString::new_str("__Struct__"))
-        .ok_or_else(|| RuntimeErrorKind::FfiError("Struct class not found in ffi module".into()))?;
-    Ok(vm.obj_heap.alloc_instance(class, instance_data))
 }

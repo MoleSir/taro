@@ -15,7 +15,7 @@
 use std::ffi::{CString, c_char, c_void};
 
 use crate::vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine};
-use crate::{ObjectFields, ObjectHandle, ShrString, ToShrString};
+use crate::{ObjectHandle, ShrString, ToShrString};
 
 // ===========================================================================
 // Macro: generate from_str + size_align + to_ffi_type
@@ -159,26 +159,21 @@ impl CType {
             }
             CType::Void => Err(RuntimeErrorKind::FfiError("cannot marshal void as argument".into())),
             CType::Struct(_) => {
-                let fields_data = vm
-                    .get_instance(handle)?
-                    .get_data_ref::<ObjectFields>()
-                    .ok_or_else(|| RuntimeErrorKind::FfiError("expected struct instance with ObjectFields".into()))?;
+                // Rebuild raw byte buffer from the Struct instance's named fields.
+                let struct_data = vm
+                    .obj_heap
+                    .get_native::<super::structs::Struct>(handle)
+                    .ok_or_else(|| RuntimeErrorKind::FfiError("expected struct instance".into()))?;
 
-                let def_key = ShrString::new_str("__struct_def__");
-                let def_handle = fields_data
-                    .fields
-                    .get(&def_key)
-                    .copied()
-                    .ok_or_else(|| RuntimeErrorKind::FfiError("struct instance missing __struct_def__ back-link".into()))?;
                 let def = vm
                     .obj_heap
-                    .get_native::<super::structs::StructDef>(def_handle)
-                    .ok_or_else(|| RuntimeErrorKind::FfiError("struct instance __struct_def__ is not a StructDef".into()))?;
+                    .get_native::<super::structs::StructDef>(struct_data.struct_def)
+                    .ok_or_else(|| RuntimeErrorKind::FfiError("struct def not found".into()))?;
 
                 let mut data = vec![0u8; def.size];
                 for (i, (name, ctype)) in def.field_names.iter().zip(&def.field_types).enumerate() {
                     let field_key = ShrString::new_string(name.as_str());
-                    let value_handle = fields_data
+                    let value_handle = struct_data
                         .fields
                         .get(&field_key)
                         .copied()

@@ -8,7 +8,12 @@ impl VirtualMachine {
 
     /// Look up `method_name` on the receiver's class and call it with the given
     /// `args`.  Works for both Native and User methods.
-    fn dispatch_magic(&mut self, receiver: ObjectHandle, method_name: &'static str, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
+    pub(crate) fn dispatch_magic(
+        &mut self,
+        receiver: ObjectHandle,
+        method_name: &'static str,
+        args: &[ObjectHandle],
+    ) -> RuntimeResult<ObjectHandle> {
         let class_handle = self.get_instance(receiver)?.class;
 
         let method = {
