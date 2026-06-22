@@ -1,4 +1,4 @@
-use crate::{Object, ObjectHandle, ObjectInstanceData, ObjectSet, ObjectBytes};
+use crate::{Object, ObjectHandle, ObjectSet, ObjectBytes};
 use crate::vm::{RuntimeResult, RuntimeErrorKind, VirtualMachine};
 use crate::{NativeFunction, Method};
 use std::collections::HashMap;
@@ -96,10 +96,12 @@ impl VirtualMachine {
     /// `abs(value)` — return the absolute value of a number.
     pub fn abs(&mut self, arg: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let bi = self.get_instance(arg)?;
-        match &bi.data {
-            ObjectInstanceData::Integer(v) => Ok(self.obj_heap.alloc_integer_instance(v.wrapping_abs())),
-            ObjectInstanceData::Float(v) => Ok(self.obj_heap.alloc_float_instance(v.abs())),
-            _ => Err(RuntimeErrorKind::UnexpectedType("number", self.value_type_name(arg))),
+        if let Some(v) = bi.data.as_any_ref().downcast_ref::<crate::object::ObjectInt>() {
+            Ok(self.obj_heap.alloc_integer_instance(v.value.wrapping_abs()))
+        } else if let Some(v) = bi.data.as_any_ref().downcast_ref::<crate::object::ObjectFloat>() {
+            Ok(self.obj_heap.alloc_float_instance(v.value.abs()))
+        } else {
+            Err(RuntimeErrorKind::UnexpectedType("number", self.value_type_name(arg)))
         }
     }
 
@@ -201,14 +203,12 @@ impl VirtualMachine {
     /// `bytes(value)` — create bytes from a string or list of ints.
     pub fn bytes(&mut self, arg: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         // Snapshot what we need to decide, then drop the immutable borrow.
-        let is_string = matches!(
-            self.obj_heap.get(arg),
-            Object::Instance(inst) if matches!(&inst.data, ObjectInstanceData::String(_))
-        );
-        let is_list = matches!(
-            self.obj_heap.get(arg),
-            Object::Instance(inst) if matches!(&inst.data, ObjectInstanceData::List(_))
-        );
+        let is_string = self.obj_heap.get_instance(arg)
+            .map(|inst| inst.data.as_any_ref().downcast_ref::<crate::object::ObjectString>().is_some())
+            .unwrap_or(false);
+        let is_list = self.obj_heap.get_instance(arg)
+            .map(|inst| inst.data.as_any_ref().downcast_ref::<crate::object::ObjectList>().is_some())
+            .unwrap_or(false);
 
         if is_string {
             let s = self.get_string_instance(arg)?.as_str().to_string();

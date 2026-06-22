@@ -1,9 +1,11 @@
+
+
 use crate::{
-    native_a1, native_a2, native_a3,
+    impl_object_instance_data, native_a1, native_a2, native_a3,
     vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine},
-    NativeFunction, ObjectHandle, ObjectInstanceData, ShrString,
+    NativeFunction, ObjectHandle, ShrString,
 };
-use super::ObjectHeap;
+use super::{ObjectHeap, ObjectInstanceData};
 
 // ========================================================================== //
 //  ObjectStringIterator (iterator state)
@@ -13,6 +15,21 @@ use super::ObjectHeap;
 pub struct ObjectStringIterator {
     pub string_handle: ObjectHandle,
     pub byte_index: usize,
+}
+
+impl ObjectInstanceData for ObjectStringIterator {
+    fn mark_references(&self, heap: &mut ObjectHeap) {
+        heap.mark_object(self.string_handle);
+    }
+    fn type_name(&self) -> &'static str { "string iterator" }
+    fn as_any_ref(&self) -> &dyn std::any::Any { self }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+}
+
+impl ObjectStringIterator {
+    pub fn new(string_handle: ObjectHandle) -> Self {
+        Self { string_handle, byte_index: 0 }
+    }
 }
 
 // ========================================================================== //
@@ -36,7 +53,11 @@ fn byte_to_char_index(s: &str, byte_idx: usize) -> usize {
 // ========================================================================== //
 
 /// Represents the `String` built-in type.
-pub struct ObjectString;
+pub struct ObjectString {
+    pub value: ShrString,
+}
+
+impl_object_instance_data!(ObjectString, "string");
 
 macro_rules! string_cmp_op {
     ($name:ident, $op:expr, $op_name:literal) => {
@@ -51,6 +72,10 @@ macro_rules! string_cmp_op {
 }
 
 impl ObjectString {
+    pub fn new(value: ShrString) -> Self {
+        Self { value }
+    }
+
     pub fn __add__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let lhs_s = vm.get_string_instance(lhs)?.clone();
         if let Ok(rhs_s) = vm.get_string_instance(rhs) {
@@ -492,11 +517,8 @@ impl ObjectString {
     // ---- iteration protocol ----
 
     pub fn __iter__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let iter = ObjectStringIterator { string_handle: receiver, byte_index: 0 };
-        Ok(vm.obj_heap.alloc_instance(
-            vm.obj_heap.string_iter_class,
-            ObjectInstanceData::StringIter(iter),
-        ))
+        let iter = ObjectStringIterator::new(receiver);
+        Ok(vm.obj_heap.alloc_instance(vm.obj_heap.string_iter_class, iter))
     }
 
     pub fn iter_next(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {

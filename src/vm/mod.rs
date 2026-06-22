@@ -6,7 +6,7 @@ mod utils;
 pub use error::*;
 #[cfg(test)]
 mod tests;
-use crate::{NativeFunction, Instruction, Method, Object, ObjectBoundMethod, ObjectNativeFn, ObjectClass, ObjectClosure, ObjectFunction, ObjectHandle, ObjectHeap, ObjectInstance, ObjectInstanceData, ObjectListIterator, ObjectDictIterator, ObjectSetIterator, ObjectStringIterator, ObjectBytesIterator, ObjectUpvalue, ShrString};
+use crate::{NativeFunction, Instruction, Method, Object, ObjectBoundMethod, ObjectNativeFn, ObjectClass, ObjectClosure, ObjectFunction, ObjectHandle, ObjectHeap, ObjectInstance, ObjectFields, ObjectListIterator, ObjectDictIterator, ObjectSetIterator, ObjectStringIterator, ObjectBytesIterator, ObjectUpvalue, ShrString};
 use std::collections::HashMap;
 
 pub struct VirtualMachine {
@@ -397,7 +397,8 @@ impl VirtualMachine {
                 let obj = self.obj_heap.get(receiver); 
                 match obj {
                     Object::Instance(instance) => {
-                        if let ObjectInstanceData::Fields(fields) = &instance.data && let Some(value) = fields.get(&field_name).cloned() {
+                        if let Some(fields_data) = instance.data.as_any_ref().downcast_ref::<ObjectFields>()
+                            && let Some(value) = fields_data.fields.get(&field_name).cloned() {
                             self.pop_stack()?;
                             self.push_stack(value);
                         } else {
@@ -436,11 +437,11 @@ impl VirtualMachine {
             Instruction::SetProperty(field_name) => {
                 let value = self.peek_stack(0)?;
                 let instance = self.peek_stack(1)?;
+                let type_name = self.value_type_name(value);
                 let instance = self.get_instance_mut(instance)?;
-                match &mut instance.data {
-                    ObjectInstanceData::Fields(fields) => fields.insert(field_name, value),
-                    _ => Err(RuntimeErrorKind::CannotSetProperty(self.value_type_name(value)))?,
-                };
+                let fields = instance.get_data_mut::<ObjectFields>()
+                    .ok_or(RuntimeErrorKind::CannotSetProperty(type_name))?;
+                fields.fields.insert(field_name, value);
 
                 let value = self.pop_stack()?;
                 self.pop_stack()?;
@@ -476,10 +477,8 @@ impl VirtualMachine {
                 // work naturally).
                 let field_value = match self.obj_heap.get(receiver) {
                     Object::Instance(inst) => {
-                        match &inst.data {
-                            ObjectInstanceData::Fields(fields) => fields.get(&method_name).copied(),
-                            _ => None,
-                        }
+                        inst.data.as_any_ref().downcast_ref::<ObjectFields>()
+                            .and_then(|f| f.fields.get(&method_name).copied())
                     }
                     _ => None,
                 };
@@ -708,11 +707,15 @@ impl VirtualMachine {
         match obj {
             Object::Closure(_) => self.call_closure(callee, arg_count, true),
             Object::Class(_) => {
-                let init_method = {
+                let (init_method, constructor) = {
                     let class = self.get_class(callee)?;
-                    class.methods.get("__init__").copied()
+                    (class.methods.get("__init__").copied(), class.constructor)
                 };
-                let instance = self.obj_heap.alloc_fields_instance(callee, Default::default());
+                let data = match constructor {
+                    Some(ctor) => ctor(self)?,
+                    None => Box::new(ObjectFields::default()),
+                };
+                let instance = self.obj_heap.alloc_instance_dyn(callee, data);
                 let index = self.callee_slot(arg_count);
                 self.stack[index] = instance;
                 if let Some(method) = init_method {
@@ -1090,14 +1093,14 @@ impl VirtualMachine {
     impl_getters!(bytes_instance, Vec<u8>);
     impl_getters!(fields_instance, HashMap<ShrString, ObjectHandle>);
 
-    pub fn get_native_mut<T: crate::ToNativeData>(&mut self, handle: ObjectHandle) -> RuntimeResult<&mut T> {
+    pub fn get_native_mut<T: crate::object::ObjectInstanceData>(&mut self, handle: ObjectHandle) -> RuntimeResult<&mut T> {
         let found = self.value_type_name(handle);
         self.obj_heap
             .get_native_mut::<T>(handle)
             .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "native", found }.into() )
     }
 
-    pub fn get_native<T: crate::ToNativeData>(&self, handle: ObjectHandle) -> RuntimeResult<&T> {
+    pub fn get_native<T: crate::object::ObjectInstanceData>(&self, handle: ObjectHandle) -> RuntimeResult<&T> {
         self.obj_heap
             .get_native::<T>(handle)
             .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "native", found: self.value_type_name(handle) }.into() )

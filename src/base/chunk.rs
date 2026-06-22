@@ -1,4 +1,4 @@
-use crate::{ByteCode, Instruction, Object, ObjectHandle, ObjectHeap, ObjectInstanceData, ShrString};
+use crate::{ByteCode, Instruction, Object, ObjectHandle, ObjectHeap, ShrString};
 
 // ========================================================================== //
 //  ChunkError
@@ -464,8 +464,8 @@ impl Chunk {
     fn read_string_constant(&self, ip: &mut usize, heap: &ObjectHeap) -> Result<ShrString, ChunkError> {
         let handle = self.read_constant(ip)?;
         if let Object::Instance(instance) = heap.get(handle) {
-            if let ObjectInstanceData::String(s) = &instance.data {
-                return Ok(s.clone());
+            if let Some(s) = instance.data.as_any_ref().downcast_ref::<crate::object::ObjectString>() {
+                return Ok(s.value.clone());
             }
         } 
         Err(ChunkError::ExpectedStringConstant)

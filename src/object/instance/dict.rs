@@ -1,10 +1,12 @@
+use std::any::Any;
+use std::collections::HashMap;
+
 use crate::{
     native_a1,
-    NativeFunction, ObjectHandle, ObjectInstanceData,
+    NativeFunction, ObjectHandle,
     vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine},
 };
-use std::collections::HashMap;
-use super::ObjectHeap;
+use super::{ObjectHeap, ObjectInstanceData};
 
 // ========================================================================== //
 //  ObjectDictIterator (iterator state)
@@ -19,14 +21,51 @@ pub struct ObjectDictIterator {
     pub index: usize,
 }
 
+impl ObjectInstanceData for ObjectDictIterator {
+    fn mark_references(&self, heap: &mut ObjectHeap) {
+        for &key in &self.keys {
+            heap.mark_object(key);
+        }
+    }
+    fn type_name(&self) -> &'static str { "dict iterator" }
+    fn as_any_ref(&self) -> &dyn Any { self }
+    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+}
+
+impl ObjectDictIterator {
+    pub fn new(keys: Vec<ObjectHandle>) -> Self {
+        Self { keys, index: 0 }
+    }
+}
+
 // ========================================================================== //
 //  ObjectDict
 // ========================================================================== //
 
 /// Represents the `Dict` built-in type.
-pub struct ObjectDict;
+pub struct ObjectDict {
+    pub entries: HashMap<u64, Vec<(ObjectHandle, ObjectHandle)>>,
+}
+
+impl ObjectInstanceData for ObjectDict {
+    fn mark_references(&self, heap: &mut ObjectHeap) {
+        for bucket in self.entries.values() {
+            for &(k, v) in bucket {
+                heap.mark_object(k);
+                heap.mark_object(v);
+            }
+        }
+    }
+    fn type_name(&self) -> &'static str { "dict" }
+    fn as_any_ref(&self) -> &dyn Any { self }
+    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+}
 
 impl ObjectDict {
+    pub fn new(entries: HashMap<u64, Vec<(ObjectHandle, ObjectHandle)>>) -> Self {
+        Self { entries }
+    }
+
     native_a1!(__not__, entries: &HashMap<u64, Vec<(ObjectHandle, ObjectHandle)>>, { entries.values().all(|b| b.is_empty()) });
 
     pub fn __str__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
@@ -94,7 +133,7 @@ impl ObjectDict {
         }
 
         let inst = vm.get_instance_mut(receiver)?;
-        if let ObjectInstanceData::Dict(entries) = &mut inst.data {
+        if let Some(dict) = inst.data.as_any_mut().downcast_mut::<ObjectDict>() { let entries = &mut dict.entries;
             entries.insert(hash, bucket);
         }
         Ok(value)
@@ -173,7 +212,7 @@ impl ObjectDict {
             Some(idx) => {
                 let removed = bucket.remove(idx);
                 let inst = vm.get_instance_mut(receiver)?;
-                if let ObjectInstanceData::Dict(entries) = &mut inst.data {
+                if let Some(dict) = inst.data.as_any_mut().downcast_mut::<ObjectDict>() { let entries = &mut dict.entries;
                     if bucket.is_empty() {
                         entries.remove(&hash);
                     } else {
@@ -193,10 +232,7 @@ impl ObjectDict {
             .values()
             .flat_map(|b| b.iter().map(|&(k, _)| k))
             .collect();
-        Ok(vm.obj_heap.alloc_instance(
-            vm.obj_heap.dict_iter_class,
-            ObjectInstanceData::DictIter(ObjectDictIterator { keys, index: 0 }),
-        ))
+        Ok(vm.obj_heap.alloc_instance(vm.obj_heap.dict_iter_class, ObjectDictIterator { keys, index: 0 }))
     }
 
     pub fn iter_next(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {

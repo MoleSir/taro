@@ -1,11 +1,12 @@
+use std::any::Any;
 use std::collections::HashMap;
 
 use crate::{
     native_a1,
-    NativeFunction, ObjectHandle, ObjectInstanceData,
+    NativeFunction, ObjectHandle,
     vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine},
 };
-use super::ObjectHeap;
+use super::{ObjectHeap, ObjectInstanceData};
 
 // ========================================================================== //
 //  ObjectSetIterator (iterator state)
@@ -20,12 +21,44 @@ pub struct ObjectSetIterator {
     pub index: usize,
 }
 
+impl ObjectInstanceData for ObjectSetIterator {
+    fn mark_references(&self, heap: &mut ObjectHeap) {
+        for &item in &self.items {
+            heap.mark_object(item);
+        }
+    }
+    fn type_name(&self) -> &'static str { "set iterator" }
+    fn as_any_ref(&self) -> &dyn Any { self }
+    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+}
+
+impl ObjectSetIterator {
+    pub fn new(items: Vec<ObjectHandle>) -> Self {
+        Self { items, index: 0 }
+    }
+}
+
 // ========================================================================== //
 //  ObjectSet
 // ========================================================================== //
 
 /// Represents the `Set` built-in type.
-pub struct ObjectSet;
+pub struct ObjectSet {
+    pub entries: HashMap<u64, Vec<ObjectHandle>>,
+}
+
+impl ObjectInstanceData for ObjectSet {
+    fn mark_references(&self, heap: &mut ObjectHeap) {
+        for bucket in self.entries.values() {
+            for v in bucket {
+                heap.mark_object(*v);
+            }
+        }
+    }
+    fn type_name(&self) -> &'static str { "set" }
+    fn as_any_ref(&self) -> &dyn Any { self }
+    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+}
 
 impl ObjectSet {
     // ---- global constructor ----
@@ -59,7 +92,7 @@ impl ObjectSet {
         bucket.push(item);
 
         let inst = vm.get_instance_mut(receiver)?;
-        if let ObjectInstanceData::Set(entries) = &mut inst.data {
+        if let Some(set) = inst.data.as_any_mut().downcast_mut::<ObjectSet>() { let entries = &mut set.entries;
             entries.insert(hash, bucket);
         }
         Ok(item)
@@ -87,7 +120,7 @@ impl ObjectSet {
             Some(idx) => {
                 let removed = bucket.remove(idx);
                 let inst = vm.get_instance_mut(receiver)?;
-                if let ObjectInstanceData::Set(entries) = &mut inst.data {
+                if let Some(set) = inst.data.as_any_mut().downcast_mut::<ObjectSet>() { let entries = &mut set.entries;
                     if bucket.is_empty() {
                         entries.remove(&hash);
                     } else {
@@ -150,10 +183,7 @@ impl ObjectSet {
             .values()
             .flat_map(|b| b.iter().copied())
             .collect();
-        Ok(vm.obj_heap.alloc_instance(
-            vm.obj_heap.set_iter_class,
-            ObjectInstanceData::SetIter(ObjectSetIterator { items, index: 0 }),
-        ))
+        Ok(vm.obj_heap.alloc_instance(vm.obj_heap.set_iter_class, ObjectSetIterator::new(items)))
     }
 
     pub fn iter_next(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {

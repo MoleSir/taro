@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use crate::{NativeFunction, ObjectHandle, ObjectInstanceData, ShrString};
+use crate::{NativeFunction, ObjectHandle, ShrString};
 use crate::object::ObjectDict;
 use crate::vm::{RuntimeResult, RuntimeErrorKind, VirtualMachine};
 
@@ -67,88 +67,67 @@ fn encode_value(vm: &VirtualMachine, handle: ObjectHandle, out: &mut String) -> 
         }
     };
 
-    match &inst.data {
-        ObjectInstanceData::Nil => out.push_str("null"),
-
-        ObjectInstanceData::Bool(b) => {
-            out.push_str(if *b { "true" } else { "false" });
-        }
-
-        ObjectInstanceData::Integer(i) => {
+    let data = &*inst.data;
+    if data.as_any_ref().downcast_ref::<crate::object::ObjectNil>().is_some() {
+        out.push_str("null");
+    } else if let Some(b) = data.as_any_ref().downcast_ref::<crate::object::ObjectBool>() {
+        out.push_str(if b.value { "true" } else { "false" });
+    } else if let Some(i) = data.as_any_ref().downcast_ref::<crate::object::ObjectInt>() {
+        use std::fmt::Write;
+        write!(out, "{}", i.value).unwrap();
+    } else if let Some(f) = data.as_any_ref().downcast_ref::<crate::object::ObjectFloat>() {
+        if f.value.is_nan() || f.value.is_infinite() {
+            out.push_str("null");
+        } else {
             use std::fmt::Write;
-            write!(out, "{}", i).unwrap();
+            write!(out, "{}", f.value).unwrap();
         }
-
-        ObjectInstanceData::Float(f) => {
-            if f.is_nan() || f.is_infinite() {
-                // JSON doesn't support NaN / Infinity — encode as null.
-                out.push_str("null");
-            } else {
-                use std::fmt::Write;
-                write!(out, "{}", f).unwrap();
-            }
+    } else if let Some(s) = data.as_any_ref().downcast_ref::<crate::object::ObjectString>() {
+        encode_json_string(s.value.as_str(), out);
+    } else if let Some(list) = data.as_any_ref().downcast_ref::<crate::object::ObjectList>() {
+        out.push('[');
+        for (i, &item) in list.items.iter().enumerate() {
+            if i > 0 { out.push(','); }
+            encode_value(vm, item, out)?;
         }
-
-        ObjectInstanceData::String(s) => {
-            encode_json_string(s.as_str(), out);
-        }
-
-        ObjectInstanceData::List(items) => {
-            out.push('[');
-            for (i, &item) in items.iter().enumerate() {
-                if i > 0 {
-                    out.push(',');
-                }
-                encode_value(vm, item, out)?;
-            }
-            out.push(']');
-        }
-
-        ObjectInstanceData::Dict(entries) => {
-            out.push('{');
-            let mut first = true;
-            for bucket in entries.values() {
-                for &(k, v) in bucket {
-                    // Only string keys are valid in JSON.
-                    let key_str = match vm.obj_heap.get_instance(k) {
-                        Some(ki) => match &ki.data {
-                            ObjectInstanceData::String(s) => s.clone(),
-                            _ => return Err(RuntimeErrorKind::JosnError(
-                                "json.encode: dict keys must be strings".into()
-                            )),
-                        },
+        out.push(']');
+    } else if let Some(dict) = data.as_any_ref().downcast_ref::<crate::object::ObjectDict>() {
+        out.push('{');
+        let mut first = true;
+        for bucket in dict.entries.values() {
+            for &(k, v) in bucket {
+                let key_str = match vm.obj_heap.get_instance(k) {
+                    Some(ki) => match ki.data.as_any_ref().downcast_ref::<crate::object::ObjectString>() {
+                        Some(s) => s.value.clone(),
                         None => return Err(RuntimeErrorKind::JosnError(
                             "json.encode: dict keys must be strings".into()
                         )),
-                    };
-
-                    if !first { out.push(','); }
-                    first = false;
-
-                    encode_json_string(key_str.as_str(), out);
-                    out.push(':');
-                    encode_value(vm, v, out)?;
-                }
+                    },
+                    None => return Err(RuntimeErrorKind::JosnError(
+                        "json.encode: dict keys must be strings".into()
+                    )),
+                };
+                if !first { out.push(','); }
+                first = false;
+                encode_json_string(key_str.as_str(), out);
+                out.push(':');
+                encode_value(vm, v, out)?;
             }
-            out.push('}');
         }
-
-        ObjectInstanceData::Set(entries) => {
-            // Encode set as a JSON array (order not guaranteed).
-            out.push('[');
-            let mut first = true;
-            for bucket in entries.values() {
-                for &item in bucket {
-                    if !first { out.push(','); }
-                    first = false;
-                    encode_value(vm, item, out)?;
-                }
+        out.push('}');
+    } else if let Some(set) = data.as_any_ref().downcast_ref::<crate::object::ObjectSet>() {
+        out.push('[');
+        let mut first = true;
+        for bucket in set.entries.values() {
+            for &item in bucket {
+                if !first { out.push(','); }
+                first = false;
+                encode_value(vm, item, out)?;
             }
-            out.push(']');
         }
-
-        // Fields / Native / IterEnd — not serializable.
-        _ => return Err(encode_error(vm.value_type_name(handle))),
+        out.push(']');
+    } else {
+        return Err(encode_error(vm.value_type_name(handle)));
     }
 
     Ok(())

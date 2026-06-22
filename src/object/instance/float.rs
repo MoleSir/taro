@@ -1,5 +1,5 @@
 use crate::{
-    NativeFunction, ObjectHandle,
+    impl_object_instance_data, NativeFunction, ObjectHandle,
     vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine},
 };
 use super::ObjectHeap;
@@ -11,7 +11,11 @@ use super::ObjectHeap;
 /// Represents the `Float` built-in type.  Magic methods are implemented as
 /// associated functions matching [`NativeFunction`] signatures so they can be
 /// registered directly on the class during [`ObjectHeap::new`].
-pub struct ObjectFloat(pub f64);
+pub struct ObjectFloat {
+    pub value: f64,
+}
+
+impl_object_instance_data!(ObjectFloat, "float");
 
 macro_rules! float_binary_arith {
     ($name:ident, $float_op:expr, $op_name:literal) => {

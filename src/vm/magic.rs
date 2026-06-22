@@ -476,30 +476,7 @@ impl VirtualMachine {
         }
         let object = self.obj_heap.get(handle);
         match object {
-            Object::Instance(inst) => {
-                // Use the class name for user-defined types, otherwise
-                // map known data variants to friendly names.
-                use crate::ObjectInstanceData;
-                match &inst.data {
-                    ObjectInstanceData::Nil => "nil",
-                    ObjectInstanceData::IterEnd => "IterEnd",
-                    ObjectInstanceData::Bool(_) => "boolean",
-                    ObjectInstanceData::Integer(_) => "integer",
-                    ObjectInstanceData::Float(_) => "float",
-                    ObjectInstanceData::String(_) => "string",
-                    ObjectInstanceData::StringIter(_) => "string iterator",
-                    ObjectInstanceData::List(_) => "list",
-                    ObjectInstanceData::ListIter(_) => "list iterator",
-                    ObjectInstanceData::Dict(_) => "dict",
-                    ObjectInstanceData::DictIter(_) => "dict iterator",
-                    ObjectInstanceData::Set(_) => "set",
-                    ObjectInstanceData::SetIter(_) => "set iterator",
-                    ObjectInstanceData::Bytes(_) => "bytes",
-                    ObjectInstanceData::BytesIter(_) => "bytes iterator",
-                    ObjectInstanceData::Fields(_) => "instance",
-                    ObjectInstanceData::Native(_) => "native object",
-                }
-            }
+            Object::Instance(inst) => inst.data.type_name(),
             Object::BoundMethod(_) => "bound method",
             Object::NativeFn(_) => "native function",
             Object::Class(_) => "class",

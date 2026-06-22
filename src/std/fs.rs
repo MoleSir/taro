@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Seek, Write};
-use crate::{ToNativeData, NativeFunction, NativeData, ObjectHandle, ObjectInstanceData, ShrString};
+use crate::{impl_object_instance_data, NativeFunction, ObjectHandle, ShrString};
 use crate::vm::{RuntimeResult, RuntimeErrorKind, VirtualMachine};
 
 impl VirtualMachine {
@@ -76,7 +76,7 @@ struct StdFileData {
     mode: String,
 }
 
-impl ToNativeData for StdFileData {}
+impl_object_instance_data!(StdFileData, "File");
 
 impl StdFileData {
     fn __init__(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
@@ -108,9 +108,7 @@ impl StdFileData {
 
         let inst = vm.obj_heap.get_instance_mut(self_handle)
             .ok_or_else(|| RuntimeErrorKind::IoError("not a File instance".into()))?;
-        inst.data = ObjectInstanceData::Native(
-            NativeData::new(StdFileData { reader: Some(BufReader::new(file)), path, mode }),
-        );
+        inst.data = Box::new(StdFileData { reader: Some(BufReader::new(file)), path, mode });
 
         Ok(self_handle)
     }

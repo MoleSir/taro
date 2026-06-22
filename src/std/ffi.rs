@@ -28,7 +28,7 @@
 use std::collections::HashMap;
 use std::ffi::{CString, c_char, c_void};
 
-use crate::{NativeFunction, ObjectHandle, ShrString, ToShrString};
+use crate::{impl_object_instance_data, NativeFunction, ObjectHandle, ShrString, ToShrString};
 use crate::vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine};
 
 // ===========================================================================
@@ -413,9 +413,7 @@ impl LibraryHandle {
     }
 }
 
-impl crate::object::ToNativeData for LibraryHandle {
-    fn mark_inner_object(&self, _heap: &mut crate::object::ObjectHeap) {}
-}
+impl_object_instance_data!(LibraryHandle, "LibraryHandle");
 
 // ===========================================================================
 // StructDef — C struct layout descriptor
@@ -461,9 +459,7 @@ impl StructDef {
     }
 }
 
-impl crate::object::ToNativeData for StructDef {
-    fn mark_inner_object(&self, _heap: &mut crate::object::ObjectHeap) {}
-}
+impl_object_instance_data!(StructDef, "StructDef");
 
 // ===========================================================================
 // StructValue — a concrete struct instance (raw bytes)
@@ -479,9 +475,7 @@ impl StructValue {
     }
 }
 
-impl crate::object::ToNativeData for StructValue {
-    fn mark_inner_object(&self, _heap: &mut crate::object::ObjectHeap) {}
-}
+impl_object_instance_data!(StructValue, "StructValue");
 
 // ===========================================================================
 // BoundFunction — a callable C function with pre-parsed type info
@@ -501,9 +495,7 @@ struct BoundFunction {
 unsafe impl Send for BoundFunction {}
 unsafe impl Sync for BoundFunction {}
 
-impl crate::object::ToNativeData for BoundFunction {
-    fn mark_inner_object(&self, _heap: &mut crate::object::ObjectHeap) {}
-}
+impl_object_instance_data!(BoundFunction, "BoundFunction");
 
 // ===========================================================================
 // Helpers
@@ -668,11 +660,7 @@ fn dlopen(vm: &mut VirtualMachine, path: ObjectHandle) -> RuntimeResult<ObjectHa
         .map_err(|e| RuntimeErrorKind::FfiError(format!("dlopen: {e}")))?;
 
     let lib_handle = LibraryHandle::new(lib);
-    let native = crate::object::NativeData::new(lib_handle);
-    let obj = vm.obj_heap.alloc_instance(
-        vm.obj_heap.module_class,
-        crate::object::ObjectInstanceData::Native(native),
-    );
+    let obj = vm.obj_heap.alloc_instance(vm.obj_heap.module_class, lib_handle);
     Ok(obj)
 }
 
@@ -728,11 +716,7 @@ fn struct_def(vm: &mut VirtualMachine, field_types_list: ObjectHandle) -> Runtim
     }
 
     let def = StructDef::from_field_types(&type_names)?;
-    let native = crate::object::NativeData::new(def);
-    let obj = vm.obj_heap.alloc_instance(
-        vm.obj_heap.struct_def_class,
-        crate::object::ObjectInstanceData::Native(native),
-    );
+    let obj = vm.obj_heap.alloc_instance(vm.obj_heap.struct_def_class, def);
     Ok(obj)
 }
 
@@ -766,11 +750,7 @@ fn struct_new(vm: &mut VirtualMachine, def_handle: ObjectHandle, values_list: Ob
     }
 
     let sv = StructValue::new(data);
-    let native = crate::object::NativeData::new(sv);
-    let obj = vm.obj_heap.alloc_instance(
-        vm.obj_heap.struct_instance_class,
-        crate::object::ObjectInstanceData::Native(native),
-    );
+    let obj = vm.obj_heap.alloc_instance(vm.obj_heap.struct_instance_class, sv);
     Ok(obj)
 }
 
@@ -829,11 +809,7 @@ fn struct_def_call(
     }
 
     let sv = StructValue::new(data);
-    let native = crate::object::NativeData::new(sv);
-    let obj = vm.obj_heap.alloc_instance(
-        vm.obj_heap.struct_instance_class,
-        crate::object::ObjectInstanceData::Native(native),
-    );
+    let obj = vm.obj_heap.alloc_instance(vm.obj_heap.struct_instance_class, sv);
     Ok(obj)
 }
 
@@ -883,11 +859,7 @@ fn bind(
         arg_types,
         ret_type,
     };
-    let native = crate::object::NativeData::new(bound);
-    let obj = vm.obj_heap.alloc_instance(
-        vm.obj_heap.bound_fn_class,
-        crate::object::ObjectInstanceData::Native(native),
-    );
+    let obj = vm.obj_heap.alloc_instance(vm.obj_heap.bound_fn_class, bound);
     Ok(obj)
 }
 

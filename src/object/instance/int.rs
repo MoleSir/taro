@@ -1,5 +1,5 @@
 use crate::{
-    NativeFunction, ObjectHandle,
+    impl_object_instance_data, NativeFunction, ObjectHandle,
     vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine},
 };
 use super::ObjectHeap;
@@ -11,7 +11,11 @@ use super::ObjectHeap;
 /// Represents the `Int` built-in type.  Magic methods are implemented as
 /// associated functions matching [`NativeFunction`] signatures so they can be
 /// registered directly on the class during [`ObjectHeap::new`].
-pub struct ObjectInt(pub i64);
+pub struct ObjectInt {
+    pub value: i64,
+}
+
+impl_object_instance_data!(ObjectInt, "integer");
 
 macro_rules! int_binary_arith {
     ($name:ident, $int_op:expr, $float_op:expr, $op_name:literal) => {
@@ -45,6 +49,10 @@ macro_rules! int_cmp_op {
 }
 
 impl ObjectInt {
+    pub fn new(value: i64) -> Self {
+        Self { value }
+    }
+
     int_binary_arith!(__add__, |a, b| i64::wrapping_add(a, b), |a, b| a + b, "add");
     int_binary_arith!(__sub__, |a, b| i64::wrapping_sub(a, b), |a, b| a - b, "sub");
     int_binary_arith!(__mul__, |a, b| i64::wrapping_mul(a, b), |a, b| a * b, "mul");

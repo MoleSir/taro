@@ -1,12 +1,13 @@
+use std::any::Any;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
 use crate::{
-    native_a1,
-    NativeFunction, ObjectHandle, ObjectInstanceData,
+    impl_object_instance_data, native_a1,
+    NativeFunction, ObjectHandle,
     vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine},
 };
-use super::ObjectHeap;
+use super::{ObjectHeap, ObjectInstanceData};
 
 // ========================================================================== //
 //  ObjectBytesIterator (iterator state)
@@ -18,12 +19,25 @@ pub struct ObjectBytesIterator {
     pub index: usize,
 }
 
+impl ObjectInstanceData for ObjectBytesIterator {
+    fn mark_references(&self, heap: &mut ObjectHeap) {
+        heap.mark_object(self.bytes_handle);
+    }
+    fn type_name(&self) -> &'static str { "bytes iterator" }
+    fn as_any_ref(&self) -> &dyn Any { self }
+    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+}
+
 // ========================================================================== //
 //  ObjectBytes
 // ========================================================================== //
 
 /// Represents the `Bytes` built-in type.
-pub struct ObjectBytes;
+pub struct ObjectBytes {
+    pub data: Vec<u8>,
+}
+
+impl_object_instance_data!(ObjectBytes, "bytes");
 
 // Free function that returns the receiver unchanged — used for iterator
 // `__iter__` implementations that just return `self`.
@@ -184,10 +198,7 @@ impl ObjectBytes {
 
     pub fn __iter__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let iter = ObjectBytesIterator { bytes_handle: receiver, index: 0 };
-        Ok(vm.obj_heap.alloc_instance(
-            vm.obj_heap.bytes_iter_class,
-            ObjectInstanceData::BytesIter(iter),
-        ))
+        Ok(vm.obj_heap.alloc_instance(vm.obj_heap.bytes_iter_class, iter))
     }
 
     pub fn iter_next(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {

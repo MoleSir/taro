@@ -1,9 +1,11 @@
+use std::any::Any;
+
 use crate::{
     native_a1,
-    NativeFunction, ObjectHandle, ObjectInstanceData,
+    NativeFunction, ObjectHandle,
     vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine},
 };
-use super::ObjectHeap;
+use super::{ObjectHeap, ObjectInstanceData};
 
 // ========================================================================== //
 //  ObjectListIterator (iterator state)
@@ -15,12 +17,34 @@ pub struct ObjectListIterator {
     pub index: usize,
 }
 
+impl ObjectInstanceData for ObjectListIterator {
+    fn mark_references(&self, heap: &mut ObjectHeap) {
+        heap.mark_object(self.list_handle);
+    }
+    fn type_name(&self) -> &'static str { "list iterator" }
+    fn as_any_ref(&self) -> &dyn Any { self }
+    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+}
+
 // ========================================================================== //
 //  ObjectList
 // ========================================================================== //
 
 /// Represents the `List` built-in type.
-pub struct ObjectList;
+pub struct ObjectList {
+    pub items: Vec<ObjectHandle>,
+}
+
+impl ObjectInstanceData for ObjectList {
+    fn mark_references(&self, heap: &mut ObjectHeap) {
+        for &item in &self.items {
+            heap.mark_object(item);
+        }
+    }
+    fn type_name(&self) -> &'static str { "list" }
+    fn as_any_ref(&self) -> &dyn Any { self }
+    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+}
 
 // A free function that returns the receiver unchanged — used for iterator
 // `__iter__` implementations that just return `self`.
@@ -29,6 +53,10 @@ fn identity_iter(_vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeRes
 }
 
 impl ObjectList {
+    pub fn new(items: Vec<ObjectHandle>) -> Self {
+        Self { items }
+    }
+
     native_a1!(__not__, items: &Vec<ObjectHandle>, { items.is_empty() });
 
     pub fn __add__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
@@ -130,10 +158,7 @@ impl ObjectList {
 
     pub fn __iter__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let iter = ObjectListIterator { list_handle: receiver, index: 0 };
-        Ok(vm.obj_heap.alloc_instance(
-            vm.obj_heap.list_iter_class,
-            ObjectInstanceData::ListIter(iter),
-        ))
+        Ok(vm.obj_heap.alloc_instance(vm.obj_heap.list_iter_class, iter))
     }
 
     pub fn iter_next(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {

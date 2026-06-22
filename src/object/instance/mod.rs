@@ -22,10 +22,99 @@ use crate::{ShrString, ToShrString};
 use crate::vm::{RuntimeResult, VirtualMachine};
 use super::{Method, ObjectHandle, ObjectHeap};
 
+// ==========================================================================
+//  ObjectInstanceData trait
+// ==========================================================================
+
+/// Trait for all instance data stored inside a Taro object.
+///
+/// Types implementing this trait can be stored in `ObjectInstance::data` as
+/// `Box<dyn ObjectInstanceData>`, and recovered via `as_any_ref().downcast_ref::<T>()`.
+///
+/// `Send + Sync + Any` bounds are required because `Object` is stored in
+/// `LazyLock` statics.  The VM is single-threaded, so these bounds are harmless.
+pub trait ObjectInstanceData: Any + Send + Sync {
+    /// Called during GC marking.  Override to mark any [`ObjectHandle`]
+    /// references held by this data.
+    fn mark_references(&self, _heap: &mut ObjectHeap) {}
+
+    /// Human-readable type name for error messages and `type()`.
+    fn type_name(&self) -> &'static str;
+
+    /// For downcasting back to concrete type.
+    fn as_any_ref(&self) -> &dyn Any;
+    fn as_any_mut(&mut self) -> &mut dyn Any;
+}
+
+/// Macro to reduce boilerplate for simple `ObjectInstanceData` implementations
+/// that contain no `ObjectHandle` references.
+#[macro_export]
+macro_rules! impl_object_instance_data {
+    ($ty:ty, $type_name:expr) => {
+        impl $crate::object::ObjectInstanceData for $ty {
+            fn mark_references(&self, _heap: &mut $crate::object::ObjectHeap) {}
+            fn type_name(&self) -> &'static str { $type_name }
+            fn as_any_ref(&self) -> &dyn std::any::Any { self }
+            fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+        }
+    };
+}
+
+// ==========================================================================
+//  Concrete ObjectInstanceData types defined in this module
+// ==========================================================================
+
+/// Sentinel: nil.
+pub struct ObjectNil;
+impl_object_instance_data!(ObjectNil, "nil");
+
+/// Sentinel: IterEnd (iteration sentinel).
+pub struct ObjectIterEnd;
+impl_object_instance_data!(ObjectIterEnd, "IterEnd");
+
+/// User-defined class instances (field storage).
+pub struct ObjectFields {
+    pub fields: HashMap<ShrString, ObjectHandle>,
+}
+
+impl ObjectFields {
+    pub fn new() -> Self {
+        Self { fields: HashMap::new() }
+    }
+}
+
+impl Default for ObjectFields {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ObjectInstanceData for ObjectFields {
+    fn mark_references(&self, heap: &mut ObjectHeap) {
+        for &handle in self.fields.values() {
+            heap.mark_object(handle);
+        }
+    }
+    fn type_name(&self) -> &'static str { "instance" }
+    fn as_any_ref(&self) -> &dyn Any { self }
+    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+}
+
+// ==========================================================================
+//  ObjectClass
+// ==========================================================================
+
+/// Constructor function type: creates a `Box<dyn ObjectInstanceData>` for a new
+/// instance.  Uses a function pointer (`fn`) so it is `Copy` and avoids borrow-
+/// checker issues when called during class construction.  All necessary context is
+/// available through `&mut VirtualMachine`, so closures are not needed.
+pub type InstanceConstructor = fn(&mut VirtualMachine) -> RuntimeResult<Box<dyn ObjectInstanceData>>;
+
 pub struct ObjectClass {
     pub name: ShrString,
     pub methods: HashMap<ShrString, Method>,
     pub superclass: Option<ObjectHandle>,
+    pub constructor: Option<InstanceConstructor>,
 }
 
 impl ObjectClass {
@@ -34,37 +123,37 @@ impl ObjectClass {
             name: name.into(),
             methods: HashMap::new(),
             superclass: None,
+            constructor: None,
         }
     }
 }
 
-pub enum ObjectInstanceData {
-    Nil,
-    IterEnd,
+// ==========================================================================
+//  ObjectInstance
+// ==========================================================================
 
-    Bool(bool),
-    Integer(i64),
-    Float(f64),
-
-    String(ShrString),
-    StringIter(ObjectStringIterator),
-
-    List(Vec<ObjectHandle>),
-    ListIter(ObjectListIterator),
-
-    Dict(HashMap<u64, Vec<(ObjectHandle, ObjectHandle)>>),
-    DictIter(ObjectDictIterator),
-
-    Set(HashMap<u64, Vec<ObjectHandle>>),
-    SetIter(ObjectSetIterator),
-
-    Bytes(Vec<u8>),
-    BytesIter(ObjectBytesIterator),
-
-    Fields(HashMap<ShrString, ObjectHandle>),
-
-    Native(NativeData),
+pub struct ObjectInstance {
+    pub class: ObjectHandle,
+    pub data: Box<dyn ObjectInstanceData>,
 }
+
+impl ObjectInstance {
+    pub fn new(class: ObjectHandle, data: Box<dyn ObjectInstanceData>) -> Self {
+        Self { class, data }
+    }
+
+    pub fn get_data_mut<T: ObjectInstanceData>(&mut self) -> Option<&mut T> {
+        self.data.as_any_mut().downcast_mut()
+    }
+
+    pub fn get_data_ref<T: ObjectInstanceData>(&self) -> Option<&T> {
+        self.data.as_any_ref().downcast_ref()
+    }
+}
+
+// ==========================================================================
+//  IntoObjectInstance — convert Rust values into heap-allocated instances
+// ==========================================================================
 
 pub trait IntoObjectInstance {
     fn into_object_instance(self, vm: &mut VirtualMachine) -> ObjectHandle;
@@ -199,70 +288,6 @@ impl FromObjectInstance<'_> for bool {
 impl FromObjectInstance<'_> for ObjectHandle {
     fn from_object_instance(_vm: &VirtualMachine, handle: ObjectHandle) -> RuntimeResult<Self> {
         Ok(handle)
-    }
-}
-
-/// Trait for native Rust data stored inside a Taro object via
-/// [`NativeData`].  Implies `Any` so the concrete type can be recovered
-/// safely with [`NativeData::downcast_ref`] / [`NativeData::downcast_mut`].
-///
-/// `Send + Sync` are required because `Object` is stored in `LazyLock`
-/// statics.  The VM is single-threaded, so these bounds are harmless.
-pub trait ToNativeData: Any + Send + Sync {
-    /// Called during GC marking.  Override to mark any [`ObjectHandle`]
-    /// references held by this native data.
-    fn mark_inner_object(&self, _heap: &mut ObjectHeap) {}
-}
-
-impl dyn ToNativeData {
-    pub fn downcast_ref<T: ToNativeData>(&self) -> Option<&T> {
-        (self as &dyn Any).downcast_ref::<T>()
-    }
-    pub fn downcast_mut<T: ToNativeData>(&mut self) -> Option<&mut T> {
-        (self as &mut dyn Any).downcast_mut::<T>()
-    }
-}
-
-/// Type-erased native Rust value stored inline in a Taro object.
-pub struct NativeData {
-    data: Box<dyn ToNativeData>,
-}
-
-impl NativeData {
-    /// Create a [`NativeData`] from any type implementing [`ToNativeData`].
-    pub fn new<T: ToNativeData>(data: T) -> Self {
-        NativeData { data: Box::new(data) }
-    }
-
-    /// Call the GC trace callback (if any) to mark embedded handles.
-    pub fn mark_inner_object(&self, heap: &mut ObjectHeap) {
-        self.data.mark_inner_object(heap);
-    }
-
-    /// Downcast to a shared reference of the stored type.
-    /// Returns `None` if `T` doesn't match the concrete type.
-    pub fn downcast_ref<T: ToNativeData>(&self) -> Option<&T> {
-        self.data.as_ref().downcast_ref::<T>()
-    }
-
-    /// Downcast to a mutable reference of the stored type.
-    /// Returns `None` if `T` doesn't match the concrete type.
-    pub fn downcast_mut<T: ToNativeData>(&mut self) -> Option<&mut T> {
-        self.data.as_mut().downcast_mut::<T>()
-    }
-}
-
-pub struct ObjectInstance {
-    pub class: ObjectHandle,
-    pub data: ObjectInstanceData,
-}
-
-impl ObjectInstance {
-    pub fn new(class: ObjectHandle, data: ObjectInstanceData) -> Self {
-        Self {
-            class,
-            data,
-        }
     }
 }
 

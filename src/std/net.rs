@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::time::Duration;
-use crate::{ToNativeData, NativeFunction, NativeData, ObjectHandle, ObjectInstanceData, ShrString};
+use crate::{impl_object_instance_data, NativeFunction, ObjectHandle, ShrString};
 use crate::vm::{RuntimeResult, RuntimeErrorKind, VirtualMachine};
 
 impl VirtualMachine {
@@ -66,14 +66,14 @@ struct StdSocketData {
     peer_addr: String,
 }
 
-impl ToNativeData for StdSocketData {}
+impl_object_instance_data!(StdSocketData, "Socket");
 
 struct ServerData {
     listener: Option<TcpListener>,
     bind_addr: String,
 }
 
-impl ToNativeData for ServerData {}
+impl_object_instance_data!(ServerData, "Server");
 
 impl StdSocketData {
     /// `socket.connect(host, port)` or `socket.connect("host:port")`
@@ -100,9 +100,7 @@ impl StdSocketData {
 
         let inst = vm.obj_heap.get_instance_mut(self_handle)
             .ok_or_else(|| RuntimeErrorKind::NetError("not a Socket instance".into()))?;
-        inst.data = ObjectInstanceData::Native(
-            NativeData::new(StdSocketData { stream: Some(stream), peer_addr: addr }),
-        );
+        inst.data = Box::new(StdSocketData { stream: Some(stream), peer_addr: addr });
 
         Ok(self_handle)
     }
@@ -198,9 +196,7 @@ impl StdSocketData {
 
         let inst = vm.obj_heap.get_instance_mut(self_handle)
             .ok_or_else(|| RuntimeErrorKind::NetError("not a Server instance".into()))?;
-        inst.data = ObjectInstanceData::Native(
-            NativeData::new(ServerData { listener: Some(listener), bind_addr: addr }),
-        );
+        inst.data = Box::new(ServerData { listener: Some(listener), bind_addr: addr });
 
         Ok(self_handle)
     }
@@ -215,9 +211,7 @@ impl StdSocketData {
 
         // Create a Socket instance using the cached socket_class.
         let socket_class = vm.obj_heap.socket_class;
-        Ok(vm.obj_heap.alloc_instance(socket_class, ObjectInstanceData::Native(
-            NativeData::new(StdSocketData { stream: Some(stream), peer_addr: peer_str }),
-        )))
+        Ok(vm.obj_heap.alloc_instance(socket_class, StdSocketData { stream: Some(stream), peer_addr: peer_str }))
     }
 
     /// `server.close()` — close the listener.

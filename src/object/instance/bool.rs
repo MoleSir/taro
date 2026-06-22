@@ -1,5 +1,5 @@
 use crate::{
-    NativeFunction, ObjectHandle,
+    impl_object_instance_data, NativeFunction, ObjectHandle,
     vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine},
 };
 use super::ObjectHeap;
@@ -11,9 +11,17 @@ use super::ObjectHeap;
 /// Represents the `Bool` built-in type.  Magic methods are implemented as
 /// associated functions matching [`NativeFunction`] signatures so they can be
 /// registered directly on the class during [`ObjectHeap::new`].
-pub struct ObjectBool(pub bool);
+pub struct ObjectBool {
+    pub value: bool,
+}
+
+impl_object_instance_data!(ObjectBool, "boolean");
 
 impl ObjectBool {
+    pub fn new(value: bool) -> Self {
+        Self { value }
+    }
+
     /// Treat bool as 0 or 1 for arithmetic.
     fn as_int(vm: &VirtualMachine, handle: ObjectHandle) -> RuntimeResult<i64> {
         let val = *vm.obj_heap.get_bool_instance(handle)
