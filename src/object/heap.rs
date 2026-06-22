@@ -49,19 +49,6 @@ pub struct ObjectHeap {
     pub set_class: ObjectHandle,
     pub bytes_class: ObjectHandle,
     pub module_class: ObjectHandle,
-    /// Class handle for `net.Socket` — stored here so `Server.accept()` can
-    /// create new Socket instances without needing access to the net module.
-    pub socket_class: ObjectHandle,
-    /// Class handle for FFI bound-function objects.  Registered with a `__call__`
-    /// native method so that `ffi.bind(...)` results are directly callable.
-    pub bound_fn_class: ObjectHandle,
-    /// Class handle for FFI struct-definition objects.  Registered with a
-    /// `__call__` native method so that `ffi.struct_def(...)` results are
-    /// directly callable (e.g. `Color(255, 0, 0, 255)`).
-    pub struct_def_class: ObjectHandle,
-    /// Class handle for FFI struct-instance objects created by calling a
-    /// struct definition or by `ffi.struct_new`.
-    pub struct_instance_class: ObjectHandle,
 
     /// Singleton instances for `true` and `false` so repeated use of
     /// boolean literals doesn't allocate.
@@ -100,10 +87,6 @@ impl ObjectHeap {
             set_class: ObjectHandle::NIL,
             bytes_class: ObjectHandle::NIL,
             module_class: ObjectHandle::NIL,
-            socket_class: ObjectHandle::NIL,
-            bound_fn_class: ObjectHandle::NIL,
-            struct_def_class: ObjectHandle::NIL,
-            struct_instance_class: ObjectHandle::NIL,
             true_instance: ObjectHandle::NIL,
             false_instance: ObjectHandle::NIL,
             list_iter_class: ObjectHandle::NIL,
@@ -128,9 +111,6 @@ impl ObjectHeap {
         heap.dict_iter_class = heap.alloc_class("ObjectDictIterator");
         heap.set_iter_class = heap.alloc_class("ObjectSetIterator");
         heap.bytes_iter_class = heap.alloc_class("ObjectBytesIterator");
-        heap.bound_fn_class = heap.alloc_class("BoundFn");
-        heap.struct_def_class = heap.alloc_class("StructDef");
-        heap.struct_instance_class = heap.alloc_class("Struct");
 
         // Allocate singleton bool instances (after bool_class exists).
         heap.true_instance = heap.alloc_instance(heap.bool_class, ObjectBool::new(true));
@@ -267,7 +247,7 @@ impl ObjectHeap {
         class.methods.insert(name.into(), Method::Native(handle));
     }
 
-    fn alloc(&mut self, obj: impl Into<Object>) -> ObjectHandle {
+    pub fn alloc(&mut self, obj: impl Into<Object>) -> ObjectHandle {
         let obj = obj.into();
         self.bytes_allocated += std::mem::size_of::<Object>();
         let handle = if let Some(index) = self.free_slots.pop() {
@@ -491,6 +471,9 @@ impl ObjectHeap {
                 Object::Class(class) => {
                     if let Some(superclass) = class.superclass {
                         self.mark_object(superclass);
+                    }
+                    if let Some(module) = class.module {
+                        self.mark_object(module);
                     }
                     for method in class.methods.values() {
                         match method {

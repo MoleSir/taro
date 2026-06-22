@@ -716,8 +716,9 @@ fn struct_def(vm: &mut VirtualMachine, field_types_list: ObjectHandle) -> Runtim
     }
 
     let def = StructDef::from_field_types(&type_names)?;
-    let obj = vm.obj_heap.alloc_instance(vm.obj_heap.struct_def_class, def);
-    Ok(obj)
+    let class = vm.lookup_loaded_module_export("std/ffi", &ShrString::new_str("__StructDef__"))
+        .ok_or_else(|| RuntimeErrorKind::FfiError("StructDef class not found in ffi module".into()))?;
+    Ok(vm.obj_heap.alloc_instance(class, def))
 }
 
 fn struct_new(vm: &mut VirtualMachine, def_handle: ObjectHandle, values_list: ObjectHandle) -> RuntimeResult<ObjectHandle> {
@@ -750,8 +751,9 @@ fn struct_new(vm: &mut VirtualMachine, def_handle: ObjectHandle, values_list: Ob
     }
 
     let sv = StructValue::new(data);
-    let obj = vm.obj_heap.alloc_instance(vm.obj_heap.struct_instance_class, sv);
-    Ok(obj)
+    let class = vm.lookup_loaded_module_export("std/ffi", &ShrString::new_str("__Struct__"))
+        .ok_or_else(|| RuntimeErrorKind::FfiError("Struct class not found in ffi module".into()))?;
+    Ok(vm.obj_heap.alloc_instance(class, sv))
 }
 
 // -- struct_def_call (StructDef.__call__) ------------------------------------
@@ -809,8 +811,9 @@ fn struct_def_call(
     }
 
     let sv = StructValue::new(data);
-    let obj = vm.obj_heap.alloc_instance(vm.obj_heap.struct_instance_class, sv);
-    Ok(obj)
+    let class = vm.lookup_module_export(self_handle, &ShrString::new_str("__Struct__"))
+        .ok_or_else(|| RuntimeErrorKind::FfiError("Struct class not found in ffi module".into()))?;
+    Ok(vm.obj_heap.alloc_instance(class, sv))
 }
 
 // -- ffi.bind -----------------------------------------------------------------
@@ -859,8 +862,9 @@ fn bind(
         arg_types,
         ret_type,
     };
-    let obj = vm.obj_heap.alloc_instance(vm.obj_heap.bound_fn_class, bound);
-    Ok(obj)
+    let class = vm.lookup_loaded_module_export("std/ffi", &ShrString::new_str("__BoundFn__"))
+        .ok_or_else(|| RuntimeErrorKind::FfiError("BoundFn class not found in ffi module".into()))?;
+    Ok(vm.obj_heap.alloc_instance(class, bound))
 }
 
 // ===========================================================================
@@ -869,47 +873,38 @@ fn bind(
 
 impl VirtualMachine {
     pub(crate) fn create_ffi_module(&mut self) -> RuntimeResult<ObjectHandle> {
-        // Ensure the bound-function class exists and register __call__.
-        // The class may have been GC'd between heap init and module import,
-        // so recreate it lazily if needed.
-        if self.obj_heap.get_class(self.obj_heap.bound_fn_class).is_none() {
-            self.obj_heap.bound_fn_class = self.obj_heap.alloc_class("BoundFn");
-        }
+        // ---- internal classes (not exported to user scripts) ----
+        // These are created once and stored on the module object; module-level
+        // functions look them up via `lookup_loaded_module_export`.
+
+        let bound_fn_class = self.obj_heap.alloc_class("BoundFn");
+        self.register_native_method(bound_fn_class, "__new__",  NativeFunction::var(Self::bound_fn_new));
         let bound_call_fn = self.obj_heap.alloc_native_fn(
             "__call__",
             NativeFunction::var(bound_fn_call),
         );
-        let bfc = self.obj_heap
-            .get_class_mut(self.obj_heap.bound_fn_class)
-            .expect("BoundFn class must exist");
-        bfc.methods.insert(
-            ShrString::new_str("__call__"),
-            crate::object::Method::Native(bound_call_fn),
-        );
+        self.obj_heap
+            .get_class_mut(bound_fn_class)
+            .expect("BoundFn class must exist")
+            .methods
+            .insert(ShrString::new_str("__call__"), crate::object::Method::Native(bound_call_fn));
 
-        // Ensure the struct-def class exists and register __call__ so that
-        // `ffi.struct_def(...)` results are directly callable.
-        if self.obj_heap.get_class(self.obj_heap.struct_def_class).is_none() {
-            self.obj_heap.struct_def_class = self.obj_heap.alloc_class("StructDef");
-        }
+        let struct_def_class = self.obj_heap.alloc_class("StructDef");
+        self.register_native_method(struct_def_class, "__new__", NativeFunction::var(Self::struct_def_new));
         let struct_call_fn = self.obj_heap.alloc_native_fn(
             "__call__",
             NativeFunction::var(struct_def_call),
         );
-        let sdc = self.obj_heap
-            .get_class_mut(self.obj_heap.struct_def_class)
-            .expect("StructDef class must exist");
-        sdc.methods.insert(
-            ShrString::new_str("__call__"),
-            crate::object::Method::Native(struct_call_fn),
-        );
+        self.obj_heap
+            .get_class_mut(struct_def_class)
+            .expect("StructDef class must exist")
+            .methods
+            .insert(ShrString::new_str("__call__"), crate::object::Method::Native(struct_call_fn));
 
-        // Make sure the Struct instance class exists.
-        if self.obj_heap.get_class(self.obj_heap.struct_instance_class).is_none() {
-            self.obj_heap.struct_instance_class = self.obj_heap.alloc_class("Struct");
-        }
+        let struct_instance_class = self.obj_heap.alloc_class("Struct");
+        self.register_native_method(struct_instance_class, "__new__", NativeFunction::var(Self::struct_new_err));
 
-        // Export functions.
+        // ---- export functions ----
         let dlopen_fn     = self.obj_heap.alloc_native_fn("dlopen", NativeFunction::a1(dlopen));
         let dlsym_fn      = self.obj_heap.alloc_native_fn("dlsym", NativeFunction::a2(dlsym));
         let dlclose_fn    = self.obj_heap.alloc_native_fn("dlclose", NativeFunction::a1(dlclose));
@@ -927,8 +922,42 @@ impl VirtualMachine {
         exports.insert(ShrString::new_str("struct_new"), struct_new_fn);
         exports.insert(ShrString::new_str("bind"), bind_fn);
 
+        // Internal classes are not user-visible, but are stored as exports
+        // so module-level functions can resolve them via the module registry.
+        exports.insert(ShrString::new_str("__BoundFn__"), bound_fn_class);
+        exports.insert(ShrString::new_str("__StructDef__"), struct_def_class);
+        exports.insert(ShrString::new_str("__Struct__"), struct_instance_class);
+
         let module = self.obj_heap.alloc_fields_instance(self.obj_heap.module_class, exports);
+
+        // Back-link all internal classes to the module so method-level lookups
+        // (StructDef.__call__, BoundFn.__call__) can find sibling classes.
+        self.obj_heap.get_class_mut(bound_fn_class).expect("BoundFn").module = Some(module);
+        self.obj_heap.get_class_mut(struct_def_class).expect("StructDef").module = Some(module);
+        self.obj_heap.get_class_mut(struct_instance_class).expect("Struct").module = Some(module);
+
         Ok(module)
+    }
+
+    /// `__new__` for `BoundFn` — internal class, not directly constructible.
+    fn bound_fn_new(_vm: &mut VirtualMachine, _args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
+        Err(RuntimeErrorKind::FfiError(
+            "BoundFn cannot be constructed directly; use ffi.bind()".into(),
+        ))
+    }
+
+    /// `__new__` for `StructDef` — internal class, not directly constructible.
+    fn struct_def_new(_vm: &mut VirtualMachine, _args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
+        Err(RuntimeErrorKind::FfiError(
+            "StructDef cannot be constructed directly; use ffi.struct_def()".into(),
+        ))
+    }
+
+    /// `__new__` for `Struct` — internal class, not directly constructible.
+    fn struct_new_err(_vm: &mut VirtualMachine, _args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
+        Err(RuntimeErrorKind::FfiError(
+            "Struct cannot be constructed directly; use ffi.struct_new()".into(),
+        ))
     }
 }
 

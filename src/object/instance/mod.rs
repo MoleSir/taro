@@ -104,17 +104,13 @@ impl ObjectInstanceData for ObjectFields {
 //  ObjectClass
 // ==========================================================================
 
-/// Constructor function type: creates a `Box<dyn ObjectInstanceData>` for a new
-/// instance.  Uses a function pointer (`fn`) so it is `Copy` and avoids borrow-
-/// checker issues when called during class construction.  All necessary context is
-/// available through `&mut VirtualMachine`, so closures are not needed.
-pub type InstanceConstructor = fn(&mut VirtualMachine) -> RuntimeResult<Box<dyn ObjectInstanceData>>;
-
 pub struct ObjectClass {
     pub name: ShrString,
     pub methods: HashMap<ShrString, Method>,
     pub superclass: Option<ObjectHandle>,
-    pub constructor: Option<InstanceConstructor>,
+    /// Owning module for classes created as part of a native std module.
+    /// `None` for builtin classes and user-script classes.
+    pub module: Option<ObjectHandle>,
 }
 
 impl ObjectClass {
@@ -123,7 +119,7 @@ impl ObjectClass {
             name: name.into(),
             methods: HashMap::new(),
             superclass: None,
-            constructor: None,
+            module: None,
         }
     }
 }

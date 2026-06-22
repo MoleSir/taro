@@ -20,6 +20,10 @@ pub struct VirtualMachine {
     /// Handles that should always be treated as GC roots (used during import
     /// to keep the importing script's state alive while a module executes).
     extra_gc_roots: Vec<ObjectHandle>,
+    /// Loaded module instances, keyed by import path (e.g. `"std/net"`).
+    /// Serves as a GC root so module-owned classes stay alive, and lets
+    /// module-level native functions look up sibling classes via the module.
+    loaded_modules: HashMap<ShrString, ObjectHandle>,
 }
 
 /// A single function-call frame.  `slots_start` is the index into
@@ -61,6 +65,7 @@ impl VirtualMachine {
             open_upvalues: vec![],
             gc_threshold: 1024 * 1024,
             extra_gc_roots: vec![],
+            loaded_modules: HashMap::new(),
         };
         vm.register_builtins();
         vm
@@ -98,15 +103,16 @@ impl VirtualMachine {
     /// definitions (everything except the builtins).
     pub fn import_module(&mut self, path: &str) -> RuntimeResult<ObjectHandle> {
         // Virtual std/ modules — no file on disk.
-        if let Some(module_name) = path.strip_prefix("std/") {
-            return self.import_std_module(module_name);
-        }
-
-        // Read file content.
-        let source = std::fs::read_to_string(path)
-            .map_err(|e| RuntimeErrorKind::ImportError(format!("cannot read '{path}': {e}")))?;
-
-        self.import_source_module(&source, path)
+        let module = if let Some(module_name) = path.strip_prefix("std/") {
+            self.import_std_module(module_name)?
+        } else {
+            // Read file content.
+            let source = std::fs::read_to_string(path)
+                .map_err(|e| RuntimeErrorKind::ImportError(format!("cannot read '{path}': {e}")))?;
+            self.import_source_module(&source, path)?
+        };
+        self.loaded_modules.insert(ShrString::new_string(path), module);
+        Ok(module)
     }
 
     /// Compile `source` as a module and execute it in an isolated scope,
@@ -182,6 +188,37 @@ impl VirtualMachine {
         // 11. Create module object with exported names as fields.
         let module = self.obj_heap.alloc_fields_instance(self.obj_heap.module_class, exports);
         Ok(module)
+    }
+
+    /// Walk from `instance` back through its class to the owning module, then
+    /// look up a named export on that module.
+    ///
+    /// Chain: instance → .class → .module → exports[name]
+    /// Returns `None` if any link in the chain is missing.
+    pub fn lookup_module_export(
+        &self,
+        instance: ObjectHandle,
+        name: &ShrString,
+    ) -> Option<ObjectHandle> {
+        let inst = self.obj_heap.get_instance(instance)?;
+        let class = self.obj_heap.get_class(inst.class)?;
+        let module = class.module?;
+        let exports = self.obj_heap.get_fields_instance(module)?;
+        exports.get(name).copied()
+    }
+
+    /// Look up an export from a module that was previously loaded via `import`.
+    ///
+    /// Used by module-level native functions (which have no `self` receiver)
+    /// to find sibling classes within the same module.
+    pub fn lookup_loaded_module_export(
+        &self,
+        module_path: &str,
+        name: &ShrString,
+    ) -> Option<ObjectHandle> {
+        let module = self.loaded_modules.get(&ShrString::new_string(module_path))?;
+        let exports = self.obj_heap.get_fields_instance(*module)?;
+        exports.get(name).copied()
     }
 
     pub fn run(&mut self) -> Result<(), RuntimeError> {
@@ -707,15 +744,64 @@ impl VirtualMachine {
         match obj {
             Object::Closure(_) => self.call_closure(callee, arg_count, true),
             Object::Class(_) => {
-                let (init_method, constructor) = {
+                let (new_method, init_method) = {
                     let class = self.get_class(callee)?;
-                    (class.methods.get("__init__").copied(), class.constructor)
+                    (class.methods.get("__new__").copied(),
+                     class.methods.get("__init__").copied())
                 };
-                let data = match constructor {
-                    Some(ctor) => ctor(self)?,
-                    None => Box::new(ObjectFields::default()),
+                // If __new__ is defined, call it with the class as the
+                // first argument followed by any user-provided constructor
+                // arguments.  It returns the fully-constructed instance.
+                // Otherwise create a bare ObjectFields instance.
+                let instance = match new_method {
+                    Some(method) => {
+                        // Save user arguments before __new__ consumes them.
+                        let callee_idx = self.callee_slot(arg_count);
+                        let saved_args: Vec<ObjectHandle> =
+                            (callee_idx + 1..self.stack.len())
+                                .map(|i| self.stack[i])
+                                .collect();
+
+                        // Truncate stack to just before the class slot,
+                        // then push class + saved args for __new__ dispatch.
+                        self.stack.truncate(callee_idx);
+                        self.stack.push(callee);
+                        for &arg in &saved_args {
+                            self.stack.push(arg);
+                        }
+
+                        // Call __new__ synchronously.
+                        match method {
+                            Method::User(closure_handle) => {
+                                let saved_frame_count = self.frames.len();
+                                let total = 1 + saved_args.len();
+                                self.call_closure(closure_handle, total, false)?;
+                                while self.frames.len() > saved_frame_count {
+                                    self.step()?;
+                                }
+                            }
+                            Method::Native(handle) => {
+                                let native_fn = self.get_native_fn(handle)?.function;
+                                let total = 1 + saved_args.len();
+                                self.call_native_fn(native_fn, total, false)?;
+                            }
+                        }
+
+                        // Pop the instance from __new__ and push it back
+                        // together with the user arguments so the stack
+                        // layout matches what __init__ expects:
+                        //   [..., instance, arg1, arg2, ...]
+                        let inst = self.pop_stack()?;
+                        self.stack.push(inst);
+                        for &arg in &saved_args {
+                            self.stack.push(arg);
+                        }
+                        inst
+                    }
+                    None => {
+                        self.obj_heap.alloc_instance_dyn(callee, Box::new(ObjectFields::default()))
+                    }
                 };
-                let instance = self.obj_heap.alloc_instance_dyn(callee, data);
                 let index = self.callee_slot(arg_count);
                 self.stack[index] = instance;
                 if let Some(method) = init_method {

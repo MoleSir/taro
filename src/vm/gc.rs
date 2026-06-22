@@ -40,6 +40,11 @@ impl VirtualMachine {
             self.obj_heap.mark_object(handle);
         }
 
+        // mark loaded modules (keeps module-owned classes alive via back-references)
+        for &handle in self.loaded_modules.values() {
+            self.obj_heap.mark_object(handle);
+        }
+
         // mark builtin class handles (always reachable)
         self.obj_heap.mark_object(self.obj_heap.nil_class);
         self.obj_heap.mark_object(self.obj_heap.int_class);
@@ -51,15 +56,11 @@ impl VirtualMachine {
         self.obj_heap.mark_object(self.obj_heap.set_class);
         self.obj_heap.mark_object(self.obj_heap.bytes_class);
         self.obj_heap.mark_object(self.obj_heap.module_class);
-        self.obj_heap.mark_object(self.obj_heap.socket_class);
         self.obj_heap.mark_object(self.obj_heap.list_iter_class);
         self.obj_heap.mark_object(self.obj_heap.string_iter_class);
         self.obj_heap.mark_object(self.obj_heap.dict_iter_class);
         self.obj_heap.mark_object(self.obj_heap.set_iter_class);
         self.obj_heap.mark_object(self.obj_heap.bytes_iter_class);
-        self.obj_heap.mark_object(self.obj_heap.bound_fn_class);
-        self.obj_heap.mark_object(self.obj_heap.struct_def_class);
-        self.obj_heap.mark_object(self.obj_heap.struct_instance_class);
 
         // mark singleton bool instances (always reachable)
         self.obj_heap.mark_object(self.obj_heap.true_instance);

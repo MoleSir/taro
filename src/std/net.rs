@@ -33,23 +33,21 @@ impl VirtualMachine {
     pub(crate) fn create_net_module(&mut self) -> RuntimeResult<ObjectHandle> {
         // ---- Socket class ----
         let socket_class = self.obj_heap.alloc_class("Socket");
-        self.register_native_method(socket_class, "connect",    NativeFunction::var(StdSocketData::net_socket_connect));
-        self.register_native_method(socket_class, "send",       NativeFunction::a2(StdSocketData::net_socket_send));
-        self.register_native_method(socket_class, "recv",       NativeFunction::a2(StdSocketData::net_socket_recv));
-        self.register_native_method(socket_class, "close",      NativeFunction::a1(StdSocketData::net_socket_close));
-        self.register_native_method(socket_class, "settimeout", NativeFunction::a2(StdSocketData::net_socket_settimeout));
-        self.register_native_method(socket_class, "__str__",    NativeFunction::a1(StdSocketData::net_socket_str));
-
-        // Store socket_class on the heap so Server.accept() can create Socket
-        // instances without needing a closure capture.
-        self.obj_heap.socket_class = socket_class;
+        self.register_native_method(socket_class, "__new__",     NativeFunction::var(Socket::__new__));
+        self.register_native_method(socket_class, "connect",    NativeFunction::var(Socket::connect));
+        self.register_native_method(socket_class, "send",       NativeFunction::a2(Socket::send));
+        self.register_native_method(socket_class, "recv",       NativeFunction::a2(Socket::recv));
+        self.register_native_method(socket_class, "close",      NativeFunction::a1(Socket::close));
+        self.register_native_method(socket_class, "settimeout", NativeFunction::a2(Socket::settimeout));
+        self.register_native_method(socket_class, "__str__",    NativeFunction::a1(Socket::__str__));
 
         // ---- Server class ----
         let server_class = self.obj_heap.alloc_class("Server");
-        self.register_native_method(server_class, "bind",   NativeFunction::var(StdSocketData::net_server_bind));
-        self.register_native_method(server_class, "accept", NativeFunction::a1(StdSocketData::net_server_accept));
-        self.register_native_method(server_class, "close",  NativeFunction::a1(StdSocketData::net_server_close));
-        self.register_native_method(server_class, "__str__", NativeFunction::a1(StdSocketData::net_server_str));
+        self.register_native_method(server_class, "__new__",  NativeFunction::var(Server::__new__));
+        self.register_native_method(server_class, "bind",   NativeFunction::var(Server::bind));
+        self.register_native_method(server_class, "accept", NativeFunction::a1(Server::accept));
+        self.register_native_method(server_class, "close",  NativeFunction::a1(Server::close));
+        self.register_native_method(server_class, "__str__", NativeFunction::a1(Server::__str__));
 
         // ---- assemble module ----
         let mut exports: HashMap<ShrString, ObjectHandle> = HashMap::new();
@@ -57,27 +55,38 @@ impl VirtualMachine {
         exports.insert(ShrString::new_str("Server"), server_class);
 
         let module = self.obj_heap.alloc_fields_instance(self.obj_heap.module_class, exports);
+
+        // Back-link both classes to their owning module so native methods can
+        // find sibling classes (e.g. Server.accept() → Socket class).
+        self.obj_heap.get_class_mut(socket_class).expect("Socket class").module = Some(module);
+        self.obj_heap.get_class_mut(server_class).expect("Server class").module = Some(module);
+
         Ok(module)
     }
 }
 
-struct StdSocketData {
+struct Socket {
     stream: Option<TcpStream>,
     peer_addr: String,
 }
 
-impl_object_instance_data!(StdSocketData, "Socket");
+impl_object_instance_data!(Socket, "Socket");
 
-struct ServerData {
+struct Server {
     listener: Option<TcpListener>,
     bind_addr: String,
 }
 
-impl_object_instance_data!(ServerData, "Server");
+impl_object_instance_data!(Server, "Server");
 
-impl StdSocketData {
+impl Socket {
+    fn __new__(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
+        let class = args[0];
+        Ok(vm.obj_heap.alloc_instance_dyn(class, Box::new(Socket { stream: None, peer_addr: String::new() })))
+    }
+
     /// `socket.connect(host, port)` or `socket.connect("host:port")`
-    fn net_socket_connect(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
+    fn connect(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
         // args[0] = receiver (self)
         let explicit = args.len().saturating_sub(1);
         if explicit < 1 || explicit > 2 {
@@ -100,15 +109,15 @@ impl StdSocketData {
 
         let inst = vm.obj_heap.get_instance_mut(self_handle)
             .ok_or_else(|| RuntimeErrorKind::NetError("not a Socket instance".into()))?;
-        inst.data = Box::new(StdSocketData { stream: Some(stream), peer_addr: addr });
+        inst.data = Box::new(Socket { stream: Some(stream), peer_addr: addr });
 
         Ok(self_handle)
     }
 
     /// `socket.send(data)` — send a string.
-    fn net_socket_send(vm: &mut VirtualMachine, receiver: ObjectHandle, data: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+    fn send(vm: &mut VirtualMachine, receiver: ObjectHandle, data: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let text = vm.get_string_instance(data)?.clone();
-        let stream = vm.get_native_mut::<StdSocketData>(receiver)?.stream.as_mut()
+        let stream = vm.get_native_mut::<Socket>(receiver)?.stream.as_mut()
             .ok_or_else(|| RuntimeErrorKind::NetError("socket is closed".into()))?;
         stream.write_all(text.as_bytes())
             .map_err(|e| RuntimeErrorKind::NetError(format!("send error: {}", e)))?;
@@ -116,14 +125,14 @@ impl StdSocketData {
     }
 
     /// `socket.recv(bufsize)` — receive up to `bufsize` bytes, return as string.
-    fn net_socket_recv(vm: &mut VirtualMachine, receiver: ObjectHandle, bufsize: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+    fn recv(vm: &mut VirtualMachine, receiver: ObjectHandle, bufsize: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let n = *vm.get_integer_instance(bufsize)?;
         if n <= 0 || n > 65536 {
             return Err(RuntimeErrorKind::NetError(format!(
                 "recv: bufsize must be 1..65536, got {}", n
             )));
         }
-        let stream = vm.get_native_mut::<StdSocketData>(receiver)?.stream.as_mut()
+        let stream = vm.get_native_mut::<Socket>(receiver)?.stream.as_mut()
             .ok_or_else(|| RuntimeErrorKind::NetError("socket is closed".into()))?;
         let mut buf = vec![0u8; n as usize];
         let read = stream.read(&mut buf)
@@ -134,13 +143,13 @@ impl StdSocketData {
     }
 
     /// `socket.close()` — close the socket.
-    fn net_socket_close(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        vm.get_native_mut::<StdSocketData>(receiver)?.stream = None;
+    fn close(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+        vm.get_native_mut::<Socket>(receiver)?.stream = None;
         Ok(ObjectHandle::NIL)
     }
 
     /// `socket.settimeout(seconds)` — set the read timeout.
-    fn net_socket_settimeout(vm: &mut VirtualMachine, receiver: ObjectHandle, seconds: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+    fn settimeout(vm: &mut VirtualMachine, receiver: ObjectHandle, seconds: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let secs = if let Ok(v) = vm.get_float_instance(seconds) {
             *v
         } else if let Ok(v) = vm.get_integer_instance(seconds) {
@@ -149,7 +158,7 @@ impl StdSocketData {
             return Err(RuntimeErrorKind::UnexpectedType("number", vm.value_type_name(seconds)));
         };
         let dur = Duration::from_secs_f64(secs);
-        let data = vm.get_native_mut::<StdSocketData>(receiver)?;
+        let data = vm.get_native_mut::<Socket>(receiver)?;
         if let Some(ref stream) = data.stream {
             stream.set_read_timeout(Some(dur))
                 .map_err(|e| RuntimeErrorKind::NetError(format!("settimeout: {}", e)))?;
@@ -158,8 +167,8 @@ impl StdSocketData {
     }
 
     /// `socket.__str__()` → `<Socket peer='host:port' status=open|closed>`
-    fn net_socket_str(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let (is_open, addr) = if let Some(d) = vm.obj_heap.get_native::<StdSocketData>(receiver) {
+    fn __str__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+        let (is_open, addr) = if let Some(d) = vm.obj_heap.get_native::<Socket>(receiver) {
             (d.stream.is_some(), d.peer_addr.clone())
         } else {
             (false, "?".into())
@@ -169,9 +178,16 @@ impl StdSocketData {
             "<Socket peer='{}' status={}>", addr, status
         ))))
     }
+}
+
+impl Server {
+    fn __new__(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
+        let class = args[0];
+        Ok(vm.obj_heap.alloc_instance_dyn(class, Box::new(Server { listener: None, bind_addr: "".into() })))
+    }
 
     /// `server.bind(port)` or `server.bind(host, port)` or `server.bind("host:port")`
-    fn net_server_bind(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
+    fn bind(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
         let explicit = args.len().saturating_sub(1);
         if explicit < 1 || explicit > 2 {
             return Err(RuntimeErrorKind::ArgumentCountMismatch { expected: 1, got: explicit });
@@ -195,34 +211,41 @@ impl StdSocketData {
             .map_err(|e| RuntimeErrorKind::NetError(format!("cannot bind '{}': {}", addr, e)))?;
 
         let inst = vm.obj_heap.get_instance_mut(self_handle)
-            .ok_or_else(|| RuntimeErrorKind::NetError("not a Server instance".into()))?;
-        inst.data = Box::new(ServerData { listener: Some(listener), bind_addr: addr });
+            .ok_or_else(|| RuntimeErrorKind::NetError("not a Server instance".into()))?
+            .get_data_mut::<Server>()
+            .expect("must ");
+        inst.listener = Some(listener);
+        inst.bind_addr = addr;
 
         Ok(self_handle)
     }
 
     /// `server.accept()` — accept a connection, return a Socket instance.
-    fn net_server_accept(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let listener = vm.get_native_mut::<ServerData>(receiver)?.listener.as_mut()
+    fn accept(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+        let listener = vm.get_native_mut::<Server>(receiver)?.listener.as_mut()
             .ok_or_else(|| RuntimeErrorKind::NetError("server is closed".into()))?;
         let (stream, peer_addr) = listener.accept()
             .map_err(|e| RuntimeErrorKind::NetError(format!("accept error: {}", e)))?;
         let peer_str = peer_addr.to_string();
 
-        // Create a Socket instance using the cached socket_class.
-        let socket_class = vm.obj_heap.socket_class;
-        Ok(vm.obj_heap.alloc_instance(socket_class, StdSocketData { stream: Some(stream), peer_addr: peer_str }))
+        // Look up the Socket class via the module back-reference on the Server
+        // class, so we don't need a dedicated socket_class field on ObjectHeap.
+        let socket_class = vm.lookup_module_export(receiver, &ShrString::new_str("Socket"))
+            .ok_or_else(|| RuntimeErrorKind::NetError(
+                "Socket class not found in net module".into()
+            ))?;
+        Ok(vm.obj_heap.alloc_instance(socket_class, Socket { stream: Some(stream), peer_addr: peer_str }))
     }
 
     /// `server.close()` — close the listener.
-    fn net_server_close(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        vm.get_native_mut::<ServerData>(receiver)?.listener = None;
+    fn close(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+        vm.get_native_mut::<Server>(receiver)?.listener = None;
         Ok(ObjectHandle::NIL)
     }
 
     /// `server.__str__()` → `<Server addr='host:port' status=open|closed>`
-    fn net_server_str(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let (is_open, addr) = if let Some(d) = vm.obj_heap.get_native::<ServerData>(receiver) {
+    fn __str__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+        let (is_open, addr) = if let Some(d) = vm.obj_heap.get_native::<Server>(receiver) {
             (d.listener.is_some(), d.bind_addr.clone())
         } else {
             (false, "?".into())
