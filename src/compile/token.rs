@@ -1,4 +1,3 @@
-
 pub struct Token<'a> {
     pub kind: TokenKind,
     pub lexeme: &'a str,

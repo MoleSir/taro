@@ -1,17 +1,20 @@
 use std::{collections::HashMap, sync::LazyLock};
 
+use super::{
+    Method, NativeFunction, Object, ObjectBool, ObjectBoundMethod, ObjectBytes, ObjectBytesIterator, ObjectClass, ObjectClosure,
+    ObjectDict, ObjectDictIterator, ObjectFields, ObjectFloat, ObjectFunction, ObjectInstance, ObjectInstanceData, ObjectInt,
+    ObjectIterEnd, ObjectList, ObjectListIterator, ObjectNativeFn, ObjectNil, ObjectSet, ObjectSetIterator, ObjectString,
+    ObjectStringIterator, ObjectUpvalue, register_bool_builtins, register_bytes_builtins, register_dict_builtins, register_float_builtins,
+    register_int_builtins, register_list_builtins, register_set_builtins, register_string_builtins,
+};
 use crate::{Chunk, ShrString};
-use super::{NativeFunction, Method, Object, ObjectBoundMethod, ObjectNativeFn, ObjectClass, ObjectClosure, ObjectFunction, ObjectInstance, ObjectInstanceData, ObjectNil, ObjectIterEnd, ObjectFields, ObjectBool, ObjectInt, ObjectFloat, ObjectString, ObjectList, ObjectDict, ObjectSet, ObjectBytes, ObjectListIterator, ObjectDictIterator, ObjectSetIterator, ObjectStringIterator, ObjectBytesIterator, ObjectUpvalue, register_int_builtins, register_float_builtins, register_bool_builtins, register_string_builtins, register_list_builtins, register_dict_builtins, register_set_builtins, register_bytes_builtins};
 
 /// Static nil object — backing for `ObjectHandle::NIL`.
-static NIL_OBJECT: LazyLock<Object> = LazyLock::new(|| {
-    Object::Instance(ObjectInstance::new(ObjectHandle::NIL, Box::new(ObjectNil)))
-});
+static NIL_OBJECT: LazyLock<Object> = LazyLock::new(|| Object::Instance(ObjectInstance::new(ObjectHandle::NIL, Box::new(ObjectNil))));
 
 /// Static IterEnd object — backing for `ObjectHandle::ITER_END`.
-static ITER_END_OBJECT: LazyLock<Object> = LazyLock::new(|| {
-    Object::Instance(ObjectInstance::new(ObjectHandle::ITER_END, Box::new(ObjectIterEnd)))
-});
+static ITER_END_OBJECT: LazyLock<Object> =
+    LazyLock::new(|| Object::Instance(ObjectInstance::new(ObjectHandle::ITER_END, Box::new(ObjectIterEnd))));
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, Hash)]
 pub struct ObjectHandle(pub usize);
@@ -21,8 +24,12 @@ impl ObjectHandle {
     pub const NIL: Self = ObjectHandle(0);
     pub const ITER_END: Self = ObjectHandle(1);
 
-    pub fn is_nil(self) -> bool { self.0 == 0 }
-    pub fn is_iter_end(self) -> bool { self.0 == 1 }
+    pub fn is_nil(self) -> bool {
+        self.0 == 0
+    }
+    pub fn is_iter_end(self) -> bool {
+        self.0 == 1
+    }
 }
 
 pub struct ObjectHeap {
@@ -365,16 +372,36 @@ impl ObjectHeap {
     }
 
     // Convenience aliases for iterator getters — delegates to the generic helper.
-    pub fn get_list_iter(&self, handle: ObjectHandle) -> Option<&ObjectListIterator> { self.get_instance_data(handle) }
-    pub fn get_list_iter_mut(&mut self, handle: ObjectHandle) -> Option<&mut ObjectListIterator> { self.get_instance_data_mut(handle) }
-    pub fn get_dict_iter(&self, handle: ObjectHandle) -> Option<&ObjectDictIterator> { self.get_instance_data(handle) }
-    pub fn get_dict_iter_mut(&mut self, handle: ObjectHandle) -> Option<&mut ObjectDictIterator> { self.get_instance_data_mut(handle) }
-    pub fn get_set_iter(&self, handle: ObjectHandle) -> Option<&ObjectSetIterator> { self.get_instance_data(handle) }
-    pub fn get_set_iter_mut(&mut self, handle: ObjectHandle) -> Option<&mut ObjectSetIterator> { self.get_instance_data_mut(handle) }
-    pub fn get_string_iter(&self, handle: ObjectHandle) -> Option<&ObjectStringIterator> { self.get_instance_data(handle) }
-    pub fn get_string_iter_mut(&mut self, handle: ObjectHandle) -> Option<&mut ObjectStringIterator> { self.get_instance_data_mut(handle) }
-    pub fn get_bytes_iter(&self, handle: ObjectHandle) -> Option<&ObjectBytesIterator> { self.get_instance_data(handle) }
-    pub fn get_bytes_iter_mut(&mut self, handle: ObjectHandle) -> Option<&mut ObjectBytesIterator> { self.get_instance_data_mut(handle) }
+    pub fn get_list_iter(&self, handle: ObjectHandle) -> Option<&ObjectListIterator> {
+        self.get_instance_data(handle)
+    }
+    pub fn get_list_iter_mut(&mut self, handle: ObjectHandle) -> Option<&mut ObjectListIterator> {
+        self.get_instance_data_mut(handle)
+    }
+    pub fn get_dict_iter(&self, handle: ObjectHandle) -> Option<&ObjectDictIterator> {
+        self.get_instance_data(handle)
+    }
+    pub fn get_dict_iter_mut(&mut self, handle: ObjectHandle) -> Option<&mut ObjectDictIterator> {
+        self.get_instance_data_mut(handle)
+    }
+    pub fn get_set_iter(&self, handle: ObjectHandle) -> Option<&ObjectSetIterator> {
+        self.get_instance_data(handle)
+    }
+    pub fn get_set_iter_mut(&mut self, handle: ObjectHandle) -> Option<&mut ObjectSetIterator> {
+        self.get_instance_data_mut(handle)
+    }
+    pub fn get_string_iter(&self, handle: ObjectHandle) -> Option<&ObjectStringIterator> {
+        self.get_instance_data(handle)
+    }
+    pub fn get_string_iter_mut(&mut self, handle: ObjectHandle) -> Option<&mut ObjectStringIterator> {
+        self.get_instance_data_mut(handle)
+    }
+    pub fn get_bytes_iter(&self, handle: ObjectHandle) -> Option<&ObjectBytesIterator> {
+        self.get_instance_data(handle)
+    }
+    pub fn get_bytes_iter_mut(&mut self, handle: ObjectHandle) -> Option<&mut ObjectBytesIterator> {
+        self.get_instance_data_mut(handle)
+    }
 
     /// Return a shared reference to the native data stored in `handle`,
     /// downcast to `T`.

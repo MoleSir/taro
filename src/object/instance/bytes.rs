@@ -2,12 +2,11 @@ use std::any::Any;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
+use super::{ObjectHeap, ObjectInstanceData};
 use crate::{
-    impl_object_instance_data, native_a1,
-    NativeFunction, ObjectHandle,
+    NativeFunction, ObjectHandle, impl_object_instance_data, native_a1,
     vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine},
 };
-use super::{ObjectHeap, ObjectInstanceData};
 
 // ========================================================================== //
 //  ObjectBytesIterator (iterator state)
@@ -23,9 +22,15 @@ impl ObjectInstanceData for ObjectBytesIterator {
     fn mark_references(&self, heap: &mut ObjectHeap) {
         heap.mark_object(self.bytes_handle);
     }
-    fn type_name(&self) -> &'static str { "bytes iterator" }
-    fn as_any_ref(&self) -> &dyn Any { self }
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+    fn type_name(&self) -> &'static str {
+        "bytes iterator"
+    }
+    fn as_any_ref(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 }
 
 // ========================================================================== //
@@ -60,10 +65,7 @@ impl ObjectBytes {
         for &item in &items {
             let b = *vm.get_integer_instance(item)?;
             if b < 0 || b > 255 {
-                return Err(RuntimeErrorKind::UnexpectedType(
-                    "byte value in range 0-255",
-                    vm.value_type_name(item),
-                ));
+                return Err(RuntimeErrorKind::UnexpectedType("byte value in range 0-255", vm.value_type_name(item)));
             }
             data.push(b as u8);
         }
@@ -164,17 +166,11 @@ impl ObjectBytes {
     pub fn decode(vm: &mut VirtualMachine, receiver: ObjectHandle, encoding: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let enc = vm.get_string_instance(encoding)?.as_str().to_ascii_lowercase();
         if enc != "utf-8" && enc != "utf8" {
-            return Err(RuntimeErrorKind::TypeMismatch {
-                expected: "encoding 'utf-8'",
-                found: "other encoding",
-            });
+            return Err(RuntimeErrorKind::TypeMismatch { expected: "encoding 'utf-8'", found: "other encoding" });
         }
         let data = vm.get_bytes_instance(receiver)?;
         let s = String::from_utf8(data.clone())
-            .map_err(|_| RuntimeErrorKind::TypeMismatch {
-                expected: "valid utf-8 bytes",
-                found: "invalid utf-8 bytes",
-            })?;
+            .map_err(|_| RuntimeErrorKind::TypeMismatch { expected: "valid utf-8 bytes", found: "invalid utf-8 bytes" })?;
         Ok(vm.obj_heap.alloc_string_instance(s.into()))
     }
 
@@ -188,9 +184,7 @@ impl ObjectBytes {
     /// `bytes.to_list()` — convert bytes to a list of integers.
     pub fn to_list(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let data = vm.get_bytes_instance(receiver)?.clone();
-        let items: Vec<ObjectHandle> = data.iter()
-            .map(|&b| vm.obj_heap.alloc_integer_instance(b as i64))
-            .collect();
+        let items: Vec<ObjectHandle> = data.iter().map(|&b| vm.obj_heap.alloc_integer_instance(b as i64)).collect();
         Ok(vm.obj_heap.alloc_list_instance(items))
     }
 
@@ -225,21 +219,21 @@ impl ObjectBytes {
 /// Register all `Bytes` magic methods directly on the class during heap init.
 pub fn register_bytes_builtins(heap: &mut ObjectHeap) {
     let bc = heap.bytes_class;
-    heap.register_native_method(bc, "__str__",     NativeFunction::a1(ObjectBytes::__str__));
-    heap.register_native_method(bc, "__bool__",    NativeFunction::a1(ObjectBytes::__bool__));
-    heap.register_native_method(bc, "__not__",     NativeFunction::a1(ObjectBytes::__not__));
-    heap.register_native_method(bc, "__len__",     NativeFunction::a1(ObjectBytes::__len__));
+    heap.register_native_method(bc, "__str__", NativeFunction::a1(ObjectBytes::__str__));
+    heap.register_native_method(bc, "__bool__", NativeFunction::a1(ObjectBytes::__bool__));
+    heap.register_native_method(bc, "__not__", NativeFunction::a1(ObjectBytes::__not__));
+    heap.register_native_method(bc, "__len__", NativeFunction::a1(ObjectBytes::__len__));
     heap.register_native_method(bc, "__getitem__", NativeFunction::a2(ObjectBytes::__getitem__));
-    heap.register_native_method(bc, "__eq__",      NativeFunction::a2(ObjectBytes::__eq__));
-    heap.register_native_method(bc, "__ne__",      NativeFunction::a2(ObjectBytes::__ne__));
-    heap.register_native_method(bc, "__add__",     NativeFunction::a2(ObjectBytes::__add__));
+    heap.register_native_method(bc, "__eq__", NativeFunction::a2(ObjectBytes::__eq__));
+    heap.register_native_method(bc, "__ne__", NativeFunction::a2(ObjectBytes::__ne__));
+    heap.register_native_method(bc, "__add__", NativeFunction::a2(ObjectBytes::__add__));
     heap.register_native_method(bc, "__contains__", NativeFunction::a2(ObjectBytes::__contains__));
-    heap.register_native_method(bc, "__hash__",    NativeFunction::a1(ObjectBytes::__hash__));
-    heap.register_native_method(bc, "__iter__",    NativeFunction::a1(ObjectBytes::__iter__));
-    heap.register_native_method(bc, "len",         NativeFunction::a1(ObjectBytes::len));
-    heap.register_native_method(bc, "decode",      NativeFunction::a2(ObjectBytes::decode));
-    heap.register_native_method(bc, "hex",         NativeFunction::a1(ObjectBytes::hex));
-    heap.register_native_method(bc, "to_list",     NativeFunction::a1(ObjectBytes::to_list));
+    heap.register_native_method(bc, "__hash__", NativeFunction::a1(ObjectBytes::__hash__));
+    heap.register_native_method(bc, "__iter__", NativeFunction::a1(ObjectBytes::__iter__));
+    heap.register_native_method(bc, "len", NativeFunction::a1(ObjectBytes::len));
+    heap.register_native_method(bc, "decode", NativeFunction::a2(ObjectBytes::decode));
+    heap.register_native_method(bc, "hex", NativeFunction::a1(ObjectBytes::hex));
+    heap.register_native_method(bc, "to_list", NativeFunction::a1(ObjectBytes::to_list));
 
     let bic = heap.bytes_iter_class;
     heap.register_native_method(bic, "__iter__", NativeFunction::a1(identity_iter));
@@ -292,9 +286,7 @@ mod tests {
         let h101 = vm.obj_heap.alloc_integer_instance(101);
         let h108 = vm.obj_heap.alloc_integer_instance(108);
         let h111 = vm.obj_heap.alloc_integer_instance(111);
-        let list_handle = vm.obj_heap.alloc_list_instance(vec![
-            h104, h101, h108, h108, h111,
-        ]);
+        let list_handle = vm.obj_heap.alloc_list_instance(vec![h104, h101, h108, h108, h111]);
         let handle = ObjectBytes::from_list(&mut vm, list_handle).unwrap();
         assert_eq!(get_bytes_data(&vm, handle), b"hello".to_vec());
     }

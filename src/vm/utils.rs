@@ -1,5 +1,5 @@
 use crate::ObjectHandle;
-use crate::vm::{RuntimeResult, VirtualMachine, RuntimeErrorKind};
+use crate::vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine};
 
 // ==================================================================== //
 //               Get args
@@ -11,7 +11,9 @@ impl VirtualMachine {
     }
 
     pub fn get_n_args<const N: usize>(&self, actual_args: usize) -> RuntimeResult<[ObjectHandle; N]> {
-        if actual_args != N { Err(RuntimeErrorKind::ArgumentCountMismatch { expected: N, got: actual_args })? }
+        if actual_args != N {
+            Err(RuntimeErrorKind::ArgumentCountMismatch { expected: N, got: actual_args })?
+        }
         let args = self.get_args(actual_args);
         assert_eq!(N, actual_args);
         let arr: [ObjectHandle; N] = std::array::from_fn(|i| args[i].clone());

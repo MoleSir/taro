@@ -1,26 +1,26 @@
 mod bool;
-mod int;
-mod float;
-mod string;
-mod list;
-mod dict;
-mod set;
 mod bytes;
+mod dict;
+mod float;
+mod int;
+mod list;
+mod set;
+mod string;
 
 pub use bool::{ObjectBool, register_bool_builtins};
-pub use int::{ObjectInt, register_int_builtins};
-pub use float::{ObjectFloat, register_float_builtins};
-pub use string::{ObjectString, ObjectStringIterator, register_string_builtins};
-pub use list::{ObjectList, ObjectListIterator, register_list_builtins};
-pub use dict::{ObjectDict, ObjectDictIterator, register_dict_builtins};
-pub use set::{ObjectSet, ObjectSetIterator, register_set_builtins};
 pub use bytes::{ObjectBytes, ObjectBytesIterator, register_bytes_builtins};
+pub use dict::{ObjectDict, ObjectDictIterator, register_dict_builtins};
+pub use float::{ObjectFloat, register_float_builtins};
+pub use int::{ObjectInt, register_int_builtins};
+pub use list::{ObjectList, ObjectListIterator, register_list_builtins};
+pub use set::{ObjectSet, ObjectSetIterator, register_set_builtins};
+pub use string::{ObjectString, ObjectStringIterator, register_string_builtins};
 
+use super::{Method, ObjectHandle, ObjectHeap};
+use crate::vm::{RuntimeResult, VirtualMachine};
+use crate::{ShrString, ToShrString};
 use std::any::Any;
 use std::collections::HashMap;
-use crate::{ShrString, ToShrString};
-use crate::vm::{RuntimeResult, VirtualMachine};
-use super::{Method, ObjectHandle, ObjectHeap};
 
 // ==========================================================================
 //  ObjectInstanceData trait
@@ -53,9 +53,15 @@ macro_rules! impl_object_instance_data {
     ($ty:ty, $type_name:expr) => {
         impl $crate::object::ObjectInstanceData for $ty {
             fn mark_references(&self, _heap: &mut $crate::object::ObjectHeap) {}
-            fn type_name(&self) -> &'static str { $type_name }
-            fn as_any_ref(&self) -> &dyn std::any::Any { self }
-            fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+            fn type_name(&self) -> &'static str {
+                $type_name
+            }
+            fn as_any_ref(&self) -> &dyn std::any::Any {
+                self
+            }
+            fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+                self
+            }
         }
     };
 }
@@ -95,9 +101,15 @@ impl ObjectInstanceData for ObjectFields {
             heap.mark_object(handle);
         }
     }
-    fn type_name(&self) -> &'static str { "instance" }
-    fn as_any_ref(&self) -> &dyn Any { self }
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+    fn type_name(&self) -> &'static str {
+        "instance"
+    }
+    fn as_any_ref(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 }
 
 // ==========================================================================
@@ -115,12 +127,7 @@ pub struct ObjectClass {
 
 impl ObjectClass {
     pub fn new(name: impl Into<ShrString>) -> Self {
-        Self {
-            name: name.into(),
-            methods: HashMap::new(),
-            superclass: None,
-            module: None,
-        }
+        Self { name: name.into(), methods: HashMap::new(), superclass: None, module: None }
     }
 }
 

@@ -1,11 +1,8 @@
-
-
-use crate::{
-    impl_object_instance_data, native_a1, native_a2, native_a3,
-    vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine},
-    NativeFunction, ObjectHandle, ShrString,
-};
 use super::{ObjectHeap, ObjectInstanceData};
+use crate::{
+    NativeFunction, ObjectHandle, ShrString, impl_object_instance_data, native_a1, native_a2, native_a3,
+    vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine},
+};
 
 // ========================================================================== //
 //  ObjectStringIterator (iterator state)
@@ -21,9 +18,15 @@ impl ObjectInstanceData for ObjectStringIterator {
     fn mark_references(&self, heap: &mut ObjectHeap) {
         heap.mark_object(self.string_handle);
     }
-    fn type_name(&self) -> &'static str { "string iterator" }
-    fn as_any_ref(&self) -> &dyn std::any::Any { self }
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+    fn type_name(&self) -> &'static str {
+        "string iterator"
+    }
+    fn as_any_ref(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
 }
 
 impl ObjectStringIterator {
@@ -113,17 +116,13 @@ impl ObjectString {
 
     pub fn __int__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let s = vm.get_string_instance(receiver)?;
-        let val: i64 = s.as_str().parse().map_err(|_| {
-            RuntimeErrorKind::BadIntResult("string")
-        })?;
+        let val: i64 = s.as_str().parse().map_err(|_| RuntimeErrorKind::BadIntResult("string"))?;
         Ok(vm.obj_heap.alloc_integer_instance(val))
     }
 
     pub fn __float__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let s = vm.get_string_instance(receiver)?;
-        let val: f64 = s.as_str().parse().map_err(|_| {
-            RuntimeErrorKind::BadFloatResult("string")
-        })?;
+        let val: f64 = s.as_str().parse().map_err(|_| RuntimeErrorKind::BadFloatResult("string"))?;
         Ok(vm.obj_heap.alloc_float_instance(val))
     }
 
@@ -158,15 +157,18 @@ impl ObjectString {
     /// `string.swapcase()` — swap the case of each character.
     pub fn swapcase(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let s = vm.get_string_instance(receiver)?;
-        let result: String = s.chars().map(|c| {
-            if c.is_uppercase() {
-                c.to_lowercase().to_string()
-            } else if c.is_lowercase() {
-                c.to_uppercase().to_string()
-            } else {
-                c.to_string()
-            }
-        }).collect();
+        let result: String = s
+            .chars()
+            .map(|c| {
+                if c.is_uppercase() {
+                    c.to_lowercase().to_string()
+                } else if c.is_lowercase() {
+                    c.to_uppercase().to_string()
+                } else {
+                    c.to_string()
+                }
+            })
+            .collect();
         Ok(vm.obj_heap.alloc_string_instance(result.into()))
     }
 
@@ -216,9 +218,8 @@ impl ObjectString {
     pub fn split(vm: &mut VirtualMachine, receiver: ObjectHandle, delim_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let s = vm.get_string_instance(receiver)?.clone();
         let delim = vm.get_string_instance(delim_handle)?.clone();
-        let parts: Vec<ObjectHandle> = s.split(delim.as_str())
-            .map(|part| vm.obj_heap.alloc_string_instance(part.to_string().into()))
-            .collect();
+        let parts: Vec<ObjectHandle> =
+            s.split(delim.as_str()).map(|part| vm.obj_heap.alloc_string_instance(part.to_string().into())).collect();
         Ok(vm.obj_heap.alloc_list_instance(parts))
     }
 
@@ -228,18 +229,15 @@ impl ObjectString {
     pub fn rsplit(vm: &mut VirtualMachine, receiver: ObjectHandle, delim_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let s = vm.get_string_instance(receiver)?.clone();
         let delim = vm.get_string_instance(delim_handle)?.clone();
-        let parts: Vec<ObjectHandle> = s.split(delim.as_str())
-            .map(|part| vm.obj_heap.alloc_string_instance(part.to_string().into()))
-            .collect();
+        let parts: Vec<ObjectHandle> =
+            s.split(delim.as_str()).map(|part| vm.obj_heap.alloc_string_instance(part.to_string().into())).collect();
         Ok(vm.obj_heap.alloc_list_instance(parts))
     }
 
     /// `string.splitlines()` — split on line boundaries, return a list.
     pub fn splitlines(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let s = vm.get_string_instance(receiver)?.clone();
-        let parts: Vec<ObjectHandle> = s.lines()
-            .map(|part| vm.obj_heap.alloc_string_instance(part.to_string().into()))
-            .collect();
+        let parts: Vec<ObjectHandle> = s.lines().map(|part| vm.obj_heap.alloc_string_instance(part.to_string().into())).collect();
         Ok(vm.obj_heap.alloc_list_instance(parts))
     }
 
@@ -251,7 +249,7 @@ impl ObjectString {
         let sep_str = sep.as_str();
         if let Some(idx) = s.find(sep_str) {
             let before = &s.as_str()[..idx];
-            let after  = &s.as_str()[idx + sep_str.len()..];
+            let after = &s.as_str()[idx + sep_str.len()..];
             let parts = vec![
                 vm.obj_heap.alloc_string_instance(before.to_string().into()),
                 vm.obj_heap.alloc_string_instance(sep_str.to_string().into()),
@@ -259,11 +257,7 @@ impl ObjectString {
             ];
             Ok(vm.obj_heap.alloc_list_instance(parts))
         } else {
-            let parts = vec![
-                receiver,
-                vm.obj_heap.alloc_string_instance("".into()),
-                vm.obj_heap.alloc_string_instance("".into()),
-            ];
+            let parts = vec![receiver, vm.obj_heap.alloc_string_instance("".into()), vm.obj_heap.alloc_string_instance("".into())];
             Ok(vm.obj_heap.alloc_list_instance(parts))
         }
     }
@@ -276,7 +270,7 @@ impl ObjectString {
         let sep_str = sep.as_str();
         if let Some(idx) = s.rfind(sep_str) {
             let before = &s.as_str()[..idx];
-            let after  = &s.as_str()[idx + sep_str.len()..];
+            let after = &s.as_str()[idx + sep_str.len()..];
             let parts = vec![
                 vm.obj_heap.alloc_string_instance(before.to_string().into()),
                 vm.obj_heap.alloc_string_instance(sep_str.to_string().into()),
@@ -284,17 +278,18 @@ impl ObjectString {
             ];
             Ok(vm.obj_heap.alloc_list_instance(parts))
         } else {
-            let parts = vec![
-                vm.obj_heap.alloc_string_instance("".into()),
-                vm.obj_heap.alloc_string_instance("".into()),
-                receiver,
-            ];
+            let parts = vec![vm.obj_heap.alloc_string_instance("".into()), vm.obj_heap.alloc_string_instance("".into()), receiver];
             Ok(vm.obj_heap.alloc_list_instance(parts))
         }
     }
 
     /// `string.substr(start, length)` — extract a substring by character index.
-    pub fn substr(vm: &mut VirtualMachine, receiver: ObjectHandle, start_handle: ObjectHandle, length_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+    pub fn substr(
+        vm: &mut VirtualMachine,
+        receiver: ObjectHandle,
+        start_handle: ObjectHandle,
+        length_handle: ObjectHandle,
+    ) -> RuntimeResult<ObjectHandle> {
         let s = vm.get_string_instance(receiver)?.clone();
         let start = *vm.get_integer_instance(start_handle)?;
         let length = *vm.get_integer_instance(length_handle)?;
@@ -321,17 +316,11 @@ impl ObjectString {
         };
 
         // Convert character indices to byte offsets.
-        let byte_start = s_str.char_indices()
-            .nth(char_start as usize)
-            .map(|(bi, _)| bi)
-            .unwrap_or(s_str.len());
+        let byte_start = s_str.char_indices().nth(char_start as usize).map(|(bi, _)| bi).unwrap_or(s_str.len());
         let byte_end = if char_end >= char_len {
             s_str.len()
         } else {
-            s_str.char_indices()
-                .nth(char_end as usize)
-                .map(|(bi, _)| bi)
-                .unwrap_or(s_str.len())
+            s_str.char_indices().nth(char_end as usize).map(|(bi, _)| bi).unwrap_or(s_str.len())
         };
 
         let result = &s_str[byte_start..byte_end];
@@ -373,7 +362,12 @@ impl ObjectString {
 
     /// `string.center(width, fillchar)` — center the string in a field of `width`
     /// characters, padding with `fillchar` (must be a single character).
-    pub fn center(vm: &mut VirtualMachine, receiver: ObjectHandle, width_handle: ObjectHandle, fillchar_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+    pub fn center(
+        vm: &mut VirtualMachine,
+        receiver: ObjectHandle,
+        width_handle: ObjectHandle,
+        fillchar_handle: ObjectHandle,
+    ) -> RuntimeResult<ObjectHandle> {
         let s = vm.get_string_instance(receiver)?;
         let width = *vm.get_integer_instance(width_handle)? as usize;
         let fill_str = vm.get_string_instance(fillchar_handle)?;
@@ -386,15 +380,24 @@ impl ObjectString {
         let left_pad = (width - s_char_len) / 2;
         let right_pad = width - s_char_len - left_pad;
         let mut result = String::with_capacity(width * fill_char.len_utf8());
-        for _ in 0..left_pad { result.push(fill_char); }
+        for _ in 0..left_pad {
+            result.push(fill_char);
+        }
         result.push_str(s_str);
-        for _ in 0..right_pad { result.push(fill_char); }
+        for _ in 0..right_pad {
+            result.push(fill_char);
+        }
         Ok(vm.obj_heap.alloc_string_instance(result.into()))
     }
 
     /// `string.ljust(width, fillchar)` — left-justify the string in a field of
     /// `width` characters, padding with `fillchar` on the right.
-    pub fn ljust(vm: &mut VirtualMachine, receiver: ObjectHandle, width_handle: ObjectHandle, fillchar_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+    pub fn ljust(
+        vm: &mut VirtualMachine,
+        receiver: ObjectHandle,
+        width_handle: ObjectHandle,
+        fillchar_handle: ObjectHandle,
+    ) -> RuntimeResult<ObjectHandle> {
         let s = vm.get_string_instance(receiver)?;
         let width = *vm.get_integer_instance(width_handle)? as usize;
         let fill_str = vm.get_string_instance(fillchar_handle)?;
@@ -407,13 +410,20 @@ impl ObjectString {
         let pad = width - s_char_len;
         let mut result = String::with_capacity(width * fill_char.len_utf8());
         result.push_str(s_str);
-        for _ in 0..pad { result.push(fill_char); }
+        for _ in 0..pad {
+            result.push(fill_char);
+        }
         Ok(vm.obj_heap.alloc_string_instance(result.into()))
     }
 
     /// `string.rjust(width, fillchar)` — right-justify the string in a field of
     /// `width` characters, padding with `fillchar` on the left.
-    pub fn rjust(vm: &mut VirtualMachine, receiver: ObjectHandle, width_handle: ObjectHandle, fillchar_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+    pub fn rjust(
+        vm: &mut VirtualMachine,
+        receiver: ObjectHandle,
+        width_handle: ObjectHandle,
+        fillchar_handle: ObjectHandle,
+    ) -> RuntimeResult<ObjectHandle> {
         let s = vm.get_string_instance(receiver)?;
         let width = *vm.get_integer_instance(width_handle)? as usize;
         let fill_str = vm.get_string_instance(fillchar_handle)?;
@@ -425,7 +435,9 @@ impl ObjectString {
         }
         let pad = width - s_char_len;
         let mut result = String::with_capacity(width * fill_char.len_utf8());
-        for _ in 0..pad { result.push(fill_char); }
+        for _ in 0..pad {
+            result.push(fill_char);
+        }
         result.push_str(s_str);
         Ok(vm.obj_heap.alloc_string_instance(result.into()))
     }
@@ -441,7 +453,9 @@ impl ObjectString {
         }
         let pad = width - s_char_len;
         let mut result = String::with_capacity(width);
-        for _ in 0..pad { result.push('0'); }
+        for _ in 0..pad {
+            result.push('0');
+        }
         result.push_str(s_str);
         Ok(vm.obj_heap.alloc_string_instance(result.into()))
     }
@@ -462,8 +476,12 @@ impl ObjectString {
         let s = vm.get_string_instance(receiver)?;
         let mut has_cased = false;
         for c in s.chars() {
-            if c.is_uppercase() { return Ok(vm.obj_heap.alloc_bool_instance(false)); }
-            if c.is_lowercase() { has_cased = true; }
+            if c.is_uppercase() {
+                return Ok(vm.obj_heap.alloc_bool_instance(false));
+            }
+            if c.is_lowercase() {
+                has_cased = true;
+            }
         }
         Ok(vm.obj_heap.alloc_bool_instance(has_cased))
     }
@@ -474,8 +492,12 @@ impl ObjectString {
         let s = vm.get_string_instance(receiver)?;
         let mut has_cased = false;
         for c in s.chars() {
-            if c.is_lowercase() { return Ok(vm.obj_heap.alloc_bool_instance(false)); }
-            if c.is_uppercase() { has_cased = true; }
+            if c.is_lowercase() {
+                return Ok(vm.obj_heap.alloc_bool_instance(false));
+            }
+            if c.is_uppercase() {
+                has_cased = true;
+            }
         }
         Ok(vm.obj_heap.alloc_bool_instance(has_cased))
     }
@@ -487,16 +509,28 @@ impl ObjectString {
         let mut has_cased = false;
         let mut new_word = true;
         for c in s.chars() {
-            if c.is_lowercase() { has_cased = true; }
-            if c.is_uppercase() { has_cased = true; }
+            if c.is_lowercase() {
+                has_cased = true;
+            }
+            if c.is_uppercase() {
+                has_cased = true;
+            }
             if new_word {
                 // First char in a word must be uppercase if it's a letter.
-                if c.is_lowercase() { return Ok(vm.obj_heap.alloc_bool_instance(false)); }
-                if c.is_alphanumeric() { new_word = false; }
+                if c.is_lowercase() {
+                    return Ok(vm.obj_heap.alloc_bool_instance(false));
+                }
+                if c.is_alphanumeric() {
+                    new_word = false;
+                }
             } else {
                 // Subsequent chars in a word must be lowercase if they're letters.
-                if c.is_uppercase() { return Ok(vm.obj_heap.alloc_bool_instance(false)); }
-                if !c.is_alphanumeric() { new_word = true; }
+                if c.is_uppercase() {
+                    return Ok(vm.obj_heap.alloc_bool_instance(false));
+                }
+                if !c.is_alphanumeric() {
+                    new_word = true;
+                }
             }
         }
         Ok(vm.obj_heap.alloc_bool_instance(has_cased))
@@ -560,79 +594,79 @@ pub fn register_string_builtins(heap: &mut ObjectHeap) {
     let sc = heap.string_class;
 
     // Magic / dunder methods
-    heap.register_native_method(sc, "__not__",      NativeFunction::a1(ObjectString::__not__));
-    heap.register_native_method(sc, "__add__",      NativeFunction::a2(ObjectString::__add__));
-    heap.register_native_method(sc, "__eq__",       NativeFunction::a2(ObjectString::__eq__));
-    heap.register_native_method(sc, "__ne__",       NativeFunction::a2(ObjectString::__ne__));
-    heap.register_native_method(sc, "__gt__",       NativeFunction::a2(ObjectString::__gt__));
-    heap.register_native_method(sc, "__ge__",       NativeFunction::a2(ObjectString::__ge__));
-    heap.register_native_method(sc, "__lt__",       NativeFunction::a2(ObjectString::__lt__));
-    heap.register_native_method(sc, "__le__",       NativeFunction::a2(ObjectString::__le__));
-    heap.register_native_method(sc, "__str__",      NativeFunction::a1(ObjectString::__str__));
-    heap.register_native_method(sc, "__bool__",     NativeFunction::a1(ObjectString::__bool__));
-    heap.register_native_method(sc, "__hash__",     NativeFunction::a1(ObjectString::__hash__));
-    heap.register_native_method(sc, "__int__",      NativeFunction::a1(ObjectString::__int__));
-    heap.register_native_method(sc, "__float__",    NativeFunction::a1(ObjectString::__float__));
-    heap.register_native_method(sc, "__len__",      NativeFunction::a1(ObjectString::__len__));
-    heap.register_native_method(sc, "__getitem__",  NativeFunction::a2(ObjectString::__getitem__));
-    heap.register_native_method(sc, "__iter__",     NativeFunction::a1(ObjectString::__iter__));
+    heap.register_native_method(sc, "__not__", NativeFunction::a1(ObjectString::__not__));
+    heap.register_native_method(sc, "__add__", NativeFunction::a2(ObjectString::__add__));
+    heap.register_native_method(sc, "__eq__", NativeFunction::a2(ObjectString::__eq__));
+    heap.register_native_method(sc, "__ne__", NativeFunction::a2(ObjectString::__ne__));
+    heap.register_native_method(sc, "__gt__", NativeFunction::a2(ObjectString::__gt__));
+    heap.register_native_method(sc, "__ge__", NativeFunction::a2(ObjectString::__ge__));
+    heap.register_native_method(sc, "__lt__", NativeFunction::a2(ObjectString::__lt__));
+    heap.register_native_method(sc, "__le__", NativeFunction::a2(ObjectString::__le__));
+    heap.register_native_method(sc, "__str__", NativeFunction::a1(ObjectString::__str__));
+    heap.register_native_method(sc, "__bool__", NativeFunction::a1(ObjectString::__bool__));
+    heap.register_native_method(sc, "__hash__", NativeFunction::a1(ObjectString::__hash__));
+    heap.register_native_method(sc, "__int__", NativeFunction::a1(ObjectString::__int__));
+    heap.register_native_method(sc, "__float__", NativeFunction::a1(ObjectString::__float__));
+    heap.register_native_method(sc, "__len__", NativeFunction::a1(ObjectString::__len__));
+    heap.register_native_method(sc, "__getitem__", NativeFunction::a2(ObjectString::__getitem__));
+    heap.register_native_method(sc, "__iter__", NativeFunction::a1(ObjectString::__iter__));
 
     // a1 — receiver only
-    heap.register_native_method(sc, "len",          NativeFunction::a1(ObjectString::len));
-    heap.register_native_method(sc, "byte_len",     NativeFunction::a1(ObjectString::byte_len));
-    heap.register_native_method(sc, "upper",        NativeFunction::a1(ObjectString::upper));
-    heap.register_native_method(sc, "lower",        NativeFunction::a1(ObjectString::lower));
-    heap.register_native_method(sc, "capitalize",   NativeFunction::a1(ObjectString::capitalize));
-    heap.register_native_method(sc, "casefold",     NativeFunction::a1(ObjectString::casefold));
-    heap.register_native_method(sc, "swapcase",     NativeFunction::a1(ObjectString::swapcase));
-    heap.register_native_method(sc, "title",        NativeFunction::a1(ObjectString::title));
-    heap.register_native_method(sc, "trim",         NativeFunction::a1(ObjectString::trim));
-    heap.register_native_method(sc, "trim_start",   NativeFunction::a1(ObjectString::trim_start));
-    heap.register_native_method(sc, "trim_end",     NativeFunction::a1(ObjectString::trim_end));
-    heap.register_native_method(sc, "is_empty",     NativeFunction::a1(ObjectString::is_empty));
-    heap.register_native_method(sc, "is_alnum",     NativeFunction::a1(ObjectString::is_alnum));
-    heap.register_native_method(sc, "is_alpha",     NativeFunction::a1(ObjectString::is_alpha));
-    heap.register_native_method(sc, "is_ascii",     NativeFunction::a1(ObjectString::is_ascii));
-    heap.register_native_method(sc, "is_decimal",   NativeFunction::a1(ObjectString::is_decimal));
-    heap.register_native_method(sc, "is_digit",     NativeFunction::a1(ObjectString::is_digit));
-    heap.register_native_method(sc, "is_numeric",   NativeFunction::a1(ObjectString::is_numeric));
-    heap.register_native_method(sc, "is_whitespace",NativeFunction::a1(ObjectString::is_whitespace));
-    heap.register_native_method(sc, "is_lower",     NativeFunction::a1(ObjectString::is_lower));
-    heap.register_native_method(sc, "is_upper",     NativeFunction::a1(ObjectString::is_upper));
-    heap.register_native_method(sc, "is_title",     NativeFunction::a1(ObjectString::is_title));
-    heap.register_native_method(sc, "splitlines",   NativeFunction::a1(ObjectString::splitlines));
+    heap.register_native_method(sc, "len", NativeFunction::a1(ObjectString::len));
+    heap.register_native_method(sc, "byte_len", NativeFunction::a1(ObjectString::byte_len));
+    heap.register_native_method(sc, "upper", NativeFunction::a1(ObjectString::upper));
+    heap.register_native_method(sc, "lower", NativeFunction::a1(ObjectString::lower));
+    heap.register_native_method(sc, "capitalize", NativeFunction::a1(ObjectString::capitalize));
+    heap.register_native_method(sc, "casefold", NativeFunction::a1(ObjectString::casefold));
+    heap.register_native_method(sc, "swapcase", NativeFunction::a1(ObjectString::swapcase));
+    heap.register_native_method(sc, "title", NativeFunction::a1(ObjectString::title));
+    heap.register_native_method(sc, "trim", NativeFunction::a1(ObjectString::trim));
+    heap.register_native_method(sc, "trim_start", NativeFunction::a1(ObjectString::trim_start));
+    heap.register_native_method(sc, "trim_end", NativeFunction::a1(ObjectString::trim_end));
+    heap.register_native_method(sc, "is_empty", NativeFunction::a1(ObjectString::is_empty));
+    heap.register_native_method(sc, "is_alnum", NativeFunction::a1(ObjectString::is_alnum));
+    heap.register_native_method(sc, "is_alpha", NativeFunction::a1(ObjectString::is_alpha));
+    heap.register_native_method(sc, "is_ascii", NativeFunction::a1(ObjectString::is_ascii));
+    heap.register_native_method(sc, "is_decimal", NativeFunction::a1(ObjectString::is_decimal));
+    heap.register_native_method(sc, "is_digit", NativeFunction::a1(ObjectString::is_digit));
+    heap.register_native_method(sc, "is_numeric", NativeFunction::a1(ObjectString::is_numeric));
+    heap.register_native_method(sc, "is_whitespace", NativeFunction::a1(ObjectString::is_whitespace));
+    heap.register_native_method(sc, "is_lower", NativeFunction::a1(ObjectString::is_lower));
+    heap.register_native_method(sc, "is_upper", NativeFunction::a1(ObjectString::is_upper));
+    heap.register_native_method(sc, "is_title", NativeFunction::a1(ObjectString::is_title));
+    heap.register_native_method(sc, "splitlines", NativeFunction::a1(ObjectString::splitlines));
 
     // a2 — receiver + 1 argument
-    heap.register_native_method(sc, "starts_with",  NativeFunction::a2(ObjectString::starts_with));
-    heap.register_native_method(sc, "ends_with",    NativeFunction::a2(ObjectString::ends_with));
-    heap.register_native_method(sc, "contains",     NativeFunction::a2(ObjectString::contains));
-    heap.register_native_method(sc, "split",        NativeFunction::a2(ObjectString::split));
-    heap.register_native_method(sc, "rsplit",       NativeFunction::a2(ObjectString::rsplit));
-    heap.register_native_method(sc, "find",         NativeFunction::a2(ObjectString::find));
-    heap.register_native_method(sc, "rfind",        NativeFunction::a2(ObjectString::rfind));
-    heap.register_native_method(sc, "count",        NativeFunction::a2(ObjectString::count));
-    heap.register_native_method(sc, "repeat",       NativeFunction::a2(ObjectString::repeat));
+    heap.register_native_method(sc, "starts_with", NativeFunction::a2(ObjectString::starts_with));
+    heap.register_native_method(sc, "ends_with", NativeFunction::a2(ObjectString::ends_with));
+    heap.register_native_method(sc, "contains", NativeFunction::a2(ObjectString::contains));
+    heap.register_native_method(sc, "split", NativeFunction::a2(ObjectString::split));
+    heap.register_native_method(sc, "rsplit", NativeFunction::a2(ObjectString::rsplit));
+    heap.register_native_method(sc, "find", NativeFunction::a2(ObjectString::find));
+    heap.register_native_method(sc, "rfind", NativeFunction::a2(ObjectString::rfind));
+    heap.register_native_method(sc, "count", NativeFunction::a2(ObjectString::count));
+    heap.register_native_method(sc, "repeat", NativeFunction::a2(ObjectString::repeat));
     heap.register_native_method(sc, "removeprefix", NativeFunction::a2(ObjectString::removeprefix));
     heap.register_native_method(sc, "removesuffix", NativeFunction::a2(ObjectString::removesuffix));
-    heap.register_native_method(sc, "zfill",        NativeFunction::a2(ObjectString::zfill));
-    heap.register_native_method(sc, "partition",    NativeFunction::a2(ObjectString::partition));
-    heap.register_native_method(sc, "rpartition",   NativeFunction::a2(ObjectString::rpartition));
+    heap.register_native_method(sc, "zfill", NativeFunction::a2(ObjectString::zfill));
+    heap.register_native_method(sc, "partition", NativeFunction::a2(ObjectString::partition));
+    heap.register_native_method(sc, "rpartition", NativeFunction::a2(ObjectString::rpartition));
 
     // a3 — receiver + 2 arguments
-    heap.register_native_method(sc, "replace",      NativeFunction::a3(ObjectString::replace));
-    heap.register_native_method(sc, "substr",       NativeFunction::a3(ObjectString::substr));
-    heap.register_native_method(sc, "center",       NativeFunction::a3(ObjectString::center));
-    heap.register_native_method(sc, "ljust",        NativeFunction::a3(ObjectString::ljust));
-    heap.register_native_method(sc, "rjust",        NativeFunction::a3(ObjectString::rjust));
+    heap.register_native_method(sc, "replace", NativeFunction::a3(ObjectString::replace));
+    heap.register_native_method(sc, "substr", NativeFunction::a3(ObjectString::substr));
+    heap.register_native_method(sc, "center", NativeFunction::a3(ObjectString::center));
+    heap.register_native_method(sc, "ljust", NativeFunction::a3(ObjectString::ljust));
+    heap.register_native_method(sc, "rjust", NativeFunction::a3(ObjectString::rjust));
 
     // Aliases
-    heap.register_native_method(sc, "to_uppercase",   NativeFunction::a1(ObjectString::upper));
-    heap.register_native_method(sc, "to_lowercase",   NativeFunction::a1(ObjectString::lower));
-    heap.register_native_method(sc, "strip",          NativeFunction::a1(ObjectString::trim));
-    heap.register_native_method(sc, "lstrip",         NativeFunction::a1(ObjectString::trim_start));
-    heap.register_native_method(sc, "rstrip",         NativeFunction::a1(ObjectString::trim_end));
-    heap.register_native_method(sc, "index_of",       NativeFunction::a2(ObjectString::find));
-    heap.register_native_method(sc, "last_index_of",  NativeFunction::a2(ObjectString::rfind));
+    heap.register_native_method(sc, "to_uppercase", NativeFunction::a1(ObjectString::upper));
+    heap.register_native_method(sc, "to_lowercase", NativeFunction::a1(ObjectString::lower));
+    heap.register_native_method(sc, "strip", NativeFunction::a1(ObjectString::trim));
+    heap.register_native_method(sc, "lstrip", NativeFunction::a1(ObjectString::trim_start));
+    heap.register_native_method(sc, "rstrip", NativeFunction::a1(ObjectString::trim_end));
+    heap.register_native_method(sc, "index_of", NativeFunction::a2(ObjectString::find));
+    heap.register_native_method(sc, "last_index_of", NativeFunction::a2(ObjectString::rfind));
 
     // String-iterator class
     let sic = heap.string_iter_class;
@@ -666,22 +700,14 @@ mod tests {
     }
 
     // Helper: call a native a1 method and extract the returned bool.
-    fn call_a1_bool(
-        vm: &mut VirtualMachine,
-        f: fn(&mut VirtualMachine, ObjectHandle) -> RuntimeResult<ObjectHandle>,
-        input: &str,
-    ) -> bool {
+    fn call_a1_bool(vm: &mut VirtualMachine, f: fn(&mut VirtualMachine, ObjectHandle) -> RuntimeResult<ObjectHandle>, input: &str) -> bool {
         let h = str_handle(vm, input);
         let r = f(vm, h).unwrap();
         *vm.obj_heap.get_bool_instance(r).unwrap()
     }
 
     // Helper: call a native a1 method and extract the returned int.
-    fn call_a1_int(
-        vm: &mut VirtualMachine,
-        f: fn(&mut VirtualMachine, ObjectHandle) -> RuntimeResult<ObjectHandle>,
-        input: &str,
-    ) -> i64 {
+    fn call_a1_int(vm: &mut VirtualMachine, f: fn(&mut VirtualMachine, ObjectHandle) -> RuntimeResult<ObjectHandle>, input: &str) -> i64 {
         let h = str_handle(vm, input);
         let r = f(vm, h).unwrap();
         *vm.obj_heap.get_integer_instance(r).unwrap()
@@ -736,9 +762,12 @@ mod tests {
         let h = str_handle(vm, input);
         let a = str_handle(vm, arg);
         let r = f(vm, h, a).unwrap();
-        vm.obj_heap.get_list_instance(r).unwrap().iter().map(|&item| {
-            vm.obj_heap.get_string_instance(item).unwrap().as_str().to_string()
-        }).collect()
+        vm.obj_heap
+            .get_list_instance(r)
+            .unwrap()
+            .iter()
+            .map(|&item| vm.obj_heap.get_string_instance(item).unwrap().as_str().to_string())
+            .collect()
     }
 
     // Helper: call a1 method and get the returned list as Vec<String>.
@@ -749,9 +778,12 @@ mod tests {
     ) -> Vec<String> {
         let h = str_handle(vm, input);
         let r = f(vm, h).unwrap();
-        vm.obj_heap.get_list_instance(r).unwrap().iter().map(|&item| {
-            vm.obj_heap.get_string_instance(item).unwrap().as_str().to_string()
-        }).collect()
+        vm.obj_heap
+            .get_list_instance(r)
+            .unwrap()
+            .iter()
+            .map(|&item| vm.obj_heap.get_string_instance(item).unwrap().as_str().to_string())
+            .collect()
     }
 
     // ======================================================================
@@ -1465,10 +1497,7 @@ mod tests {
         let h2 = str_handle(&mut vm, "hello");
         let r1 = ObjectString::__hash__(&mut vm, h1).unwrap();
         let r2 = ObjectString::__hash__(&mut vm, h2).unwrap();
-        assert_eq!(
-            *vm.obj_heap.get_integer_instance(r1).unwrap(),
-            *vm.obj_heap.get_integer_instance(r2).unwrap(),
-        );
+        assert_eq!(*vm.obj_heap.get_integer_instance(r1).unwrap(), *vm.obj_heap.get_integer_instance(r2).unwrap(),);
     }
 
     #[test]

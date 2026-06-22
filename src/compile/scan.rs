@@ -34,13 +34,7 @@ impl std::fmt::Display for ScanError {
 
 impl<'a> Scanner<'a> {
     pub fn new(source: &'a str) -> Self {
-        Self {
-            source,
-            start: 0,
-            current: 0,
-            line: 1,
-            line_start: 0,
-        }
+        Self { source, start: 0, current: 0, line: 1, line_start: 0 }
     }
 
     pub fn scan_tokens(&mut self) -> ScanResult<Vec<Token<'a>>> {
@@ -94,35 +88,19 @@ impl<'a> Scanner<'a> {
             ':' => Ok(self.make_token(TokenKind::Colon)),
 
             '!' => {
-                let kind = if self.match_then_advance('=')? {
-                    TokenKind::BangEqual
-                } else {
-                    TokenKind::Bang
-                };
+                let kind = if self.match_then_advance('=')? { TokenKind::BangEqual } else { TokenKind::Bang };
                 Ok(self.make_token(kind))
             }
             '=' => {
-                let kind = if self.match_then_advance('=')? {
-                    TokenKind::EqualEqual
-                } else {
-                    TokenKind::Equal
-                };
+                let kind = if self.match_then_advance('=')? { TokenKind::EqualEqual } else { TokenKind::Equal };
                 Ok(self.make_token(kind))
             }
             '<' => {
-                let kind = if self.match_then_advance('=')? {
-                    TokenKind::LessEqual
-                } else {
-                    TokenKind::Less
-                };
+                let kind = if self.match_then_advance('=')? { TokenKind::LessEqual } else { TokenKind::Less };
                 Ok(self.make_token(kind))
             }
             '>' => {
-                let kind = if self.match_then_advance('=')? {
-                    TokenKind::GreaterEqual
-                } else {
-                    TokenKind::Greater
-                };
+                let kind = if self.match_then_advance('=')? { TokenKind::GreaterEqual } else { TokenKind::Greater };
                 Ok(self.make_token(kind))
             }
 
@@ -251,29 +229,20 @@ impl<'a> Scanner<'a> {
 
     fn advance(&mut self) -> ScanResult<char> {
         let rest = &self.source[self.current..];
-        let ch = rest
-            .chars()
-            .next()
-            .ok_or_else(|| self.wrap_error(ScanErrorKind::UnexpectedEnd))?;
+        let ch = rest.chars().next().ok_or_else(|| self.wrap_error(ScanErrorKind::UnexpectedEnd))?;
         self.current += ch.len_utf8();
         Ok(ch)
     }
 
     fn peek(&self) -> ScanResult<char> {
-        self.source[self.current..]
-            .chars()
-            .next()
-            .ok_or_else(|| self.wrap_error(ScanErrorKind::UnexpectedEnd))
+        self.source[self.current..].chars().next().ok_or_else(|| self.wrap_error(ScanErrorKind::UnexpectedEnd))
     }
 
     fn match_then_advance(&mut self, expected: char) -> ScanResult<bool> {
         if self.at_end() {
             return Ok(false);
         }
-        let nxt = self.source[self.current..]
-            .chars()
-            .next()
-            .ok_or_else(|| self.wrap_error(ScanErrorKind::UnexpectedEnd))?;
+        let nxt = self.source[self.current..].chars().next().ok_or_else(|| self.wrap_error(ScanErrorKind::UnexpectedEnd))?;
 
         if nxt != expected {
             Ok(false)
@@ -290,21 +259,11 @@ impl<'a> Scanner<'a> {
     }
 
     fn make_token(&self, kind: TokenKind) -> Token<'a> {
-        Token {
-            kind,
-            lexeme: &self.source[self.start..self.current],
-            line: self.line,
-            column: self.current_column(),
-        }
+        Token { kind, lexeme: &self.source[self.start..self.current], line: self.line, column: self.current_column() }
     }
 
     fn error_token(&self, msg: &'static str) -> Token<'static> {
-        Token {
-            kind: TokenKind::Error,
-            lexeme: msg,
-            line: self.line,
-            column: 0,
-        }
+        Token { kind: TokenKind::Error, lexeme: msg, line: self.line, column: 0 }
     }
 
     /// 1-based column of the current token start within its source line.
@@ -375,12 +334,7 @@ mod tests {
     /// literals/identifiers where it matters).
     fn scan_kinds(source: &str) -> Vec<TokenKind> {
         let mut scanner = Scanner::new(source);
-        scanner
-            .scan_tokens()
-            .unwrap()
-            .into_iter()
-            .map(|t| t.kind)
-            .collect()
+        scanner.scan_tokens().unwrap().into_iter().map(|t| t.kind).collect()
     }
 
     /// Helper: scan source and return the full tokens.
@@ -424,53 +378,25 @@ mod tests {
     #[test]
     fn test_bang_and_bang_equal() {
         let kinds = scan_kinds("! !=");
-        assert_eq!(
-            kinds,
-            vec![
-                TokenKind::Bang,
-                TokenKind::BangEqual,
-                TokenKind::Eof,
-            ]
-        );
+        assert_eq!(kinds, vec![TokenKind::Bang, TokenKind::BangEqual, TokenKind::Eof,]);
     }
 
     #[test]
     fn test_equal_and_equal_equal() {
         let kinds = scan_kinds("= ==");
-        assert_eq!(
-            kinds,
-            vec![
-                TokenKind::Equal,
-                TokenKind::EqualEqual,
-                TokenKind::Eof,
-            ]
-        );
+        assert_eq!(kinds, vec![TokenKind::Equal, TokenKind::EqualEqual, TokenKind::Eof,]);
     }
 
     #[test]
     fn test_less_and_less_equal() {
         let kinds = scan_kinds("< <=");
-        assert_eq!(
-            kinds,
-            vec![
-                TokenKind::Less,
-                TokenKind::LessEqual,
-                TokenKind::Eof,
-            ]
-        );
+        assert_eq!(kinds, vec![TokenKind::Less, TokenKind::LessEqual, TokenKind::Eof,]);
     }
 
     #[test]
     fn test_greater_and_greater_equal() {
         let kinds = scan_kinds("> >=");
-        assert_eq!(
-            kinds,
-            vec![
-                TokenKind::Greater,
-                TokenKind::GreaterEqual,
-                TokenKind::Eof,
-            ]
-        );
+        assert_eq!(kinds, vec![TokenKind::Greater, TokenKind::GreaterEqual, TokenKind::Eof,]);
     }
 
     #[test]
@@ -478,13 +404,7 @@ mod tests {
         let kinds = scan_kinds("!= == <= >=");
         assert_eq!(
             kinds,
-            vec![
-                TokenKind::BangEqual,
-                TokenKind::EqualEqual,
-                TokenKind::LessEqual,
-                TokenKind::GreaterEqual,
-                TokenKind::Eof,
-            ]
+            vec![TokenKind::BangEqual, TokenKind::EqualEqual, TokenKind::LessEqual, TokenKind::GreaterEqual, TokenKind::Eof,]
         );
     }
 
@@ -510,14 +430,7 @@ mod tests {
     fn test_decimal_starting_with_dot_is_not_number() {
         // `.` alone is Dot, then the digits form a Number.
         let kinds = scan_kinds(".5");
-        assert_eq!(
-            kinds,
-            vec![
-                TokenKind::Dot,
-                TokenKind::Number,
-                TokenKind::Eof,
-            ]
-        );
+        assert_eq!(kinds, vec![TokenKind::Dot, TokenKind::Number, TokenKind::Eof,]);
     }
 
     #[test]
@@ -666,10 +579,7 @@ mod tests {
 
         for (source, expected_kind) in keywords {
             let tokens = scan_tokens(source);
-            assert_eq!(
-                tokens[0].kind, expected_kind,
-                "expected keyword '{source}' to map to {expected_kind:?}",
-            );
+            assert_eq!(tokens[0].kind, expected_kind, "expected keyword '{source}' to map to {expected_kind:?}",);
             assert_eq!(tokens[0].lexeme, source);
         }
     }
@@ -738,16 +648,7 @@ mod tests {
     #[test]
     fn test_multiple_tokens_no_spaces() {
         let kinds = scan_kinds("(){}");
-        assert_eq!(
-            kinds,
-            vec![
-                TokenKind::LeftParen,
-                TokenKind::RightParen,
-                TokenKind::LeftBrace,
-                TokenKind::RightBrace,
-                TokenKind::Eof,
-            ]
-        );
+        assert_eq!(kinds, vec![TokenKind::LeftParen, TokenKind::RightParen, TokenKind::LeftBrace, TokenKind::RightBrace, TokenKind::Eof,]);
     }
 
     #[test]
@@ -755,14 +656,7 @@ mod tests {
         let kinds = scan_kinds("var x = 3.14;");
         assert_eq!(
             kinds,
-            vec![
-                TokenKind::Var,
-                TokenKind::Identifier,
-                TokenKind::Equal,
-                TokenKind::Number,
-                TokenKind::Semicolon,
-                TokenKind::Eof,
-            ]
+            vec![TokenKind::Var, TokenKind::Identifier, TokenKind::Equal, TokenKind::Number, TokenKind::Semicolon, TokenKind::Eof,]
         );
     }
 

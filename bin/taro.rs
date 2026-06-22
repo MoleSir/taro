@@ -14,7 +14,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use taro_lang::compile::CompileError;
-use taro_lang::vm::{RuntimeError, RuntimeErrorKind, InterpretError, VirtualMachine};
+use taro_lang::vm::{InterpretError, RuntimeError, RuntimeErrorKind, VirtualMachine};
 
 // ── constants ────────────────────────────────────────────────────────────────
 
@@ -44,18 +44,22 @@ fn no_color() -> bool {
 
 macro_rules! style {
     ($code:literal, $text:expr) => {
-        if no_color() {
-            format!("{}", $text)
-        } else {
-            format!("{}{}{}", $code, $text, "\x1b[0m")
-        }
+        if no_color() { format!("{}", $text) } else { format!("{}{}{}", $code, $text, "\x1b[0m") }
     };
 }
 
-fn bold(t: &str) -> String  { style!("\x1b[1m", t) }
-fn dim(t: &str) -> String   { style!("\x1b[2m", t) }
-fn red(t: &str) -> String   { style!("\x1b[31m", t) }
-fn cyan(t: &str) -> String  { style!("\x1b[36m", t) }
+fn bold(t: &str) -> String {
+    style!("\x1b[1m", t)
+}
+fn dim(t: &str) -> String {
+    style!("\x1b[2m", t)
+}
+fn red(t: &str) -> String {
+    style!("\x1b[31m", t)
+}
+fn cyan(t: &str) -> String {
+    style!("\x1b[36m", t)
+}
 
 // ── CLI arguments ────────────────────────────────────────────────────────────
 
@@ -87,10 +91,7 @@ fn parse_args() -> Action {
             continue;
         }
         // Long form with '=': --command=CODE, --eval=CODE
-        if let Some(code) = arg
-            .strip_prefix("--command=")
-            .or_else(|| arg.strip_prefix("--eval="))
-        {
+        if let Some(code) = arg.strip_prefix("--command=").or_else(|| arg.strip_prefix("--eval=")) {
             flag_command = Some(code.to_string());
             continue;
         }
@@ -118,11 +119,7 @@ fn parse_args() -> Action {
         }
     }
 
-    if let Some(code) = flag_command {
-        Action::RunCommand(code)
-    } else {
-        Action::Repl
-    }
+    if let Some(code) = flag_command { Action::RunCommand(code) } else { Action::Repl }
 }
 
 // ── entry point ──────────────────────────────────────────────────────────────
@@ -203,13 +200,7 @@ fn display_error(path: Option<&str>, source: Option<&str>, error: &InterpretErro
     let label = path.unwrap_or("<source>");
     match error {
         InterpretError::Compile(CompileError::Scan(e)) => {
-            eprintln!(
-                "{} [{label}:{}:{}]: {}",
-                red(&bold("scan error")),
-                e.line,
-                e.column,
-                e.kind,
-            );
+            eprintln!("{} [{label}:{}:{}]: {}", red(&bold("scan error")), e.line, e.column, e.kind,);
             if let Some(src) = source {
                 show_error_snippet(src, e.line, Some(e.column), &e.kind.to_string());
             } else if let Some(p) = path {
@@ -235,23 +226,14 @@ fn display_error(path: Option<&str>, source: Option<&str>, error: &InterpretErro
         }
         InterpretError::Runtime(e) => {
             if let Some(line) = e.line {
-                eprintln!(
-                    "{} [{label}:{line}:{}]: {}",
-                    red(&bold("runtime error")),
-                    e.column.unwrap_or(1),
-                    e.reason,
-                );
+                eprintln!("{} [{label}:{line}:{}]: {}", red(&bold("runtime error")), e.column.unwrap_or(1), e.reason,);
                 if let Some(src) = source {
                     show_error_snippet(src, line, e.column, &e.reason.to_string());
                 } else if let Some(p) = path {
                     show_file_line(p, line);
                 }
             } else {
-                eprintln!(
-                    "{} [{label}]: {}",
-                    red(&bold("runtime error")),
-                    e.reason,
-                );
+                eprintln!("{} [{label}]: {}", red(&bold("runtime error")), e.reason,);
             }
         }
     }
@@ -285,8 +267,7 @@ fn show_file_line(path: &str, line: usize) {
 // ── file execution ───────────────────────────────────────────────────────────
 
 fn run_file(path: &str) -> Result<(), ExitError> {
-    let source = std::fs::read_to_string(path)
-        .map_err(|e| anyhow::anyhow!("cannot read '{path}': {e}"))?;
+    let source = std::fs::read_to_string(path).map_err(|e| anyhow::anyhow!("cannot read '{path}': {e}"))?;
 
     let mut vm = VirtualMachine::new();
     vm.interpret(&source)?;
@@ -335,10 +316,7 @@ fn run_repl() -> anyhow::Result<()> {
 
     // Print a friendly banner — but only when stdout is a terminal.
     if io::stdout().is_terminal() {
-        println!(
-            "Taro {VERSION} — type {} for hints, Ctrl-D to quit.",
-            cyan(".help")
-        );
+        println!("Taro {VERSION} — type {} for hints, Ctrl-D to quit.", cyan(".help"));
     }
 
     let mut vm = VirtualMachine::new();

@@ -1,5 +1,8 @@
-use crate::{vm::{RuntimeResult, VirtualMachine}, ShrString};
 use super::ObjectHandle;
+use crate::{
+    ShrString,
+    vm::{RuntimeResult, VirtualMachine},
+};
 
 // ========================================================================== //
 //                    Method (unified user + native)
@@ -52,7 +55,8 @@ pub type NativeFn1 = fn(&mut VirtualMachine, ObjectHandle) -> RuntimeResult<Obje
 pub type NativeFn2 = fn(&mut VirtualMachine, ObjectHandle, ObjectHandle) -> RuntimeResult<ObjectHandle>;
 pub type NativeFn3 = fn(&mut VirtualMachine, ObjectHandle, ObjectHandle, ObjectHandle) -> RuntimeResult<ObjectHandle>;
 pub type NativeFn4 = fn(&mut VirtualMachine, ObjectHandle, ObjectHandle, ObjectHandle, ObjectHandle) -> RuntimeResult<ObjectHandle>;
-pub type NativeFn5 = fn(&mut VirtualMachine, ObjectHandle, ObjectHandle, ObjectHandle, ObjectHandle, ObjectHandle) -> RuntimeResult<ObjectHandle>;
+pub type NativeFn5 =
+    fn(&mut VirtualMachine, ObjectHandle, ObjectHandle, ObjectHandle, ObjectHandle, ObjectHandle) -> RuntimeResult<ObjectHandle>;
 pub type NativeFnN = fn(&mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle>;
 
 /// Tagged union over native function arities.
@@ -72,24 +76,66 @@ pub enum NativeFunction {
 }
 
 // `From` impls allow `.into()` on already-coerced function pointers.
-impl From<NativeFn0> for NativeFunction { fn from(f: NativeFn0) -> Self { NativeFunction::Arity0(f) } }
-impl From<NativeFn1> for NativeFunction { fn from(f: NativeFn1) -> Self { NativeFunction::Arity1(f) } }
-impl From<NativeFn2> for NativeFunction { fn from(f: NativeFn2) -> Self { NativeFunction::Arity2(f) } }
-impl From<NativeFn3> for NativeFunction { fn from(f: NativeFn3) -> Self { NativeFunction::Arity3(f) } }
-impl From<NativeFn4> for NativeFunction { fn from(f: NativeFn4) -> Self { NativeFunction::Arity4(f) } }
-impl From<NativeFn5> for NativeFunction { fn from(f: NativeFn5) -> Self { NativeFunction::Arity5(f) } }
-impl From<NativeFnN> for NativeFunction { fn from(f: NativeFnN) -> Self { NativeFunction::Variadic(f) } }
+impl From<NativeFn0> for NativeFunction {
+    fn from(f: NativeFn0) -> Self {
+        NativeFunction::Arity0(f)
+    }
+}
+impl From<NativeFn1> for NativeFunction {
+    fn from(f: NativeFn1) -> Self {
+        NativeFunction::Arity1(f)
+    }
+}
+impl From<NativeFn2> for NativeFunction {
+    fn from(f: NativeFn2) -> Self {
+        NativeFunction::Arity2(f)
+    }
+}
+impl From<NativeFn3> for NativeFunction {
+    fn from(f: NativeFn3) -> Self {
+        NativeFunction::Arity3(f)
+    }
+}
+impl From<NativeFn4> for NativeFunction {
+    fn from(f: NativeFn4) -> Self {
+        NativeFunction::Arity4(f)
+    }
+}
+impl From<NativeFn5> for NativeFunction {
+    fn from(f: NativeFn5) -> Self {
+        NativeFunction::Arity5(f)
+    }
+}
+impl From<NativeFnN> for NativeFunction {
+    fn from(f: NativeFnN) -> Self {
+        NativeFunction::Variadic(f)
+    }
+}
 
 // Explicit constructors — these trigger function-item → function-pointer
 // coercion because the parameter type is concrete (not generic).
 impl NativeFunction {
-    pub fn a0(f: NativeFn0) -> Self { NativeFunction::Arity0(f) }
-    pub fn a1(f: NativeFn1) -> Self { NativeFunction::Arity1(f) }
-    pub fn a2(f: NativeFn2) -> Self { NativeFunction::Arity2(f) }
-    pub fn a3(f: NativeFn3) -> Self { NativeFunction::Arity3(f) }
-    pub fn a4(f: NativeFn4) -> Self { NativeFunction::Arity4(f) }
-    pub fn a5(f: NativeFn5) -> Self { NativeFunction::Arity5(f) }
-    pub fn var(f: NativeFnN) -> Self { NativeFunction::Variadic(f) }
+    pub fn a0(f: NativeFn0) -> Self {
+        NativeFunction::Arity0(f)
+    }
+    pub fn a1(f: NativeFn1) -> Self {
+        NativeFunction::Arity1(f)
+    }
+    pub fn a2(f: NativeFn2) -> Self {
+        NativeFunction::Arity2(f)
+    }
+    pub fn a3(f: NativeFn3) -> Self {
+        NativeFunction::Arity3(f)
+    }
+    pub fn a4(f: NativeFn4) -> Self {
+        NativeFunction::Arity4(f)
+    }
+    pub fn a5(f: NativeFn5) -> Self {
+        NativeFunction::Arity5(f)
+    }
+    pub fn var(f: NativeFnN) -> Self {
+        NativeFunction::Variadic(f)
+    }
 }
 
 // NativeFunction contains only function pointers — safe to share across threads
@@ -132,10 +178,7 @@ pub struct ObjectClosure {
 
 impl ObjectClosure {
     pub fn new(function: ObjectHandle) -> Self {
-        Self {
-            function,
-            upvalues: vec![],
-        }
+        Self { function, upvalues: vec![] }
     }
 }
 

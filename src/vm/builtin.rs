@@ -1,6 +1,6 @@
-use crate::{Object, ObjectHandle, ObjectSet, ObjectBytes};
-use crate::vm::{RuntimeResult, RuntimeErrorKind, VirtualMachine};
-use crate::{NativeFunction, Method};
+use crate::vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine};
+use crate::{Method, NativeFunction};
+use crate::{Object, ObjectBytes, ObjectHandle, ObjectSet};
 use std::collections::HashMap;
 
 impl VirtualMachine {
@@ -17,29 +17,29 @@ impl VirtualMachine {
 
         // ---- global native functions ----
         self.register_native_fn("print", NativeFunction::var(VirtualMachine::print));
-        self.register_native_fn("len",   NativeFunction::a1(VirtualMachine::len));
-        self.register_native_fn("type",  NativeFunction::a1(VirtualMachine::typeof_val));
+        self.register_native_fn("len", NativeFunction::a1(VirtualMachine::len));
+        self.register_native_fn("type", NativeFunction::a1(VirtualMachine::typeof_val));
         self.register_native_fn("input", NativeFunction::var(VirtualMachine::input));
-        self.register_native_fn("abs",   NativeFunction::a1(VirtualMachine::abs));
-        self.register_native_fn("min",   NativeFunction::var(VirtualMachine::min));
-        self.register_native_fn("max",   NativeFunction::var(VirtualMachine::max));
+        self.register_native_fn("abs", NativeFunction::a1(VirtualMachine::abs));
+        self.register_native_fn("min", NativeFunction::var(VirtualMachine::min));
+        self.register_native_fn("max", NativeFunction::var(VirtualMachine::max));
         self.register_native_fn("clock", NativeFunction::a0(VirtualMachine::clock));
         self.register_native_fn("exit", NativeFunction::a1(VirtualMachine::exit));
 
-        self.register_native_fn("int",   NativeFunction::a1(VirtualMachine::int));
+        self.register_native_fn("int", NativeFunction::a1(VirtualMachine::int));
         self.register_native_fn("float", NativeFunction::a1(VirtualMachine::float));
-        self.register_native_fn("str",   NativeFunction::a1(VirtualMachine::str));
-        self.register_native_fn("bool",  NativeFunction::a1(VirtualMachine::bool));
-        self.register_native_fn("list",  NativeFunction::var(VirtualMachine::list));
-        self.register_native_fn("dict",  NativeFunction::a0(VirtualMachine::dict));
-        self.register_native_fn("set",   NativeFunction::var(VirtualMachine::set));
+        self.register_native_fn("str", NativeFunction::a1(VirtualMachine::str));
+        self.register_native_fn("bool", NativeFunction::a1(VirtualMachine::bool));
+        self.register_native_fn("list", NativeFunction::var(VirtualMachine::list));
+        self.register_native_fn("dict", NativeFunction::a0(VirtualMachine::dict));
+        self.register_native_fn("set", NativeFunction::var(VirtualMachine::set));
         self.register_native_fn("bytes", NativeFunction::a1(VirtualMachine::bytes));
 
         // IterEnd sentinel — signals end of iteration in __next__.
         self.globals.insert("IterEnd".into(), ObjectHandle::ITER_END);
         self.register_native_fn("is_iter_end", NativeFunction::a1(VirtualMachine::is_iter_end));
-        self.register_native_fn("iter",   NativeFunction::a1(VirtualMachine::iter));
-        self.register_native_fn("next",   NativeFunction::a1(VirtualMachine::next));
+        self.register_native_fn("iter", NativeFunction::a1(VirtualMachine::iter));
+        self.register_native_fn("next", NativeFunction::a1(VirtualMachine::next));
     }
 
     pub(crate) fn register_native_method(&mut self, class_handle: ObjectHandle, name: &'static str, function: impl Into<NativeFunction>) {
@@ -57,7 +57,6 @@ impl VirtualMachine {
         self.globals.insert(name.into(), class);
     }
 }
-
 
 impl VirtualMachine {
     pub fn print(&mut self, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
@@ -80,9 +79,7 @@ impl VirtualMachine {
             let _ = std::io::stdout().flush();
         }
         let mut line = String::new();
-        std::io::stdin()
-            .read_line(&mut line)
-            .map_err(|e| RuntimeErrorKind::IoError(format!("failed to read stdin: {}", e)))?;
+        std::io::stdin().read_line(&mut line).map_err(|e| RuntimeErrorKind::IoError(format!("failed to read stdin: {}", e)))?;
         // Trim the trailing newline (and optional \r).
         if line.ends_with('\n') {
             line.pop();
@@ -137,9 +134,7 @@ impl VirtualMachine {
 
     /// `clock()` — return elapsed wall-clock time in seconds (fractional).
     pub fn clock(&mut self) -> RuntimeResult<ObjectHandle> {
-        let dur = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default();
+        let dur = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
         Ok(self.obj_heap.alloc_float_instance(dur.as_secs_f64()))
     }
 
@@ -203,10 +198,14 @@ impl VirtualMachine {
     /// `bytes(value)` — create bytes from a string or list of ints.
     pub fn bytes(&mut self, arg: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         // Snapshot what we need to decide, then drop the immutable borrow.
-        let is_string = self.obj_heap.get_instance(arg)
+        let is_string = self
+            .obj_heap
+            .get_instance(arg)
             .map(|inst| inst.data.as_any_ref().downcast_ref::<crate::object::ObjectString>().is_some())
             .unwrap_or(false);
-        let is_list = self.obj_heap.get_instance(arg)
+        let is_list = self
+            .obj_heap
+            .get_instance(arg)
             .map(|inst| inst.data.as_any_ref().downcast_ref::<crate::object::ObjectList>().is_some())
             .unwrap_or(false);
 
@@ -216,10 +215,7 @@ impl VirtualMachine {
         } else if is_list {
             ObjectBytes::from_list(self, arg)
         } else {
-            Err(RuntimeErrorKind::UnexpectedType(
-                "string or list of ints",
-                self.value_type_name(arg),
-            ))
+            Err(RuntimeErrorKind::UnexpectedType("string or list of ints", self.value_type_name(arg)))
         }
     }
 

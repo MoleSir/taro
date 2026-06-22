@@ -1,8 +1,8 @@
+use super::ObjectHeap;
 use crate::{
-    impl_object_instance_data, NativeFunction, ObjectHandle,
+    NativeFunction, ObjectHandle, impl_object_instance_data,
     vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine},
 };
-use super::ObjectHeap;
 
 // ========================================================================== //
 //  ObjectBool
@@ -24,8 +24,7 @@ impl ObjectBool {
 
     /// Treat bool as 0 or 1 for arithmetic.
     fn as_int(vm: &VirtualMachine, handle: ObjectHandle) -> RuntimeResult<i64> {
-        let val = *vm.obj_heap.get_bool_instance(handle)
-            .expect("must be bool instance");
+        let val = *vm.obj_heap.get_bool_instance(handle).expect("must be bool instance");
         Ok(if val { 1 } else { 0 })
     }
 
@@ -91,16 +90,22 @@ impl ObjectBool {
     pub fn __div__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let lhs_val = Self::as_int(vm, lhs)? as f64;
         if let Ok(rhs) = vm.get_integer_instance(rhs) {
-            if *rhs == 0 { return Err(RuntimeErrorKind::DivideByZero); }
+            if *rhs == 0 {
+                return Err(RuntimeErrorKind::DivideByZero);
+            }
             return Ok(vm.obj_heap.alloc_float_instance(lhs_val / *rhs as f64));
         }
         if let Ok(rhs) = vm.get_float_instance(rhs) {
-            if *rhs == 0.0 { return Err(RuntimeErrorKind::DivideByZero); }
+            if *rhs == 0.0 {
+                return Err(RuntimeErrorKind::DivideByZero);
+            }
             return Ok(vm.obj_heap.alloc_float_instance(lhs_val / *rhs));
         }
         if vm.get_bool_instance(rhs).is_ok() {
             let rhs_val = Self::as_int(vm, rhs)?;
-            if rhs_val == 0 { return Err(RuntimeErrorKind::DivideByZero); }
+            if rhs_val == 0 {
+                return Err(RuntimeErrorKind::DivideByZero);
+            }
             return Ok(vm.obj_heap.alloc_float_instance(lhs_val / rhs_val as f64));
         }
         Err(RuntimeErrorKind::BinaryOpTypeMismatch("div", "bool", vm.value_type_name(rhs)))
@@ -109,16 +114,22 @@ impl ObjectBool {
     pub fn __floordiv__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let lhs_val = Self::as_int(vm, lhs)?;
         if let Ok(rhs) = vm.get_integer_instance(rhs) {
-            if *rhs == 0 { return Err(RuntimeErrorKind::DivideByZero); }
+            if *rhs == 0 {
+                return Err(RuntimeErrorKind::DivideByZero);
+            }
             return Ok(vm.obj_heap.alloc_integer_instance(i64::wrapping_div_euclid(lhs_val, *rhs)));
         }
         if let Ok(rhs) = vm.get_float_instance(rhs) {
-            if *rhs == 0.0 { return Err(RuntimeErrorKind::DivideByZero); }
+            if *rhs == 0.0 {
+                return Err(RuntimeErrorKind::DivideByZero);
+            }
             return Ok(vm.obj_heap.alloc_float_instance((lhs_val as f64 / *rhs).floor()));
         }
         if vm.get_bool_instance(rhs).is_ok() {
             let rhs_val = Self::as_int(vm, rhs)?;
-            if rhs_val == 0 { return Err(RuntimeErrorKind::DivideByZero); }
+            if rhs_val == 0 {
+                return Err(RuntimeErrorKind::DivideByZero);
+            }
             return Ok(vm.obj_heap.alloc_integer_instance(i64::wrapping_div_euclid(lhs_val, rhs_val)));
         }
         Err(RuntimeErrorKind::BinaryOpTypeMismatch("floordiv", "bool", vm.value_type_name(rhs)))
@@ -127,16 +138,22 @@ impl ObjectBool {
     pub fn __mod__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let lhs_val = Self::as_int(vm, lhs)?;
         if let Ok(rhs) = vm.get_integer_instance(rhs) {
-            if *rhs == 0 { return Err(RuntimeErrorKind::DivideByZero); }
+            if *rhs == 0 {
+                return Err(RuntimeErrorKind::DivideByZero);
+            }
             return Ok(vm.obj_heap.alloc_integer_instance(i64::wrapping_rem_euclid(lhs_val, *rhs)));
         }
         if let Ok(rhs) = vm.get_float_instance(rhs) {
-            if *rhs == 0.0 { return Err(RuntimeErrorKind::DivideByZero); }
+            if *rhs == 0.0 {
+                return Err(RuntimeErrorKind::DivideByZero);
+            }
             return Ok(vm.obj_heap.alloc_float_instance((lhs_val as f64).rem_euclid(*rhs)));
         }
         if vm.get_bool_instance(rhs).is_ok() {
             let rhs_val = Self::as_int(vm, rhs)?;
-            if rhs_val == 0 { return Err(RuntimeErrorKind::DivideByZero); }
+            if rhs_val == 0 {
+                return Err(RuntimeErrorKind::DivideByZero);
+            }
             return Ok(vm.obj_heap.alloc_integer_instance(i64::wrapping_rem_euclid(lhs_val, rhs_val)));
         }
         Err(RuntimeErrorKind::BinaryOpTypeMismatch("mod", "bool", vm.value_type_name(rhs)))
@@ -229,9 +246,7 @@ impl ObjectBool {
 
     pub fn __str__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let val = *vm.get_bool_instance(receiver)?;
-        Ok(vm.obj_heap.alloc_string_instance(
-            if val { crate::ShrString::from("true") } else { crate::ShrString::from("false") }
-        ))
+        Ok(vm.obj_heap.alloc_string_instance(if val { crate::ShrString::from("true") } else { crate::ShrString::from("false") }))
     }
 
     pub fn __bool__(_vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
@@ -261,23 +276,23 @@ impl ObjectBool {
 /// Register all `Bool` magic methods directly on the class during heap init.
 pub fn register_bool_builtins(heap: &mut ObjectHeap) {
     let bc = heap.bool_class;
-    heap.register_native_method(bc, "__neg__",   NativeFunction::a1(ObjectBool::__neg__));
-    heap.register_native_method(bc, "__not__",   NativeFunction::a1(ObjectBool::__not__));
-    heap.register_native_method(bc, "__add__",   NativeFunction::a2(ObjectBool::__add__));
-    heap.register_native_method(bc, "__sub__",   NativeFunction::a2(ObjectBool::__sub__));
-    heap.register_native_method(bc, "__mul__",   NativeFunction::a2(ObjectBool::__mul__));
-    heap.register_native_method(bc, "__div__",      NativeFunction::a2(ObjectBool::__div__));
+    heap.register_native_method(bc, "__neg__", NativeFunction::a1(ObjectBool::__neg__));
+    heap.register_native_method(bc, "__not__", NativeFunction::a1(ObjectBool::__not__));
+    heap.register_native_method(bc, "__add__", NativeFunction::a2(ObjectBool::__add__));
+    heap.register_native_method(bc, "__sub__", NativeFunction::a2(ObjectBool::__sub__));
+    heap.register_native_method(bc, "__mul__", NativeFunction::a2(ObjectBool::__mul__));
+    heap.register_native_method(bc, "__div__", NativeFunction::a2(ObjectBool::__div__));
     heap.register_native_method(bc, "__floordiv__", NativeFunction::a2(ObjectBool::__floordiv__));
-    heap.register_native_method(bc, "__mod__",      NativeFunction::a2(ObjectBool::__mod__));
-    heap.register_native_method(bc, "__eq__",    NativeFunction::a2(ObjectBool::__eq__));
-    heap.register_native_method(bc, "__ne__",    NativeFunction::a2(ObjectBool::__ne__));
-    heap.register_native_method(bc, "__gt__",    NativeFunction::a2(ObjectBool::__gt__));
-    heap.register_native_method(bc, "__ge__",    NativeFunction::a2(ObjectBool::__ge__));
-    heap.register_native_method(bc, "__lt__",    NativeFunction::a2(ObjectBool::__lt__));
-    heap.register_native_method(bc, "__le__",    NativeFunction::a2(ObjectBool::__le__));
-    heap.register_native_method(bc, "__str__",   NativeFunction::a1(ObjectBool::__str__));
-    heap.register_native_method(bc, "__bool__",  NativeFunction::a1(ObjectBool::__bool__));
-    heap.register_native_method(bc, "__hash__",  NativeFunction::a1(ObjectBool::__hash__));
-    heap.register_native_method(bc, "__int__",   NativeFunction::a1(ObjectBool::__int__));
+    heap.register_native_method(bc, "__mod__", NativeFunction::a2(ObjectBool::__mod__));
+    heap.register_native_method(bc, "__eq__", NativeFunction::a2(ObjectBool::__eq__));
+    heap.register_native_method(bc, "__ne__", NativeFunction::a2(ObjectBool::__ne__));
+    heap.register_native_method(bc, "__gt__", NativeFunction::a2(ObjectBool::__gt__));
+    heap.register_native_method(bc, "__ge__", NativeFunction::a2(ObjectBool::__ge__));
+    heap.register_native_method(bc, "__lt__", NativeFunction::a2(ObjectBool::__lt__));
+    heap.register_native_method(bc, "__le__", NativeFunction::a2(ObjectBool::__le__));
+    heap.register_native_method(bc, "__str__", NativeFunction::a1(ObjectBool::__str__));
+    heap.register_native_method(bc, "__bool__", NativeFunction::a1(ObjectBool::__bool__));
+    heap.register_native_method(bc, "__hash__", NativeFunction::a1(ObjectBool::__hash__));
+    heap.register_native_method(bc, "__int__", NativeFunction::a1(ObjectBool::__int__));
     heap.register_native_method(bc, "__float__", NativeFunction::a1(ObjectBool::__float__));
 }

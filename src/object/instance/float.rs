@@ -1,8 +1,8 @@
+use super::ObjectHeap;
 use crate::{
-    impl_object_instance_data, NativeFunction, ObjectHandle,
+    NativeFunction, ObjectHandle, impl_object_instance_data,
     vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine},
 };
-use super::ObjectHeap;
 
 // ========================================================================== //
 //  ObjectFloat
@@ -63,11 +63,15 @@ impl ObjectFloat {
     pub fn __div__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let lhs_val = *vm.get_float_instance(lhs)?;
         if let Ok(rhs) = vm.get_float_instance(rhs) {
-            if *rhs == 0.0 { return Err(RuntimeErrorKind::DivideByZero); }
+            if *rhs == 0.0 {
+                return Err(RuntimeErrorKind::DivideByZero);
+            }
             return Ok(vm.obj_heap.alloc_float_instance(lhs_val / *rhs));
         }
         if let Ok(rhs) = vm.get_integer_instance(rhs) {
-            if *rhs == 0 { return Err(RuntimeErrorKind::DivideByZero); }
+            if *rhs == 0 {
+                return Err(RuntimeErrorKind::DivideByZero);
+            }
             return Ok(vm.obj_heap.alloc_float_instance(lhs_val / *rhs as f64));
         }
         Err(RuntimeErrorKind::BinaryOpTypeMismatch("div", "float", vm.value_type_name(rhs)))
@@ -76,11 +80,15 @@ impl ObjectFloat {
     pub fn __floordiv__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let lhs_val = *vm.get_float_instance(lhs)?;
         if let Ok(rhs) = vm.get_float_instance(rhs) {
-            if *rhs == 0.0 { return Err(RuntimeErrorKind::DivideByZero); }
+            if *rhs == 0.0 {
+                return Err(RuntimeErrorKind::DivideByZero);
+            }
             return Ok(vm.obj_heap.alloc_float_instance((lhs_val / *rhs).floor()));
         }
         if let Ok(rhs) = vm.get_integer_instance(rhs) {
-            if *rhs == 0 { return Err(RuntimeErrorKind::DivideByZero); }
+            if *rhs == 0 {
+                return Err(RuntimeErrorKind::DivideByZero);
+            }
             return Ok(vm.obj_heap.alloc_float_instance((lhs_val / *rhs as f64).floor()));
         }
         Err(RuntimeErrorKind::BinaryOpTypeMismatch("floordiv", "float", vm.value_type_name(rhs)))
@@ -89,11 +97,15 @@ impl ObjectFloat {
     pub fn __mod__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let lhs_val = *vm.get_float_instance(lhs)?;
         if let Ok(rhs) = vm.get_float_instance(rhs) {
-            if *rhs == 0.0 { return Err(RuntimeErrorKind::DivideByZero); }
+            if *rhs == 0.0 {
+                return Err(RuntimeErrorKind::DivideByZero);
+            }
             return Ok(vm.obj_heap.alloc_float_instance(lhs_val.rem_euclid(*rhs)));
         }
         if let Ok(rhs) = vm.get_integer_instance(rhs) {
-            if *rhs == 0 { return Err(RuntimeErrorKind::DivideByZero); }
+            if *rhs == 0 {
+                return Err(RuntimeErrorKind::DivideByZero);
+            }
             return Ok(vm.obj_heap.alloc_float_instance(lhs_val.rem_euclid(*rhs as f64)));
         }
         Err(RuntimeErrorKind::BinaryOpTypeMismatch("mod", "float", vm.value_type_name(rhs)))
@@ -142,23 +154,23 @@ impl ObjectFloat {
 /// Register all `Float` magic methods directly on the class during heap init.
 pub fn register_float_builtins(heap: &mut ObjectHeap) {
     let fc = heap.float_class;
-    heap.register_native_method(fc, "__neg__",   NativeFunction::a1(ObjectFloat::__neg__));
-    heap.register_native_method(fc, "__not__",   NativeFunction::a1(ObjectFloat::__not__));
-    heap.register_native_method(fc, "__add__",   NativeFunction::a2(ObjectFloat::__add__));
-    heap.register_native_method(fc, "__sub__",   NativeFunction::a2(ObjectFloat::__sub__));
-    heap.register_native_method(fc, "__mul__",   NativeFunction::a2(ObjectFloat::__mul__));
-    heap.register_native_method(fc, "__div__",      NativeFunction::a2(ObjectFloat::__div__));
+    heap.register_native_method(fc, "__neg__", NativeFunction::a1(ObjectFloat::__neg__));
+    heap.register_native_method(fc, "__not__", NativeFunction::a1(ObjectFloat::__not__));
+    heap.register_native_method(fc, "__add__", NativeFunction::a2(ObjectFloat::__add__));
+    heap.register_native_method(fc, "__sub__", NativeFunction::a2(ObjectFloat::__sub__));
+    heap.register_native_method(fc, "__mul__", NativeFunction::a2(ObjectFloat::__mul__));
+    heap.register_native_method(fc, "__div__", NativeFunction::a2(ObjectFloat::__div__));
     heap.register_native_method(fc, "__floordiv__", NativeFunction::a2(ObjectFloat::__floordiv__));
-    heap.register_native_method(fc, "__mod__",      NativeFunction::a2(ObjectFloat::__mod__));
-    heap.register_native_method(fc, "__eq__",    NativeFunction::a2(ObjectFloat::__eq__));
-    heap.register_native_method(fc, "__ne__",    NativeFunction::a2(ObjectFloat::__ne__));
-    heap.register_native_method(fc, "__gt__",    NativeFunction::a2(ObjectFloat::__gt__));
-    heap.register_native_method(fc, "__ge__",    NativeFunction::a2(ObjectFloat::__ge__));
-    heap.register_native_method(fc, "__lt__",    NativeFunction::a2(ObjectFloat::__lt__));
-    heap.register_native_method(fc, "__le__",    NativeFunction::a2(ObjectFloat::__le__));
-    heap.register_native_method(fc, "__str__",   NativeFunction::a1(ObjectFloat::__str__));
-    heap.register_native_method(fc, "__bool__",  NativeFunction::a1(ObjectFloat::__bool__));
-    heap.register_native_method(fc, "__hash__",  NativeFunction::a1(ObjectFloat::__hash__));
-    heap.register_native_method(fc, "__int__",   NativeFunction::a1(ObjectFloat::__int__));
+    heap.register_native_method(fc, "__mod__", NativeFunction::a2(ObjectFloat::__mod__));
+    heap.register_native_method(fc, "__eq__", NativeFunction::a2(ObjectFloat::__eq__));
+    heap.register_native_method(fc, "__ne__", NativeFunction::a2(ObjectFloat::__ne__));
+    heap.register_native_method(fc, "__gt__", NativeFunction::a2(ObjectFloat::__gt__));
+    heap.register_native_method(fc, "__ge__", NativeFunction::a2(ObjectFloat::__ge__));
+    heap.register_native_method(fc, "__lt__", NativeFunction::a2(ObjectFloat::__lt__));
+    heap.register_native_method(fc, "__le__", NativeFunction::a2(ObjectFloat::__le__));
+    heap.register_native_method(fc, "__str__", NativeFunction::a1(ObjectFloat::__str__));
+    heap.register_native_method(fc, "__bool__", NativeFunction::a1(ObjectFloat::__bool__));
+    heap.register_native_method(fc, "__hash__", NativeFunction::a1(ObjectFloat::__hash__));
+    heap.register_native_method(fc, "__int__", NativeFunction::a1(ObjectFloat::__int__));
     heap.register_native_method(fc, "__float__", NativeFunction::a1(ObjectFloat::__float__));
 }

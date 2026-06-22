@@ -42,11 +42,7 @@ pub struct Chunk {
 
 impl Chunk {
     pub fn new() -> Self {
-        Self {
-            codes: vec![],
-            constants: vec![],
-            line_runs: vec![],
-        }
+        Self { codes: vec![], constants: vec![], line_runs: vec![] }
     }
 }
 
@@ -250,8 +246,7 @@ impl Chunk {
     /// `heap` is needed to dereference string constants.
     pub fn read_instruction(&self, ip: &mut usize, heap: &ObjectHeap) -> Result<Instruction, ChunkError> {
         let byte = self.read_byte(ip)?;
-        let opcode = ByteCode::try_from(byte)
-            .map_err(|_| ChunkError::InvalidByteCode(byte))?;
+        let opcode = ByteCode::try_from(byte).map_err(|_| ChunkError::InvalidByteCode(byte))?;
 
         match opcode {
             ByteCode::Return => Ok(Instruction::Return),
@@ -350,9 +345,7 @@ impl Chunk {
                 let slot = self.read_byte(ip)? as usize;
                 Ok(Instruction::SetUpvalue(slot))
             }
-            ByteCode::CloseUpvalue => {
-                Ok(Instruction::CloseUpvalue)
-            }
+            ByteCode::CloseUpvalue => Ok(Instruction::CloseUpvalue),
 
             ByteCode::Class => {
                 let name = self.read_string_constant(ip, heap)?;
@@ -438,11 +431,7 @@ impl Chunk {
     }
 
     fn read_byte(&self, ip: &mut usize) -> Result<u8, ChunkError> {
-        let byte = self
-            .codes
-            .get(*ip)
-            .cloned()
-            .ok_or(ChunkError::IpOutOfRange(*ip, self.codes.len()))?;
+        let byte = self.codes.get(*ip).cloned().ok_or(ChunkError::IpOutOfRange(*ip, self.codes.len()))?;
         *ip += 1;
         Ok(byte)
     }
@@ -455,10 +444,7 @@ impl Chunk {
 
     fn read_constant(&self, ip: &mut usize) -> Result<ObjectHandle, ChunkError> {
         let index = self.read_u16(ip)? as usize;
-        self.constants
-            .get(index)
-            .copied()
-            .ok_or(ChunkError::ConstantOutOfRange(index, self.constants.len()))
+        self.constants.get(index).copied().ok_or(ChunkError::ConstantOutOfRange(index, self.constants.len()))
     }
 
     fn read_string_constant(&self, ip: &mut usize, heap: &ObjectHeap) -> Result<ShrString, ChunkError> {
@@ -467,7 +453,7 @@ impl Chunk {
             if let Some(s) = instance.data.as_any_ref().downcast_ref::<crate::object::ObjectString>() {
                 return Ok(s.value.clone());
             }
-        } 
+        }
         Err(ChunkError::ExpectedStringConstant)
     }
 

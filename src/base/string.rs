@@ -61,7 +61,7 @@ impl Default for ShrString {
 
 impl std::ops::Deref for ShrString {
     type Target = str;
-    
+
     #[inline]
     fn deref(&self) -> &Self::Target {
         self.as_str()
@@ -224,4 +224,3 @@ mod tests {
         assert_eq!(map.get("key1"), Some(&42));
     }
 }
-

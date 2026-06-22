@@ -25,17 +25,17 @@ enum Prec {
 impl Prec {
     fn next(self) -> Self {
         match self {
-            Prec::None       => Prec::Assignment,
+            Prec::None => Prec::Assignment,
             Prec::Assignment => Prec::Or,
-            Prec::Or         => Prec::And,
-            Prec::And        => Prec::Equality,
-            Prec::Equality   => Prec::Comparison,
+            Prec::Or => Prec::And,
+            Prec::And => Prec::Equality,
+            Prec::Equality => Prec::Comparison,
             Prec::Comparison => Prec::Term,
-            Prec::Term       => Prec::Factor,
-            Prec::Factor     => Prec::Unary,
-            Prec::Unary      => Prec::Call,
-            Prec::Call       => Prec::Primary,
-            Prec::Primary    => Prec::Primary,
+            Prec::Term => Prec::Factor,
+            Prec::Factor => Prec::Unary,
+            Prec::Unary => Prec::Call,
+            Prec::Call => Prec::Primary,
+            Prec::Primary => Prec::Primary,
         }
     }
 }
@@ -48,8 +48,8 @@ type ParseFn = fn(&mut Parser<'_>, bool) -> ParseResult<()>;
 
 #[derive(Clone, Copy)]
 struct ParseRule {
-    prefix:     Option<ParseFn>,
-    infix:      Option<ParseFn>,
+    prefix: Option<ParseFn>,
+    infix: Option<ParseFn>,
     precedence: Prec,
 }
 
@@ -58,74 +58,70 @@ impl ParseRule {
         Self { prefix, infix, precedence }
     }
 
-    const NONE: Self = Self {
-        prefix:     None,
-        infix:      None,
-        precedence: Prec::None,
-    };
+    const NONE: Self = Self { prefix: None, infix: None, precedence: Prec::None };
 }
 
 /// Return the [`ParseRule`] for the given token kind.
 fn get_rule(kind: TokenKind) -> ParseRule {
     match kind {
         // Single-character tokens -------------------------------------------
-        TokenKind::LeftParen    => ParseRule::new(Some(Parser::grouping), Some(Parser::call), Prec::Call),
-        TokenKind::RightParen   => ParseRule::NONE,
-        TokenKind::LeftBrace    => ParseRule::new(Some(Parser::dict_literal), None, Prec::Call),
-        TokenKind::RightBrace   => ParseRule::NONE,
-        TokenKind::LeftBracket  => ParseRule::new(Some(Parser::list_literal), Some(Parser::index), Prec::Call),
+        TokenKind::LeftParen => ParseRule::new(Some(Parser::grouping), Some(Parser::call), Prec::Call),
+        TokenKind::RightParen => ParseRule::NONE,
+        TokenKind::LeftBrace => ParseRule::new(Some(Parser::dict_literal), None, Prec::Call),
+        TokenKind::RightBrace => ParseRule::NONE,
+        TokenKind::LeftBracket => ParseRule::new(Some(Parser::list_literal), Some(Parser::index), Prec::Call),
         TokenKind::RightBracket => ParseRule::NONE,
-        TokenKind::Comma        => ParseRule::NONE,
-        TokenKind::Colon        => ParseRule::NONE,
-        TokenKind::Dot          => ParseRule::new(None, Some(Parser::dot), Prec::Call),
-        TokenKind::Minus        => ParseRule::new(Some(Parser::unary), Some(Parser::binary), Prec::Term),
-        TokenKind::Plus         => ParseRule::new(None, Some(Parser::binary), Prec::Term),
-        TokenKind::Semicolon    => ParseRule::NONE,
-        TokenKind::Slash        => ParseRule::new(None, Some(Parser::binary), Prec::Factor),
-        TokenKind::Star         => ParseRule::new(None, Some(Parser::binary), Prec::Factor),
-        TokenKind::Percent      => ParseRule::new(None, Some(Parser::binary), Prec::Factor),
-        TokenKind::TildeSlash   => ParseRule::new(None, Some(Parser::binary), Prec::Factor),
+        TokenKind::Comma => ParseRule::NONE,
+        TokenKind::Colon => ParseRule::NONE,
+        TokenKind::Dot => ParseRule::new(None, Some(Parser::dot), Prec::Call),
+        TokenKind::Minus => ParseRule::new(Some(Parser::unary), Some(Parser::binary), Prec::Term),
+        TokenKind::Plus => ParseRule::new(None, Some(Parser::binary), Prec::Term),
+        TokenKind::Semicolon => ParseRule::NONE,
+        TokenKind::Slash => ParseRule::new(None, Some(Parser::binary), Prec::Factor),
+        TokenKind::Star => ParseRule::new(None, Some(Parser::binary), Prec::Factor),
+        TokenKind::Percent => ParseRule::new(None, Some(Parser::binary), Prec::Factor),
+        TokenKind::TildeSlash => ParseRule::new(None, Some(Parser::binary), Prec::Factor),
 
         // One- or two-character tokens --------------------------------------
-        TokenKind::Bang         => ParseRule::new(Some(Parser::unary), None, Prec::None),
-        TokenKind::BangEqual    => ParseRule::new(None, Some(Parser::binary), Prec::Equality),
-        TokenKind::Equal        => ParseRule::new(None, None, Prec::None),
-        TokenKind::EqualEqual   => ParseRule::new(None, Some(Parser::binary), Prec::Equality),
-        TokenKind::Greater      => ParseRule::new(None, Some(Parser::binary), Prec::Comparison),
+        TokenKind::Bang => ParseRule::new(Some(Parser::unary), None, Prec::None),
+        TokenKind::BangEqual => ParseRule::new(None, Some(Parser::binary), Prec::Equality),
+        TokenKind::Equal => ParseRule::new(None, None, Prec::None),
+        TokenKind::EqualEqual => ParseRule::new(None, Some(Parser::binary), Prec::Equality),
+        TokenKind::Greater => ParseRule::new(None, Some(Parser::binary), Prec::Comparison),
         TokenKind::GreaterEqual => ParseRule::new(None, Some(Parser::binary), Prec::Comparison),
-        TokenKind::Less         => ParseRule::new(None, Some(Parser::binary), Prec::Comparison),
-        TokenKind::LessEqual    => ParseRule::new(None, Some(Parser::binary), Prec::Comparison),
+        TokenKind::Less => ParseRule::new(None, Some(Parser::binary), Prec::Comparison),
+        TokenKind::LessEqual => ParseRule::new(None, Some(Parser::binary), Prec::Comparison),
 
         // Literals ----------------------------------------------------------
-        TokenKind::Identifier   => ParseRule::new(Some(Parser::variable), None, Prec::None),
-        TokenKind::String       => ParseRule::new(Some(Parser::string), None, Prec::None),
-        TokenKind::Number       => ParseRule::new(Some(Parser::number), None, Prec::None),
+        TokenKind::Identifier => ParseRule::new(Some(Parser::variable), None, Prec::None),
+        TokenKind::String => ParseRule::new(Some(Parser::string), None, Prec::None),
+        TokenKind::Number => ParseRule::new(Some(Parser::number), None, Prec::None),
 
         // Keywords ----------------------------------------------------------
-        TokenKind::And          => ParseRule::new(None, Some(Parser::and), Prec::And),
-        TokenKind::As           => ParseRule::NONE,
-        TokenKind::Break        => ParseRule::NONE,
-        TokenKind::Class        => ParseRule::NONE,
-        TokenKind::Continue     => ParseRule::NONE,
-        TokenKind::Else         => ParseRule::NONE,
-        TokenKind::Extends      => ParseRule::NONE,
-        TokenKind::False        => ParseRule::new(Some(Parser::literal), None, Prec::None),
-        TokenKind::For          => ParseRule::NONE,
-        TokenKind::Fun          => ParseRule::NONE,
-        TokenKind::If           => ParseRule::NONE,
-        TokenKind::In           => ParseRule::NONE,
-        TokenKind::Import       => ParseRule::new(Some(Parser::import_expr), None, Prec::Call),
-        TokenKind::Nil          => ParseRule::new(Some(Parser::literal), None, Prec::None),
-        TokenKind::Or           => ParseRule::new(None, Some(Parser::or), Prec::Or),
-        TokenKind::Return       => ParseRule::NONE,
-        TokenKind::Super        => ParseRule::new(Some(Parser::super_), None, Prec::None),
-        TokenKind::True         => ParseRule::new(Some(Parser::literal), None, Prec::None),
-        TokenKind::Var          => ParseRule::NONE,
-        TokenKind::While        => ParseRule::NONE,
+        TokenKind::And => ParseRule::new(None, Some(Parser::and), Prec::And),
+        TokenKind::As => ParseRule::NONE,
+        TokenKind::Break => ParseRule::NONE,
+        TokenKind::Class => ParseRule::NONE,
+        TokenKind::Continue => ParseRule::NONE,
+        TokenKind::Else => ParseRule::NONE,
+        TokenKind::Extends => ParseRule::NONE,
+        TokenKind::False => ParseRule::new(Some(Parser::literal), None, Prec::None),
+        TokenKind::For => ParseRule::NONE,
+        TokenKind::Fun => ParseRule::NONE,
+        TokenKind::If => ParseRule::NONE,
+        TokenKind::In => ParseRule::NONE,
+        TokenKind::Import => ParseRule::new(Some(Parser::import_expr), None, Prec::Call),
+        TokenKind::Nil => ParseRule::new(Some(Parser::literal), None, Prec::None),
+        TokenKind::Or => ParseRule::new(None, Some(Parser::or), Prec::Or),
+        TokenKind::Return => ParseRule::NONE,
+        TokenKind::Super => ParseRule::new(Some(Parser::super_), None, Prec::None),
+        TokenKind::True => ParseRule::new(Some(Parser::literal), None, Prec::None),
+        TokenKind::Var => ParseRule::NONE,
+        TokenKind::While => ParseRule::NONE,
 
         // Special -----------------------------------------------------------
-        TokenKind::Error        => ParseRule::NONE,
-        TokenKind::Eof          => ParseRule::NONE,
+        TokenKind::Error => ParseRule::NONE,
+        TokenKind::Eof => ParseRule::NONE,
     }
 }
 
@@ -161,35 +157,35 @@ enum FunctionKind {
 }
 
 struct CompilationUnit {
-    name:        ShrString,
-    arity:       usize,
+    name: ShrString,
+    arity: usize,
     /// Number of parameters *without* a default value.
     required_arity: usize,
     /// Names of all parameters in declaration order.
     param_names: Vec<ShrString>,
     /// Default values for the last `arity - required_arity` parameters.
-    defaults:    Vec<ObjectHandle>,
-    chunk:       Chunk,
-    kind:        FunctionKind,
-    locals:      Vec<Local>,
+    defaults: Vec<ObjectHandle>,
+    chunk: Chunk,
+    kind: FunctionKind,
+    locals: Vec<Local>,
     scope_depth: isize,
-    upvalues:    Vec<UpvalueDesc>,
+    upvalues: Vec<UpvalueDesc>,
     /// Index of the enclosing unit in `Parser::units`, or `self` for the
     /// root (so we can use `enclosing == current_unit` as a sentinel).
-    enclosing:   usize,
+    enclosing: usize,
 }
 
 pub struct Parser<'a> {
-    obj_heap:     &'a mut ObjectHeap,
-    tokens:       Vec<Token<'a>>,
-    current:      usize,
-    errors:       Vec<ParseError>,
-    units:        Vec<CompilationUnit>,
+    obj_heap: &'a mut ObjectHeap,
+    tokens: Vec<Token<'a>>,
+    current: usize,
+    errors: Vec<ParseError>,
+    units: Vec<CompilationUnit>,
     /// Index into `units` for the innermost function being compiled.
     current_unit: usize,
     /// Stack of active loop contexts.  Non-empty when parsing the body of a
     /// `while` or `for` loop — `break` / `continue` consult the top-most entry.
-    loop_stack:   Vec<LoopContext>,
+    loop_stack: Vec<LoopContext>,
     /// Names of global variables that have been explicitly declared with
     /// `var`, `fun`, `class`, or `import` at the top level.  Used to reject
     /// assignments to undeclared names.
@@ -293,9 +289,7 @@ macro_rules! error_at_current {
 }
 
 macro_rules! bail_error_at_current {
-    ($p:ident, $reason:expr) => {{
-        Err(error_at_current!($p, $reason))?
-    }};
+    ($p:ident, $reason:expr) => {{ Err(error_at_current!($p, $reason))? }};
 }
 
 macro_rules! record_error_at_current {
@@ -313,9 +307,7 @@ macro_rules! error_at_previous {
 }
 
 macro_rules! bail_error_at_previous {
-    ($p:ident, $reason:expr) => {{
-        Err(error_at_previous!($p, $reason))?
-    }};
+    ($p:ident, $reason:expr) => {{ Err(error_at_previous!($p, $reason))? }};
 }
 
 #[allow(unused)]
@@ -333,11 +325,7 @@ impl CompilationUnit {
         // entry so the first user-declared local / parameter starts at slot 1.
         // For methods, slot 0 holds the receiver (`self`), which is the first
         // explicit parameter — no dummy needed.
-        let locals = if kind == FunctionKind::Method {
-            vec![]
-        } else {
-            vec![Local { depth: 0, name: "".into(), is_captured: false }]
-        };
+        let locals = if kind == FunctionKind::Method { vec![] } else { vec![Local { depth: 0, name: "".into(), is_captured: false }] };
         // Modules start at scope depth 1 so top-level definitions use locals
         // (capturable by nested functions as upvalues) instead of globals.
         let scope_depth = if kind == FunctionKind::Module { 1 } else { 0 };
@@ -358,14 +346,7 @@ impl CompilationUnit {
 
     /// Finish compilation and create the function object in the heap.
     fn finish(self, obj_heap: &mut ObjectHeap) -> ObjectHandle {
-        obj_heap.alloc_function(
-            self.name,
-            self.arity,
-            self.required_arity,
-            self.param_names,
-            self.defaults,
-            self.chunk,
-        )
+        obj_heap.alloc_function(self.name, self.arity, self.required_arity, self.param_names, self.defaults, self.chunk)
     }
 }
 
@@ -423,11 +404,7 @@ impl<'a> Parser<'a> {
             }
         }
 
-        if !self.errors.is_empty() {
-            Err(self.errors)
-        } else {
-            Ok(self.finish_compilation_unit())
-        }
+        if !self.errors.is_empty() { Err(self.errors) } else { Ok(self.finish_compilation_unit()) }
     }
 
     /// Finish the current compilation unit: emit an implicit `return nil`,
@@ -497,7 +474,7 @@ impl<'a> Parser<'a> {
             self.consume(TokenKind::Identifier, "Expect superclass name.")?;
             let super_name = ShrString::new_string(self.previous().lexeme);
             self.resolve_and_emit_variable(super_name, false)?; // push superclass onto stack
-            self.emit(Instruction::Inherit);          // pop superclass, copy methods
+            self.emit(Instruction::Inherit); // pop superclass, copy methods
         }
 
         self.consume(TokenKind::LeftBrace, "Expect '{' before class body.")?;
@@ -547,11 +524,7 @@ impl<'a> Parser<'a> {
     /// Derive a module name from a file path.
     /// e.g. "path/to/math.taro" → "math", "utils" → "utils"
     fn derive_module_name(path: &str) -> String {
-        std::path::Path::new(path)
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or(path)
-            .to_string()
+        std::path::Path::new(path).file_stem().and_then(|s| s.to_str()).unwrap_or(path).to_string()
     }
 
     fn parse_fun_declaration(&mut self) -> ParseResult<()> {
@@ -625,11 +598,7 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_function_body(&mut self, kind: FunctionKind) -> ParseResult<()> {
-        let name = if kind != FunctionKind::Script {
-            self.previous().lexeme.to_string()
-        } else {
-            String::new()
-        };
+        let name = if kind != FunctionKind::Script { self.previous().lexeme.to_string() } else { String::new() };
 
         // Save the current loop stack — functions cannot see enclosing loops.
         // break/continue inside a nested function should always error.
@@ -638,9 +607,7 @@ impl<'a> Parser<'a> {
         // Push a new compilation unit for the nested function.
         let enclosing = self.current_unit;
         self.current_unit = self.units.len();
-        self.units.push(CompilationUnit::new(
-            &mut self.obj_heap, name, kind, enclosing,
-        ));
+        self.units.push(CompilationUnit::new(&mut self.obj_heap, name, kind, enclosing));
 
         self.begin_scope();
 
@@ -715,9 +682,7 @@ impl<'a> Parser<'a> {
     fn end_scope(&mut self) {
         self.cur_unit_mut().scope_depth -= 1;
         let scope_depth = self.cur_unit().scope_depth;
-        while self.cur_unit().locals.len() > 0
-            && self.cur_unit().locals.last().unwrap().depth > scope_depth
-        {
+        while self.cur_unit().locals.len() > 0 && self.cur_unit().locals.last().unwrap().depth > scope_depth {
             if self.cur_unit().locals.last().unwrap().is_captured {
                 self.emit(Instruction::CloseUpvalue);
             } else {
@@ -738,7 +703,6 @@ impl<'a> Parser<'a> {
             self.parse_expression()?;
             self.consume(TokenKind::Semicolon, "Expect ';' after return value.")?;
             self.emit(Instruction::Return);
-
         }
         Ok(())
     }
@@ -823,10 +787,7 @@ impl<'a> Parser<'a> {
         // At this point `loop_start` already equals `increment_start` when an
         // increment clause exists (see the `loop_start = increment_start` above),
         // or the condition / body-start position otherwise.
-        self.loop_stack.push(LoopContext {
-            continue_target: loop_start,
-            break_patches: Vec::new(),
-        });
+        self.loop_stack.push(LoopContext { continue_target: loop_start, break_patches: Vec::new() });
 
         // Require braces for the body.
         self.consume(TokenKind::LeftBrace, "Expect '{' after for clauses.")?;
@@ -865,8 +826,8 @@ impl<'a> Parser<'a> {
 
         // Evaluate the iterable and call __iter__.  The iterator object
         // pushed by ForInIter becomes the first new local.
-        self.parse_expression()?;                // stack: [iterable]
-        self.emit(Instruction::ForInIter);       // stack: [iterator]
+        self.parse_expression()?; // stack: [iterable]
+        self.emit(Instruction::ForInIter); // stack: [iterator]
 
         // Open a scope for the two locals.  Slot 0 is reserved for the
         // closure (`CompilationUnit::new`), so the iterator gets the next
@@ -893,14 +854,11 @@ impl<'a> Parser<'a> {
         // Store element into the loop variable, then discard the two
         // temporary copies (ForInNext push + GetLocal copy).
         self.emit(Instruction::SetLocal(var_slot));
-        self.emit(Instruction::Pop);             // discard ForInNext push
-        self.emit(Instruction::Pop);             // discard GetLocal copy
+        self.emit(Instruction::Pop); // discard ForInNext push
+        self.emit(Instruction::Pop); // discard GetLocal copy
 
         // ---- loop body ----
-        self.loop_stack.push(LoopContext {
-            continue_target: loop_start,
-            break_patches: Vec::new(),
-        });
+        self.loop_stack.push(LoopContext { continue_target: loop_start, break_patches: Vec::new() });
 
         // Require braces for the body.
         self.consume(TokenKind::LeftBrace, "Expect '{' after 'in' expression.")?;
@@ -917,7 +875,7 @@ impl<'a> Parser<'a> {
         // The GetLocal copy is still on the stack.
         self.emit(Instruction::Pop);
 
-        self.end_scope();                        // pops both locals
+        self.end_scope(); // pops both locals
 
         // Patch all break-jump placeholders.
         for &jump_addr in &ctx.break_patches {
@@ -947,10 +905,7 @@ impl<'a> Parser<'a> {
         self.emit(Instruction::Pop);
 
         // Push loop context so break/continue inside the body know where to jump.
-        self.loop_stack.push(LoopContext {
-            continue_target: loop_start,
-            break_patches: Vec::new(),
-        });
+        self.loop_stack.push(LoopContext { continue_target: loop_start, break_patches: Vec::new() });
 
         // Parse body block.
         self.begin_scope();
@@ -1047,7 +1002,7 @@ impl<'a> Parser<'a> {
         let bytes = (offset as u16).to_le_bytes();
         assert!(jump_addr + 1 < self.cur_unit().chunk.codes.len());
         self.cur_unit_mut().chunk.codes[jump_addr] = bytes[0];
-        self.cur_unit_mut().chunk.codes[jump_addr+1] = bytes[1];
+        self.cur_unit_mut().chunk.codes[jump_addr + 1] = bytes[1];
         Ok(())
     }
 
@@ -1066,9 +1021,7 @@ impl<'a> Parser<'a> {
         self.advance();
         let prefix_rule = get_rule(self.previous().kind).prefix;
 
-        let Some(prefix_fn) = prefix_rule else {
-            bail_error_at_previous!(self, ParseErrorKind::ExpectedExpression)
-        };
+        let Some(prefix_fn) = prefix_rule else { bail_error_at_previous!(self, ParseErrorKind::ExpectedExpression) };
 
         let can_assign = precedence <= Prec::Assignment;
         prefix_fn(self, can_assign)?;
@@ -1099,11 +1052,7 @@ impl<'a> Parser<'a> {
 
         self.add_variable_to_scope(var_name.clone())?;
 
-        if self.cur_unit().scope_depth > 0 {
-            Ok(None)
-        } else {
-            Ok(Some(var_name))
-        }
+        if self.cur_unit().scope_depth > 0 { Ok(None) } else { Ok(Some(var_name)) }
     }
 
     fn add_variable_to_scope(&mut self, var_name: ShrString) -> ParseResult<()> {
@@ -1173,19 +1122,11 @@ impl<'a> Parser<'a> {
     fn number(parser: &mut Parser<'_>, _can_assign: bool) -> ParseResult<()> {
         let lexeme = parser.previous().lexeme;
         if lexeme.contains('.') {
-            let value: f64 = lexeme
-                .parse()
-                .map_err(|e|
-                    error_at_previous!(parser, ParseErrorKind::InvalidFloat(e))
-                )?;
+            let value: f64 = lexeme.parse().map_err(|e| error_at_previous!(parser, ParseErrorKind::InvalidFloat(e)))?;
             let handle = parser.obj_heap.alloc_float_instance(value);
             parser.emit(Instruction::Constant(handle));
         } else {
-            let value: i64 = lexeme
-                .parse()
-                .map_err(|e|
-                    error_at_previous!(parser, ParseErrorKind::InvalidInteger(e))
-                )?;
+            let value: i64 = lexeme.parse().map_err(|e| error_at_previous!(parser, ParseErrorKind::InvalidInteger(e)))?;
             let handle = parser.obj_heap.alloc_integer_instance(value);
             parser.emit(Instruction::Constant(handle));
         }
@@ -1198,16 +1139,13 @@ impl<'a> Parser<'a> {
         let prev = parser.previous();
         let lexeme = prev.lexeme;
         let inner = &lexeme[1..lexeme.len() - 1];
-        let unescaped = unescape_string(inner)
-            .map_err(|c| ParseError {
-                line: prev.line,
-                column: prev.column,
-                lexeme: lexeme.to_string(),
-                kind: ParseErrorKind::InvalidEscape(c),
-            })?;
-        let handle = parser
-            .obj_heap
-            .alloc_string_instance(unescaped.into());
+        let unescaped = unescape_string(inner).map_err(|c| ParseError {
+            line: prev.line,
+            column: prev.column,
+            lexeme: lexeme.to_string(),
+            kind: ParseErrorKind::InvalidEscape(c),
+        })?;
+        let handle = parser.obj_heap.alloc_string_instance(unescaped.into());
         parser.emit(Instruction::Constant(handle));
         Ok(())
     }
@@ -1215,9 +1153,9 @@ impl<'a> Parser<'a> {
     /// `literal` — prefix parser for `true`, `false`, `nil`.
     fn literal(parser: &mut Parser<'_>, _can_assign: bool) -> ParseResult<()> {
         match parser.previous().kind {
-            TokenKind::True  => parser.emit(Instruction::True),
+            TokenKind::True => parser.emit(Instruction::True),
             TokenKind::False => parser.emit(Instruction::False),
-            TokenKind::Nil   => parser.emit(Instruction::Nil),
+            TokenKind::Nil => parser.emit(Instruction::Nil),
             _ => unreachable!("literal() called for non-literal token"),
         }
         Ok(())
@@ -1236,7 +1174,7 @@ impl<'a> Parser<'a> {
         parser.parse_precedence(Prec::Unary)?;
         match op_kind {
             TokenKind::Minus => parser.emit(Instruction::Negate),
-            TokenKind::Bang  => parser.emit(Instruction::Not),
+            TokenKind::Bang => parser.emit(Instruction::Not),
             _ => unreachable!("unary() called for non‑unary token {op_kind:?}"),
         }
         Ok(())
@@ -1249,17 +1187,17 @@ impl<'a> Parser<'a> {
         // Parse the right operand at strictly higher precedence.
         parser.parse_precedence(rule.precedence.next())?;
         match op_kind {
-            TokenKind::Plus         => parser.emit(Instruction::Add),
-            TokenKind::Minus        => parser.emit(Instruction::Sub),
-            TokenKind::Star         => parser.emit(Instruction::Mul),
-            TokenKind::Slash        => parser.emit(Instruction::Div),
-            TokenKind::Percent      => parser.emit(Instruction::Mod),
-            TokenKind::TildeSlash   => parser.emit(Instruction::FloorDiv),
-            TokenKind::EqualEqual   => parser.emit(Instruction::Equal),
-            TokenKind::BangEqual    => parser.emit(Instruction::NotEqual),
-            TokenKind::Less         => parser.emit(Instruction::Less),
-            TokenKind::Greater      => parser.emit(Instruction::Greater),
-            TokenKind::LessEqual    => parser.emit(Instruction::LessEqual),
+            TokenKind::Plus => parser.emit(Instruction::Add),
+            TokenKind::Minus => parser.emit(Instruction::Sub),
+            TokenKind::Star => parser.emit(Instruction::Mul),
+            TokenKind::Slash => parser.emit(Instruction::Div),
+            TokenKind::Percent => parser.emit(Instruction::Mod),
+            TokenKind::TildeSlash => parser.emit(Instruction::FloorDiv),
+            TokenKind::EqualEqual => parser.emit(Instruction::Equal),
+            TokenKind::BangEqual => parser.emit(Instruction::NotEqual),
+            TokenKind::Less => parser.emit(Instruction::Less),
+            TokenKind::Greater => parser.emit(Instruction::Greater),
+            TokenKind::LessEqual => parser.emit(Instruction::LessEqual),
             TokenKind::GreaterEqual => parser.emit(Instruction::GreaterEqual),
             _ => unreachable!("binary() called for non-binary token {op_kind:?}"),
         }
@@ -1318,10 +1256,7 @@ impl<'a> Parser<'a> {
     /// `super_` — prefix parser for `super.method(args)` syntax.
     fn super_(parser: &mut Parser<'_>, _can_assign: bool) -> ParseResult<()> {
         parser.consume(TokenKind::Dot, "Expect '.' after 'super'.")?;
-        parser.consume(
-            TokenKind::Identifier,
-            "Expect superclass method name after 'super.'.",
-        )?;
+        parser.consume(TokenKind::Identifier, "Expect superclass method name after 'super.'.")?;
         let method_name = ShrString::new_string(parser.previous().lexeme.to_string());
 
         // Push `self` (slot 0 in every method frame) as the receiver.
@@ -1434,9 +1369,7 @@ impl<'a> Parser<'a> {
                 }
 
                 // Detect keyword argument: `Identifier = expr`.
-                if self.check(TokenKind::Identifier)
-                    && self.peek_next().kind == TokenKind::Equal
-                {
+                if self.check(TokenKind::Identifier) && self.peek_next().kind == TokenKind::Equal {
                     seen_keyword = true;
                     self.advance(); // consume identifier
                     let name = ShrString::new_string(self.previous().lexeme);
@@ -1483,16 +1416,16 @@ impl<'a> Parser<'a> {
                 self.advance();
                 let lexeme = self.previous().lexeme;
                 if lexeme.contains('.') {
-                    let mut value: f64 = lexeme
-                        .parse()
-                        .map_err(|e| error_at_previous!(self, ParseErrorKind::InvalidFloat(e)))?;
-                    if negate { value = -value; }
+                    let mut value: f64 = lexeme.parse().map_err(|e| error_at_previous!(self, ParseErrorKind::InvalidFloat(e)))?;
+                    if negate {
+                        value = -value;
+                    }
                     self.obj_heap.alloc_float_instance(value)
                 } else {
-                    let mut value: i64 = lexeme
-                        .parse()
-                        .map_err(|e| error_at_previous!(self, ParseErrorKind::InvalidInteger(e)))?;
-                    if negate { value = -value; }
+                    let mut value: i64 = lexeme.parse().map_err(|e| error_at_previous!(self, ParseErrorKind::InvalidInteger(e)))?;
+                    if negate {
+                        value = -value;
+                    }
                     self.obj_heap.alloc_integer_instance(value)
                 }
             }
@@ -1500,8 +1433,7 @@ impl<'a> Parser<'a> {
                 self.advance();
                 let lexeme = self.previous().lexeme;
                 let inner = &lexeme[1..lexeme.len() - 1];
-                let unescaped = unescape_string(inner)
-                    .map_err(|c| error_at_previous!(self, ParseErrorKind::InvalidEscape(c)))?;
+                let unescaped = unescape_string(inner).map_err(|c| error_at_previous!(self, ParseErrorKind::InvalidEscape(c)))?;
                 self.obj_heap.alloc_string_instance(unescaped.into())
             }
             TokenKind::True => {
@@ -1545,10 +1477,7 @@ impl<'a> Parser<'a> {
                 if can_assign && self.match_token(TokenKind::Equal) {
                     // Require explicit declaration with `var` before assignment.
                     if !self.declared_globals.contains(&name) {
-                        bail_error_at_previous!(
-                            self,
-                            ParseErrorKind::UndefinedVariable(name.to_string())
-                        );
+                        bail_error_at_previous!(self, ParseErrorKind::UndefinedVariable(name.to_string()));
                     }
                     self.parse_expression()?;
                     self.emit(Instruction::SetGlobal(name));
@@ -1675,11 +1604,7 @@ impl<'a> Parser<'a> {
     }
 
     fn peek_next(&self) -> &Token<'a> {
-        if self.current + 1 < self.tokens.len() {
-            &self.tokens[self.current + 1]
-        } else {
-            &self.tokens[self.current]
-        }
+        if self.current + 1 < self.tokens.len() { &self.tokens[self.current + 1] } else { &self.tokens[self.current] }
     }
 
     fn previous(&self) -> &Token<'a> {
@@ -1729,10 +1654,16 @@ impl<'a> Parser<'a> {
             }
 
             match self.peek().kind {
-                TokenKind::Class | TokenKind::Fun | TokenKind::Import | TokenKind::Var |
-                TokenKind::For | TokenKind::If | TokenKind::While |
-                TokenKind::Break | TokenKind::Continue |
-                TokenKind::Return => {
+                TokenKind::Class
+                | TokenKind::Fun
+                | TokenKind::Import
+                | TokenKind::Var
+                | TokenKind::For
+                | TokenKind::If
+                | TokenKind::While
+                | TokenKind::Break
+                | TokenKind::Continue
+                | TokenKind::Return => {
                     return;
                 }
                 _ => {}
@@ -1755,14 +1686,14 @@ fn unescape_string(raw: &str) -> Result<String, char> {
     while let Some(c) = chars.next() {
         if c == '\\' {
             match chars.next() {
-                Some('n')  => result.push('\n'),
-                Some('r')  => result.push('\r'),
-                Some('t')  => result.push('\t'),
+                Some('n') => result.push('\n'),
+                Some('r') => result.push('\r'),
+                Some('t') => result.push('\t'),
                 Some('\\') => result.push('\\'),
-                Some('"')  => result.push('"'),
-                Some('0')  => result.push('\0'),
-                Some(c)    => return Err(c),
-                None       => return Err('\\'), // trailing backslash at EOF
+                Some('"') => result.push('"'),
+                Some('0') => result.push('\0'),
+                Some(c) => return Err(c),
+                None => return Err('\\'), // trailing backslash at EOF
             }
         } else {
             result.push(c);

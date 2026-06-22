@@ -1,11 +1,10 @@
 use std::any::Any;
 
+use super::{ObjectHeap, ObjectInstanceData};
 use crate::{
-    native_a1,
-    NativeFunction, ObjectHandle,
+    NativeFunction, ObjectHandle, native_a1,
     vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine},
 };
-use super::{ObjectHeap, ObjectInstanceData};
 
 // ========================================================================== //
 //  ObjectListIterator (iterator state)
@@ -21,9 +20,15 @@ impl ObjectInstanceData for ObjectListIterator {
     fn mark_references(&self, heap: &mut ObjectHeap) {
         heap.mark_object(self.list_handle);
     }
-    fn type_name(&self) -> &'static str { "list iterator" }
-    fn as_any_ref(&self) -> &dyn Any { self }
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+    fn type_name(&self) -> &'static str {
+        "list iterator"
+    }
+    fn as_any_ref(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 }
 
 // ========================================================================== //
@@ -41,9 +46,15 @@ impl ObjectInstanceData for ObjectList {
             heap.mark_object(item);
         }
     }
-    fn type_name(&self) -> &'static str { "list" }
-    fn as_any_ref(&self) -> &dyn Any { self }
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+    fn type_name(&self) -> &'static str {
+        "list"
+    }
+    fn as_any_ref(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 }
 
 // A free function that returns the receiver unchanged — used for iterator
@@ -73,7 +84,9 @@ impl ObjectList {
         let items = vm.get_list_instance(receiver)?.clone();
         let mut result = String::from("[");
         for (i, &item) in items.iter().enumerate() {
-            if i > 0 { result.push_str(", "); }
+            if i > 0 {
+                result.push_str(", ");
+            }
             result.push_str(&vm.__str__(item)?);
         }
         result.push(']');
@@ -84,7 +97,9 @@ impl ObjectList {
 
     native_a1!(__len__, items: &Vec<ObjectHandle>, { items.len() as i64 });
 
-    pub fn len(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> { Self::__len__(vm, receiver) }
+    pub fn len(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+        Self::__len__(vm, receiver)
+    }
 
     pub fn __getitem__(vm: &mut VirtualMachine, receiver: ObjectHandle, idx_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let items = vm.get_list_instance(receiver).cloned()?;
@@ -97,7 +112,12 @@ impl ObjectList {
         Ok(items[idx as usize])
     }
 
-    pub fn __setitem__(vm: &mut VirtualMachine, receiver: ObjectHandle, idx_handle: ObjectHandle, value: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+    pub fn __setitem__(
+        vm: &mut VirtualMachine,
+        receiver: ObjectHandle,
+        idx_handle: ObjectHandle,
+        value: ObjectHandle,
+    ) -> RuntimeResult<ObjectHandle> {
         let idx_val = *vm.get_integer_instance(idx_handle)?;
         let items = vm.get_list_instance_mut(receiver)?;
         let len = items.len();
@@ -186,20 +206,20 @@ impl ObjectList {
 /// Register all `List` magic methods directly on the class during heap init.
 pub fn register_list_builtins(heap: &mut ObjectHeap) {
     let lc = heap.list_class;
-    heap.register_native_method(lc, "__not__",     NativeFunction::a1(ObjectList::__not__));
-    heap.register_native_method(lc, "__add__",     NativeFunction::a2(ObjectList::__add__));
-    heap.register_native_method(lc, "__eq__",      NativeFunction::a2(ObjectList::__eq__));
-    heap.register_native_method(lc, "__ne__",      NativeFunction::a2(ObjectList::__ne__));
-    heap.register_native_method(lc, "__str__",     NativeFunction::a1(ObjectList::__str__));
-    heap.register_native_method(lc, "__bool__",    NativeFunction::a1(ObjectList::__bool__));
-    heap.register_native_method(lc, "__len__",     NativeFunction::a1(ObjectList::__len__));
+    heap.register_native_method(lc, "__not__", NativeFunction::a1(ObjectList::__not__));
+    heap.register_native_method(lc, "__add__", NativeFunction::a2(ObjectList::__add__));
+    heap.register_native_method(lc, "__eq__", NativeFunction::a2(ObjectList::__eq__));
+    heap.register_native_method(lc, "__ne__", NativeFunction::a2(ObjectList::__ne__));
+    heap.register_native_method(lc, "__str__", NativeFunction::a1(ObjectList::__str__));
+    heap.register_native_method(lc, "__bool__", NativeFunction::a1(ObjectList::__bool__));
+    heap.register_native_method(lc, "__len__", NativeFunction::a1(ObjectList::__len__));
     heap.register_native_method(lc, "__getitem__", NativeFunction::a2(ObjectList::__getitem__));
     heap.register_native_method(lc, "__setitem__", NativeFunction::a3(ObjectList::__setitem__));
-    heap.register_native_method(lc, "append",      NativeFunction::a2(ObjectList::append));
-    heap.register_native_method(lc, "pop",         NativeFunction::a1(ObjectList::pop));
-    heap.register_native_method(lc, "len",         NativeFunction::a1(ObjectList::len));
-    heap.register_native_method(lc, "extend",      NativeFunction::a2(ObjectList::extend));
-    heap.register_native_method(lc, "__iter__",    NativeFunction::a1(ObjectList::__iter__));
+    heap.register_native_method(lc, "append", NativeFunction::a2(ObjectList::append));
+    heap.register_native_method(lc, "pop", NativeFunction::a1(ObjectList::pop));
+    heap.register_native_method(lc, "len", NativeFunction::a1(ObjectList::len));
+    heap.register_native_method(lc, "extend", NativeFunction::a2(ObjectList::extend));
+    heap.register_native_method(lc, "__iter__", NativeFunction::a1(ObjectList::__iter__));
 
     let lic = heap.list_iter_class;
     heap.register_native_method(lic, "__iter__", NativeFunction::a1(identity_iter));

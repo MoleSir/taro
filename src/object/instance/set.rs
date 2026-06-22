@@ -1,12 +1,11 @@
 use std::any::Any;
 use std::collections::HashMap;
 
+use super::{ObjectHeap, ObjectInstanceData};
 use crate::{
-    native_a1,
-    NativeFunction, ObjectHandle,
+    NativeFunction, ObjectHandle, native_a1,
     vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine},
 };
-use super::{ObjectHeap, ObjectInstanceData};
 
 // ========================================================================== //
 //  ObjectSetIterator (iterator state)
@@ -27,9 +26,15 @@ impl ObjectInstanceData for ObjectSetIterator {
             heap.mark_object(item);
         }
     }
-    fn type_name(&self) -> &'static str { "set iterator" }
-    fn as_any_ref(&self) -> &dyn Any { self }
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+    fn type_name(&self) -> &'static str {
+        "set iterator"
+    }
+    fn as_any_ref(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 }
 
 impl ObjectSetIterator {
@@ -55,9 +60,15 @@ impl ObjectInstanceData for ObjectSet {
             }
         }
     }
-    fn type_name(&self) -> &'static str { "set" }
-    fn as_any_ref(&self) -> &dyn Any { self }
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+    fn type_name(&self) -> &'static str {
+        "set"
+    }
+    fn as_any_ref(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 }
 
 impl ObjectSet {
@@ -92,7 +103,8 @@ impl ObjectSet {
         bucket.push(item);
 
         let inst = vm.get_instance_mut(receiver)?;
-        if let Some(set) = inst.data.as_any_mut().downcast_mut::<ObjectSet>() { let entries = &mut set.entries;
+        if let Some(set) = inst.data.as_any_mut().downcast_mut::<ObjectSet>() {
+            let entries = &mut set.entries;
             entries.insert(hash, bucket);
         }
         Ok(item)
@@ -120,7 +132,8 @@ impl ObjectSet {
             Some(idx) => {
                 let removed = bucket.remove(idx);
                 let inst = vm.get_instance_mut(receiver)?;
-                if let Some(set) = inst.data.as_any_mut().downcast_mut::<ObjectSet>() { let entries = &mut set.entries;
+                if let Some(set) = inst.data.as_any_mut().downcast_mut::<ObjectSet>() {
+                    let entries = &mut set.entries;
                     if bucket.is_empty() {
                         entries.remove(&hash);
                     } else {
@@ -154,15 +167,14 @@ impl ObjectSet {
     // ---- magic methods ----
 
     pub fn __str__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let all_items: Vec<ObjectHandle> = vm.get_set_instance(receiver)?
-            .values()
-            .flat_map(|b| b.iter().copied())
-            .collect();
+        let all_items: Vec<ObjectHandle> = vm.get_set_instance(receiver)?.values().flat_map(|b| b.iter().copied()).collect();
 
         let mut result = String::from("{");
         let mut first = true;
         for item in all_items {
-            if !first { result.push_str(", "); }
+            if !first {
+                result.push_str(", ");
+            }
             first = false;
             result.push_str(&vm.__str__(item)?);
         }
@@ -179,10 +191,7 @@ impl ObjectSet {
     // ---- iteration protocol ----
 
     pub fn __iter__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let items: Vec<ObjectHandle> = vm.get_set_instance(receiver)?
-            .values()
-            .flat_map(|b| b.iter().copied())
-            .collect();
+        let items: Vec<ObjectHandle> = vm.get_set_instance(receiver)?.values().flat_map(|b| b.iter().copied()).collect();
         Ok(vm.obj_heap.alloc_instance(vm.obj_heap.set_iter_class, ObjectSetIterator::new(items)))
     }
 
@@ -211,13 +220,13 @@ fn identity_iter(_vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeRes
 /// Register all `Set` magic methods directly on the class during heap init.
 pub fn register_set_builtins(heap: &mut ObjectHeap) {
     let sc = heap.set_class;
-    heap.register_native_method(sc, "add",      NativeFunction::a2(ObjectSet::add));
-    heap.register_native_method(sc, "remove",   NativeFunction::a2(ObjectSet::remove));
+    heap.register_native_method(sc, "add", NativeFunction::a2(ObjectSet::add));
+    heap.register_native_method(sc, "remove", NativeFunction::a2(ObjectSet::remove));
     heap.register_native_method(sc, "contains", NativeFunction::a2(ObjectSet::contains));
-    heap.register_native_method(sc, "__str__",  NativeFunction::a1(ObjectSet::__str__));
+    heap.register_native_method(sc, "__str__", NativeFunction::a1(ObjectSet::__str__));
     heap.register_native_method(sc, "__bool__", NativeFunction::a1(ObjectSet::__bool__));
-    heap.register_native_method(sc, "__not__",  NativeFunction::a1(ObjectSet::__not__));
-    heap.register_native_method(sc, "__len__",  NativeFunction::a1(ObjectSet::__len__));
+    heap.register_native_method(sc, "__not__", NativeFunction::a1(ObjectSet::__not__));
+    heap.register_native_method(sc, "__len__", NativeFunction::a1(ObjectSet::__len__));
     heap.register_native_method(sc, "__iter__", NativeFunction::a1(ObjectSet::__iter__));
 
     let sic = heap.set_iter_class;

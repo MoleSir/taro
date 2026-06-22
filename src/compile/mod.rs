@@ -1,9 +1,9 @@
-use parse::{Parser, ParseError};
-use scan::{ScanError, Scanner};
 use crate::{ObjectHandle, ObjectHeap};
-pub mod token;
-pub mod scan;
+use parse::{ParseError, Parser};
+use scan::{ScanError, Scanner};
 pub mod parse;
+pub mod scan;
+pub mod token;
 
 #[cfg(test)]
 mod tests;
@@ -13,14 +13,10 @@ mod tests;
 /// This is the main entry point for the compile pipeline.
 pub fn compile(source: &str, obj_heap: &mut ObjectHeap) -> Result<ObjectHandle, CompileError> {
     let mut scanner = Scanner::new(source);
-    let tokens = scanner
-        .scan_tokens()
-        .map_err(|e| CompileError::Scan(e))?;
+    let tokens = scanner.scan_tokens().map_err(|e| CompileError::Scan(e))?;
 
     let parser = Parser::new(tokens, obj_heap);
-    let function = parser
-        .parse()
-        .map_err(|e| CompileError::Parse(e))?;
+    let function = parser.parse().map_err(|e| CompileError::Parse(e))?;
 
     Ok(function)
 }
@@ -32,14 +28,10 @@ pub fn compile(source: &str, obj_heap: &mut ObjectHeap) -> Result<ObjectHandle, 
 /// definitions (name → value).
 pub fn compile_module(source: &str, obj_heap: &mut ObjectHeap) -> Result<ObjectHandle, CompileError> {
     let mut scanner = Scanner::new(source);
-    let tokens = scanner
-        .scan_tokens()
-        .map_err(|e| CompileError::Scan(e))?;
+    let tokens = scanner.scan_tokens().map_err(|e| CompileError::Scan(e))?;
 
     let parser = Parser::new_module(tokens, obj_heap);
-    let function = parser
-        .parse()
-        .map_err(|e| CompileError::Parse(e))?;
+    let function = parser.parse().map_err(|e| CompileError::Parse(e))?;
 
     Ok(function)
 }

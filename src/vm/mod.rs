@@ -1,12 +1,16 @@
-mod magic;
 mod builtin;
 mod error;
 mod gc;
+mod magic;
 mod utils;
 pub use error::*;
 #[cfg(test)]
 mod tests;
-use crate::{NativeFunction, Instruction, Method, Object, ObjectBoundMethod, ObjectNativeFn, ObjectClass, ObjectClosure, ObjectFunction, ObjectHandle, ObjectHeap, ObjectInstance, ObjectFields, ObjectListIterator, ObjectDictIterator, ObjectSetIterator, ObjectStringIterator, ObjectBytesIterator, ObjectUpvalue, ShrString};
+use crate::{
+    Instruction, Method, NativeFunction, Object, ObjectBoundMethod, ObjectBytesIterator, ObjectClass, ObjectClosure, ObjectDictIterator,
+    ObjectFields, ObjectFunction, ObjectHandle, ObjectHeap, ObjectInstance, ObjectListIterator, ObjectNativeFn, ObjectSetIterator,
+    ObjectStringIterator, ObjectUpvalue, ShrString,
+};
 use std::collections::HashMap;
 
 pub struct VirtualMachine {
@@ -85,8 +89,7 @@ impl VirtualMachine {
 
     /// Compile `source` and execute it on this VM.
     pub fn interpret(&mut self, source: &str) -> Result<(), InterpretError> {
-        let function = crate::compile::compile(source, &mut self.obj_heap)
-            .map_err(InterpretError::Compile)?;
+        let function = crate::compile::compile(source, &mut self.obj_heap).map_err(InterpretError::Compile)?;
         self.interpret_function(function)
     }
 
@@ -107,8 +110,7 @@ impl VirtualMachine {
             self.import_std_module(module_name)?
         } else {
             // Read file content.
-            let source = std::fs::read_to_string(path)
-                .map_err(|e| RuntimeErrorKind::ImportError(format!("cannot read '{path}': {e}")))?;
+            let source = std::fs::read_to_string(path).map_err(|e| RuntimeErrorKind::ImportError(format!("cannot read '{path}': {e}")))?;
             self.import_source_module(&source, path)?
         };
         self.loaded_modules.insert(ShrString::new_string(path), module);
@@ -169,18 +171,19 @@ impl VirtualMachine {
         self.extra_gc_roots.clear();
 
         // 9. Propagate execution errors.
-        result.map_err(|e| {
-            RuntimeErrorKind::ImportError(format!("error in module '{display_name}': {e}"))
-        })?;
+        result.map_err(|e| RuntimeErrorKind::ImportError(format!("error in module '{display_name}': {e}")))?;
 
         // 10. Convert the dict into a fields instance.
         let exports: HashMap<ShrString, ObjectHandle> = if let Some(entries) = self.obj_heap.get_dict_instance(exports_dict) {
-            entries.values().flat_map(|bucket| bucket.iter().map(|&(k, v)| {
-                let key = self.obj_heap.get_string_instance(k)
-                    .cloned()
-                    .unwrap_or_else(|| ShrString::new_str("?"));
-                (key, v)
-            })).collect()
+            entries
+                .values()
+                .flat_map(|bucket| {
+                    bucket.iter().map(|&(k, v)| {
+                        let key = self.obj_heap.get_string_instance(k).cloned().unwrap_or_else(|| ShrString::new_str("?"));
+                        (key, v)
+                    })
+                })
+                .collect()
         } else {
             HashMap::new()
         };
@@ -195,11 +198,7 @@ impl VirtualMachine {
     ///
     /// Chain: instance → .class → .module → exports[name]
     /// Returns `None` if any link in the chain is missing.
-    pub fn lookup_module_export(
-        &self,
-        instance: ObjectHandle,
-        name: &ShrString,
-    ) -> Option<ObjectHandle> {
+    pub fn lookup_module_export(&self, instance: ObjectHandle, name: &ShrString) -> Option<ObjectHandle> {
         let inst = self.obj_heap.get_instance(instance)?;
         let class = self.obj_heap.get_class(inst.class)?;
         let module = class.module?;
@@ -211,11 +210,7 @@ impl VirtualMachine {
     ///
     /// Used by module-level native functions (which have no `self` receiver)
     /// to find sibling classes within the same module.
-    pub fn lookup_loaded_module_export(
-        &self,
-        module_path: &str,
-        name: &ShrString,
-    ) -> Option<ObjectHandle> {
+    pub fn lookup_loaded_module_export(&self, module_path: &str, name: &ShrString) -> Option<ObjectHandle> {
         let module = self.loaded_modules.get(&ShrString::new_string(module_path))?;
         let exports = self.obj_heap.get_fields_instance(*module)?;
         exports.get(name).copied()
@@ -272,35 +267,24 @@ impl VirtualMachine {
                 self.globals.insert(name, value);
             }
             Instruction::GetGlobal(name) => {
-                let value = self.globals
-                    .get(&name)
-                    .copied()
-                    .ok_or_else(|| RuntimeErrorKind::VariableNotFound(name.as_str().to_string()))?;
+                let value =
+                    self.globals.get(&name).copied().ok_or_else(|| RuntimeErrorKind::VariableNotFound(name.as_str().to_string()))?;
                 self.push_stack(value);
             }
             Instruction::SetGlobal(name) => {
-                let value = self.stack
-                    .last()
-                    .copied()
-                    .ok_or(RuntimeErrorKind::StackEmpty)?;
+                let value = self.stack.last().copied().ok_or(RuntimeErrorKind::StackEmpty)?;
                 self.globals.insert(name, value);
             }
             Instruction::GetLocal(slot) => {
                 let base = self.frame()?.slots_start;
                 let index = base + slot;
-                let value = self.stack
-                    .get(index)
-                    .copied()
-                    .ok_or_else(|| RuntimeErrorKind::StackIndexOutOfRange(index))?;
+                let value = self.stack.get(index).copied().ok_or_else(|| RuntimeErrorKind::StackIndexOutOfRange(index))?;
                 self.push_stack(value);
             }
             Instruction::SetLocal(slot) => {
                 let base = self.frame()?.slots_start;
                 let index = base + slot;
-                let value = self.stack
-                    .last()
-                    .copied()
-                    .ok_or(RuntimeErrorKind::StackEmpty)?;
+                let value = self.stack.last().copied().ok_or(RuntimeErrorKind::StackEmpty)?;
                 if index >= self.stack.len() {
                     return Err(RuntimeErrorKind::StackIndexOutOfRange(index));
                 }
@@ -321,8 +305,14 @@ impl VirtualMachine {
                 return Ok(());
             }
             Instruction::Nil => self.push_stack(ObjectHandle::NIL),
-            Instruction::True => { let h = self.obj_heap.alloc_bool_instance(true); self.push_stack(h); }
-            Instruction::False => { let h = self.obj_heap.alloc_bool_instance(false); self.push_stack(h); }
+            Instruction::True => {
+                let h = self.obj_heap.alloc_bool_instance(true);
+                self.push_stack(h);
+            }
+            Instruction::False => {
+                let h = self.obj_heap.alloc_bool_instance(false);
+                self.push_stack(h);
+            }
             Instruction::Negate => unary_op!(self, neg),
             Instruction::Not => unary_op!(self, not),
             Instruction::Add => binary_op!(self, add),
@@ -375,16 +365,10 @@ impl VirtualMachine {
                         let slot = self.frame()?.slots_start + uv_desc.index;
                         self.capture_upvalue(slot)?
                     } else {
-                        let enclosing_closure = self.obj_heap
-                            .get_closure(self.frame()?.closure)
-                            .expect("must closure");
+                        let enclosing_closure = self.obj_heap.get_closure(self.frame()?.closure).expect("must closure");
                         enclosing_closure.upvalues[uv_desc.index]
                     };
-                    self.obj_heap
-                        .get_closure_mut(closure_handle)
-                        .expect("must closure")
-                        .upvalues
-                        .push(upvalue);
+                    self.obj_heap.get_closure_mut(closure_handle).expect("must closure").upvalues.push(upvalue);
                 }
                 self.push_stack(closure_handle);
             }
@@ -431,18 +415,21 @@ impl VirtualMachine {
             Instruction::GetProperty(field_name) => {
                 let receiver = self.peek_stack(0)?;
 
-                let obj = self.obj_heap.get(receiver); 
+                let obj = self.obj_heap.get(receiver);
                 match obj {
                     Object::Instance(instance) => {
                         if let Some(fields_data) = instance.data.as_any_ref().downcast_ref::<ObjectFields>()
-                            && let Some(value) = fields_data.fields.get(&field_name).cloned() {
+                            && let Some(value) = fields_data.fields.get(&field_name).cloned()
+                        {
                             self.pop_stack()?;
                             self.push_stack(value);
                         } else {
                             let method = {
                                 let class = self.get_class(instance.class)?;
-                                class.methods
-                                    .get(&field_name).copied()
+                                class
+                                    .methods
+                                    .get(&field_name)
+                                    .copied()
                                     .ok_or_else(|| RuntimeErrorKind::UndefinedProperty(field_name.to_string()))?
                             };
                             let receiver = self.pop_stack()?;
@@ -476,8 +463,7 @@ impl VirtualMachine {
                 let instance = self.peek_stack(1)?;
                 let type_name = self.value_type_name(value);
                 let instance = self.get_instance_mut(instance)?;
-                let fields = instance.get_data_mut::<ObjectFields>()
-                    .ok_or(RuntimeErrorKind::CannotSetProperty(type_name))?;
+                let fields = instance.get_data_mut::<ObjectFields>().ok_or(RuntimeErrorKind::CannotSetProperty(type_name))?;
                 fields.fields.insert(field_name, value);
 
                 let value = self.pop_stack()?;
@@ -514,8 +500,7 @@ impl VirtualMachine {
                 // work naturally).
                 let field_value = match self.obj_heap.get(receiver) {
                     Object::Instance(inst) => {
-                        inst.data.as_any_ref().downcast_ref::<ObjectFields>()
-                            .and_then(|f| f.fields.get(&method_name).copied())
+                        inst.data.as_any_ref().downcast_ref::<ObjectFields>().and_then(|f| f.fields.get(&method_name).copied())
                     }
                     _ => None,
                 };
@@ -534,7 +519,10 @@ impl VirtualMachine {
 
                 let method = {
                     let class_ = self.get_class(class_handle)?;
-                    class_.methods.get(&method_name).copied()
+                    class_
+                        .methods
+                        .get(&method_name)
+                        .copied()
                         .ok_or_else(|| RuntimeErrorKind::UndefinedProperty(method_name.as_str().to_string()))?
                 };
 
@@ -556,17 +544,13 @@ impl VirtualMachine {
                     let receiver = self.peek_stack(arg_count)?;
                     let instance = self.get_instance(receiver)?;
                     let class = self.get_class(instance.class)?;
-                    let superclass_handle = class
-                        .superclass
-                        .ok_or(RuntimeErrorKind::NoSuperclass)?;
+                    let superclass_handle = class.superclass.ok_or(RuntimeErrorKind::NoSuperclass)?;
                     let superclass = self.get_class(superclass_handle)?;
                     superclass
                         .methods
                         .get(&method_name)
                         .copied()
-                        .ok_or_else(|| {
-                            RuntimeErrorKind::UndefinedProperty(method_name.as_str().to_string())
-                        })?
+                        .ok_or_else(|| RuntimeErrorKind::UndefinedProperty(method_name.as_str().to_string()))?
                 };
 
                 match method {
@@ -688,15 +672,18 @@ impl VirtualMachine {
             "os" => self.create_os_module(),
             "random" => self.create_random_module(),
             "time" => self.create_time_module(),
-            _ => Err(RuntimeErrorKind::ImportError(format!(
-                "unknown std module '{module_name}'"
-            )).into()),
+            _ => Err(RuntimeErrorKind::ImportError(format!("unknown std module '{module_name}'")).into()),
         }
     }
 
     /// Invoke a method on a receiver synchronously, running its bytecode
     /// to completion and returning the result handle.
-    fn invoke_method_sync(&mut self, receiver: ObjectHandle, method: ObjectHandle, extra_args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
+    fn invoke_method_sync(
+        &mut self,
+        receiver: ObjectHandle,
+        method: ObjectHandle,
+        extra_args: &[ObjectHandle],
+    ) -> RuntimeResult<ObjectHandle> {
         self.push_stack(receiver);
         for &arg in extra_args {
             self.push_stack(arg);
@@ -746,8 +733,7 @@ impl VirtualMachine {
             Object::Class(_) => {
                 let (new_method, init_method) = {
                     let class = self.get_class(callee)?;
-                    (class.methods.get("__new__").copied(),
-                     class.methods.get("__init__").copied())
+                    (class.methods.get("__new__").copied(), class.methods.get("__init__").copied())
                 };
                 // If __new__ is defined, call it with the class as the
                 // first argument followed by any user-provided constructor
@@ -757,10 +743,7 @@ impl VirtualMachine {
                     Some(method) => {
                         // Save user arguments before __new__ consumes them.
                         let callee_idx = self.callee_slot(arg_count);
-                        let saved_args: Vec<ObjectHandle> =
-                            (callee_idx + 1..self.stack.len())
-                                .map(|i| self.stack[i])
-                                .collect();
+                        let saved_args: Vec<ObjectHandle> = (callee_idx + 1..self.stack.len()).map(|i| self.stack[i]).collect();
 
                         // Truncate stack to just before the class slot,
                         // then push class + saved args for __new__ dispatch.
@@ -798,17 +781,13 @@ impl VirtualMachine {
                         }
                         inst
                     }
-                    None => {
-                        self.obj_heap.alloc_instance_dyn(callee, Box::new(ObjectFields::default()))
-                    }
+                    None => self.obj_heap.alloc_instance_dyn(callee, Box::new(ObjectFields::default())),
                 };
                 let index = self.callee_slot(arg_count);
                 self.stack[index] = instance;
                 if let Some(method) = init_method {
                     match method {
-                        Method::User(closure_handle) => {
-                            self.call_closure(closure_handle, arg_count + 1, false)
-                        }
+                        Method::User(closure_handle) => self.call_closure(closure_handle, arg_count + 1, false),
                         Method::Native(handle) => {
                             let native_fn = self.get_native_fn(handle)?.function;
                             self.call_native_fn(native_fn, arg_count + 1, false)
@@ -821,40 +800,29 @@ impl VirtualMachine {
                     Ok(())
                 }
             }
-            Object::Instance(_) => self.__call__(callee, arg_count)
-                .map_err(|e| match e {
-                    RuntimeErrorKind::NoImplementMethod(_, _) => RuntimeErrorKind::CanNotCall(self.value_type_name(callee)),
-                    other => other,
-                }),
+            Object::Instance(_) => self.__call__(callee, arg_count).map_err(|e| match e {
+                RuntimeErrorKind::NoImplementMethod(_, _) => RuntimeErrorKind::CanNotCall(self.value_type_name(callee)),
+                other => other,
+            }),
             Object::BoundMethod(bound_method) => {
                 let index = self.callee_slot(arg_count);
                 self.stack[index] = bound_method.receiver;
                 match &bound_method.method {
-                    Method::User(closure_handle) => {
-                        self.call_closure(*closure_handle, arg_count + 1, false)
-                    }
+                    Method::User(closure_handle) => self.call_closure(*closure_handle, arg_count + 1, false),
                     Method::Native(handle) => {
                         let native_fn = self.get_native_fn(*handle)?.function;
                         self.call_native_fn(native_fn, arg_count + 1, false)
                     }
                 }
             }
-            Object::NativeFn(native_fn) => {
-                self.call_native_fn(native_fn.function, arg_count, true)
-            }
-            _ => Err(RuntimeErrorKind::CanNotCall(self.value_type_name(callee)))
+            Object::NativeFn(native_fn) => self.call_native_fn(native_fn.function, arg_count, true),
+            _ => Err(RuntimeErrorKind::CanNotCall(self.value_type_name(callee))),
         }
     }
 
     /// Call a value with keyword arguments — reorder args to match parameter
     /// order and fill in defaults.
-    fn call_value_kw(
-        &mut self,
-        callee: ObjectHandle,
-        pos_count: usize,
-        kw_count: usize,
-        kw_names: &[ShrString],
-    ) -> RuntimeResult<()> {
+    fn call_value_kw(&mut self, callee: ObjectHandle, pos_count: usize, kw_count: usize, kw_names: &[ShrString]) -> RuntimeResult<()> {
         let total_on_stack = pos_count + kw_count;
         let callee_idx = self.stack.len() - total_on_stack - 1;
         let obj = self.obj_heap.get(callee);
@@ -947,20 +915,12 @@ impl VirtualMachine {
     }
 
     /// Return (param_names, arity, required_arity, defaults) for a callable.
-    fn get_callable_info(
-        &self,
-        callee: ObjectHandle,
-    ) -> RuntimeResult<(Vec<ShrString>, usize, usize, Vec<ObjectHandle>)> {
+    fn get_callable_info(&self, callee: ObjectHandle) -> RuntimeResult<(Vec<ShrString>, usize, usize, Vec<ObjectHandle>)> {
         let obj = self.obj_heap.get(callee);
         match obj {
             Object::Closure(closure) => {
                 let func = self.obj_heap.get_function(closure.function).expect("must function");
-                Ok((
-                    func.param_names.clone(),
-                    func.arity,
-                    func.required_arity,
-                    func.defaults.clone(),
-                ))
+                Ok((func.param_names.clone(), func.arity, func.required_arity, func.defaults.clone()))
             }
             Object::BoundMethod(bound) => {
                 let handle = match bound.method {
@@ -972,24 +932,14 @@ impl VirtualMachine {
                 };
                 let closure = self.obj_heap.get_closure(handle).expect("must closure");
                 let func = self.obj_heap.get_function(closure.function).expect("must function");
-                Ok((
-                    func.param_names.clone(),
-                    func.arity,
-                    func.required_arity,
-                    func.defaults.clone(),
-                ))
+                Ok((func.param_names.clone(), func.arity, func.required_arity, func.defaults.clone()))
             }
             Object::Class(class) => {
                 // For class construction, look up __init__.
                 if let Some(Method::User(init_handle)) = class.methods.get("__init__").copied() {
                     let closure = self.obj_heap.get_closure(init_handle).expect("must closure");
                     let func = self.obj_heap.get_function(closure.function).expect("must function");
-                    Ok((
-                        func.param_names.clone(),
-                        func.arity,
-                        func.required_arity,
-                        func.defaults.clone(),
-                    ))
+                    Ok((func.param_names.clone(), func.arity, func.required_arity, func.defaults.clone()))
                 } else {
                     // No init — no params.
                     Ok((vec![], 0, 0, vec![]))
@@ -1013,17 +963,9 @@ impl VirtualMachine {
         let function = self.obj_heap.get_function(closure_obj.function).expect("must function");
         // Allow arg_count in [required_arity, arity]; fill defaults for missing args.
         if arg_count < function.required_arity || arg_count > function.arity {
-            Err(RuntimeErrorKind::ArgumentCountRange {
-                min: function.required_arity,
-                max: function.arity,
-                got: arg_count,
-            })?;
+            Err(RuntimeErrorKind::ArgumentCountRange { min: function.required_arity, max: function.arity, got: arg_count })?;
         }
-        let slots_start = if callee_on_stack {
-            self.stack.len() - arg_count - 1
-        } else {
-            self.stack.len() - arg_count
-        };
+        let slots_start = if callee_on_stack { self.stack.len() - arg_count - 1 } else { self.stack.len() - arg_count };
 
         // Fill in default values for missing arguments.
         let num_missing = function.arity - arg_count;
@@ -1183,13 +1125,13 @@ impl VirtualMachine {
         let found = self.value_type_name(handle);
         self.obj_heap
             .get_native_mut::<T>(handle)
-            .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "native", found }.into() )
+            .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "native", found }.into())
     }
 
     pub fn get_native<T: crate::object::ObjectInstanceData>(&self, handle: ObjectHandle) -> RuntimeResult<&T> {
         self.obj_heap
             .get_native::<T>(handle)
-            .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "native", found: self.value_type_name(handle) }.into() )
+            .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "native", found: self.value_type_name(handle) }.into())
     }
 
     pub fn get_list_iter(&self, handle: ObjectHandle) -> RuntimeResult<&ObjectListIterator> {

@@ -1,4 +1,4 @@
-use crate::{compile::CompileError, ChunkError};
+use crate::{ChunkError, compile::CompileError};
 
 #[derive(Debug)]
 pub enum InterpretError {

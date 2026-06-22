@@ -1,7 +1,7 @@
+use crate::vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine};
+use crate::{NativeFunction, ObjectHandle, ShrString, impl_object_instance_data};
 use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Seek, Write};
-use crate::{impl_object_instance_data, NativeFunction, ObjectHandle, ShrString};
-use crate::vm::{RuntimeResult, RuntimeErrorKind, VirtualMachine};
 
 impl VirtualMachine {
     /// Create the `fs` std module.
@@ -26,16 +26,16 @@ impl VirtualMachine {
     pub(crate) fn create_fs_module(&mut self) -> RuntimeResult<ObjectHandle> {
         let file_class = self.obj_heap.alloc_class("File");
 
-        self.register_native_method(file_class, "__new__",   NativeFunction::var(FileInstance::__new__));
-        self.register_native_method(file_class, "__init__",  NativeFunction::var(FileInstance::__init__));
-        self.register_native_method(file_class, "read",      NativeFunction::a1(FileInstance::read));
-        self.register_native_method(file_class, "write",     NativeFunction::a2(FileInstance::write));
-        self.register_native_method(file_class, "readline",  NativeFunction::a1(FileInstance::readline));
-        self.register_native_method(file_class, "close",     NativeFunction::a1(FileInstance::close));
-        self.register_native_method(file_class, "seek",      NativeFunction::a2(FileInstance::seek));
-        self.register_native_method(file_class, "tell",       NativeFunction::a1(FileInstance::tell));
+        self.register_native_method(file_class, "__new__", NativeFunction::var(FileInstance::__new__));
+        self.register_native_method(file_class, "__init__", NativeFunction::var(FileInstance::__init__));
+        self.register_native_method(file_class, "read", NativeFunction::a1(FileInstance::read));
+        self.register_native_method(file_class, "write", NativeFunction::a2(FileInstance::write));
+        self.register_native_method(file_class, "readline", NativeFunction::a1(FileInstance::readline));
+        self.register_native_method(file_class, "close", NativeFunction::a1(FileInstance::close));
+        self.register_native_method(file_class, "seek", NativeFunction::a2(FileInstance::seek));
+        self.register_native_method(file_class, "tell", NativeFunction::a1(FileInstance::tell));
         self.register_native_method(file_class, "read_bytes", NativeFunction::a1(FileInstance::read_bytes));
-        self.register_native_method(file_class, "__str__",    NativeFunction::a1(FileInstance::__str__));
+        self.register_native_method(file_class, "__str__", NativeFunction::a1(FileInstance::__str__));
 
         // Standalone function handles.
         let exists = self.obj_heap.alloc_native_fn("exists", NativeFunction::a1(exists));
@@ -82,11 +82,7 @@ impl_object_instance_data!(FileInstance, "File");
 impl FileInstance {
     fn __new__(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
         let class = args[0];
-        Ok(vm.obj_heap.alloc_instance_dyn(class, Box::new(FileInstance {
-            reader: None,
-            path: String::new(),
-            mode: String::new(),
-        })))
+        Ok(vm.obj_heap.alloc_instance_dyn(class, Box::new(FileInstance { reader: None, path: String::new(), mode: String::new() })))
     }
 
     fn __init__(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
@@ -106,61 +102,72 @@ impl FileInstance {
         };
 
         let file = match mode.as_str() {
-            "r" => std::fs::File::open(&path)
-                .map_err(|e| RuntimeErrorKind::IoError(format!("cannot open '{}': {}", path, e)))?,
-            "w" => std::fs::File::create(&path)
-                .map_err(|e| RuntimeErrorKind::IoError(format!("cannot create '{}': {}", path, e)))?,
+            "r" => std::fs::File::open(&path).map_err(|e| RuntimeErrorKind::IoError(format!("cannot open '{}': {}", path, e)))?,
+            "w" => std::fs::File::create(&path).map_err(|e| RuntimeErrorKind::IoError(format!("cannot create '{}': {}", path, e)))?,
             "a" => std::fs::OpenOptions::new()
-                .append(true).create(true).open(&path)
+                .append(true)
+                .create(true)
+                .open(&path)
                 .map_err(|e| RuntimeErrorKind::IoError(format!("cannot open '{}': {}", path, e)))?,
             _ => Err(RuntimeErrorKind::IoError(format!("unknown file mode '{}'", mode)))?,
         };
 
-        let inst = vm.obj_heap.get_instance_mut(self_handle)
-            .ok_or_else(|| RuntimeErrorKind::IoError("not a File instance".into()))?;
+        let inst = vm.obj_heap.get_instance_mut(self_handle).ok_or_else(|| RuntimeErrorKind::IoError("not a File instance".into()))?;
         inst.data = Box::new(FileInstance { reader: Some(BufReader::new(file)), path, mode });
 
         Ok(self_handle)
     }
 
     fn read(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let reader = vm.get_native_mut::<FileInstance>(receiver)?.reader.as_mut()
+        let reader = vm
+            .get_native_mut::<FileInstance>(receiver)?
+            .reader
+            .as_mut()
             .ok_or_else(|| RuntimeErrorKind::IoError("file is closed".into()))?;
         let mut buf = String::new();
-        reader.read_to_string(&mut buf)
-            .map_err(|e| RuntimeErrorKind::IoError(format!("read error: {}", e)))?;
+        reader.read_to_string(&mut buf).map_err(|e| RuntimeErrorKind::IoError(format!("read error: {}", e)))?;
         Ok(vm.obj_heap.alloc_string_instance(ShrString::new_string(&buf)))
     }
 
     fn read_bytes(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let reader = vm.get_native_mut::<FileInstance>(receiver)?.reader.as_mut()
+        let reader = vm
+            .get_native_mut::<FileInstance>(receiver)?
+            .reader
+            .as_mut()
             .ok_or_else(|| RuntimeErrorKind::IoError("file is closed".into()))?;
         let mut buf = Vec::new();
-        reader.read_to_end(&mut buf)
-            .map_err(|e| RuntimeErrorKind::IoError(format!("read error: {}", e)))?;
+        reader.read_to_end(&mut buf).map_err(|e| RuntimeErrorKind::IoError(format!("read error: {}", e)))?;
         Ok(vm.obj_heap.alloc_bytes_instance(buf))
     }
 
     fn write(vm: &mut VirtualMachine, receiver: ObjectHandle, text: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let text = vm.get_string_instance(text)?.clone();
-        let reader = vm.get_native_mut::<FileInstance>(receiver)?.reader.as_mut()
+        let reader = vm
+            .get_native_mut::<FileInstance>(receiver)?
+            .reader
+            .as_mut()
             .ok_or_else(|| RuntimeErrorKind::IoError("file is closed".into()))?;
-        reader.get_mut().write_all(text.as_bytes())
-            .map_err(|e| RuntimeErrorKind::IoError(format!("write error: {}", e)))?;
+        reader.get_mut().write_all(text.as_bytes()).map_err(|e| RuntimeErrorKind::IoError(format!("write error: {}", e)))?;
         Ok(ObjectHandle::NIL)
     }
 
     fn readline(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let reader = vm.get_native_mut::<FileInstance>(receiver)?.reader.as_mut()
+        let reader = vm
+            .get_native_mut::<FileInstance>(receiver)?
+            .reader
+            .as_mut()
             .ok_or_else(|| RuntimeErrorKind::IoError("file is closed".into()))?;
         let mut line = String::new();
-        let n = reader.read_line(&mut line)
-            .map_err(|e| RuntimeErrorKind::IoError(format!("read error: {}", e)))?;
+        let n = reader.read_line(&mut line).map_err(|e| RuntimeErrorKind::IoError(format!("read error: {}", e)))?;
         if n == 0 {
             return Ok(ObjectHandle::NIL);
         }
-        if line.ends_with('\n') { line.pop(); }
-        if line.ends_with('\r') { line.pop(); }
+        if line.ends_with('\n') {
+            line.pop();
+        }
+        if line.ends_with('\r') {
+            line.pop();
+        }
         Ok(vm.obj_heap.alloc_string_instance(ShrString::new_string(&line)))
     }
 
@@ -171,39 +178,42 @@ impl FileInstance {
 
     fn seek(vm: &mut VirtualMachine, receiver: ObjectHandle, pos: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let pos = *vm.get_integer_instance(pos)?;
-        let reader = vm.get_native_mut::<FileInstance>(receiver)?.reader.as_mut()
+        let reader = vm
+            .get_native_mut::<FileInstance>(receiver)?
+            .reader
+            .as_mut()
             .ok_or_else(|| RuntimeErrorKind::IoError("file is closed".into()))?;
-        reader.seek(std::io::SeekFrom::Start(pos as u64))
-            .map_err(|e| RuntimeErrorKind::IoError(format!("seek error: {}", e)))?;
+        reader.seek(std::io::SeekFrom::Start(pos as u64)).map_err(|e| RuntimeErrorKind::IoError(format!("seek error: {}", e)))?;
         Ok(ObjectHandle::NIL)
     }
 
     fn tell(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let reader = vm.get_native_mut::<FileInstance>(receiver)?.reader.as_mut()
+        let reader = vm
+            .get_native_mut::<FileInstance>(receiver)?
+            .reader
+            .as_mut()
             .ok_or_else(|| RuntimeErrorKind::IoError("file is closed".into()))?;
-        let pos = reader.stream_position()
-            .map_err(|e| RuntimeErrorKind::IoError(format!("tell error: {}", e)))?;
+        let pos = reader.stream_position().map_err(|e| RuntimeErrorKind::IoError(format!("tell error: {}", e)))?;
         Ok(vm.obj_heap.alloc_integer_instance(pos as i64))
     }
 
     fn __str__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let (is_open, path, mode) =
-            if let Some(d) = vm.obj_heap.get_native::<FileInstance>(receiver) {
-                (d.reader.is_some(), d.path.clone(), d.mode.clone())
-            } else {
-                (false, "?".into(), "?".into())
-            };
+        let (is_open, path, mode) = if let Some(d) = vm.obj_heap.get_native::<FileInstance>(receiver) {
+            (d.reader.is_some(), d.path.clone(), d.mode.clone())
+        } else {
+            (false, "?".into(), "?".into())
+        };
         let status = if is_open { "open" } else { "closed" };
-        Ok(vm.obj_heap.alloc_string_instance(ShrString::new_string(&format!(
-            "<File path='{}' mode='{}' status={}>", path, mode, status
-        ))))
+        Ok(vm
+            .obj_heap
+            .alloc_string_instance(ShrString::new_string(&format!("<File path='{}' mode='{}' status={}>", path, mode, status))))
     }
 }
 
 // =============================================================================
 //  Functions
 // =============================================================================
-  
+
 fn exists(vm: &mut VirtualMachine, path: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     let s = vm.get_string_instance(path)?;
     let ok = std::path::Path::new(s.as_str()).exists();
@@ -231,22 +241,19 @@ fn remove(vm: &mut VirtualMachine, path: ObjectHandle) -> RuntimeResult<ObjectHa
 fn rename(vm: &mut VirtualMachine, from: ObjectHandle, to: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     let from_s = vm.get_string_instance(from)?;
     let to_s = vm.get_string_instance(to)?;
-    std::fs::rename(from_s.as_str(), to_s.as_str())
-        .map_err(|e| RuntimeErrorKind::IoError(format!("cannot rename: {}", e)))?;
+    std::fs::rename(from_s.as_str(), to_s.as_str()).map_err(|e| RuntimeErrorKind::IoError(format!("cannot rename: {}", e)))?;
     Ok(ObjectHandle::NIL)
 }
 
 fn read(vm: &mut VirtualMachine, path: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     let s = vm.get_string_instance(path)?;
-    let content = std::fs::read_to_string(s.as_str())
-        .map_err(|e| RuntimeErrorKind::IoError(format!("cannot read '{}': {}", s, e)))?;
+    let content = std::fs::read_to_string(s.as_str()).map_err(|e| RuntimeErrorKind::IoError(format!("cannot read '{}': {}", s, e)))?;
     Ok(vm.obj_heap.alloc_string_instance(ShrString::new_string(&content)))
 }
 
 fn read_bytes(vm: &mut VirtualMachine, path: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     let s = vm.get_string_instance(path)?;
-    let content = std::fs::read(s.as_str())
-        .map_err(|e| RuntimeErrorKind::IoError(format!("cannot read '{}': {}", s, e)))?;
+    let content = std::fs::read(s.as_str()).map_err(|e| RuntimeErrorKind::IoError(format!("cannot read '{}': {}", s, e)))?;
     Ok(vm.obj_heap.alloc_bytes_instance(content))
 }
 
@@ -260,8 +267,7 @@ fn write(vm: &mut VirtualMachine, path: ObjectHandle, text: ObjectHandle) -> Run
 
 fn list_dir(vm: &mut VirtualMachine, path: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     let s = vm.get_string_instance(path)?;
-    let dir = std::fs::read_dir(s.as_str())
-        .map_err(|e| RuntimeErrorKind::IoError(format!("cannot list '{}': {}", s, e)))?;
+    let dir = std::fs::read_dir(s.as_str()).map_err(|e| RuntimeErrorKind::IoError(format!("cannot list '{}': {}", s, e)))?;
     let mut entries = Vec::new();
     for entry in dir {
         let entry = entry.map_err(|e| RuntimeErrorKind::IoError(format!("readdir: {}", e)))?;
@@ -273,7 +279,6 @@ fn list_dir(vm: &mut VirtualMachine, path: ObjectHandle) -> RuntimeResult<Object
 
 fn mkdir(vm: &mut VirtualMachine, path: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     let s = vm.get_string_instance(path)?;
-    std::fs::create_dir_all(s.as_str())
-        .map_err(|e| RuntimeErrorKind::IoError(format!("cannot mkdir '{}': {}", s, e)))?;
+    std::fs::create_dir_all(s.as_str()).map_err(|e| RuntimeErrorKind::IoError(format!("cannot mkdir '{}': {}", s, e)))?;
     Ok(ObjectHandle::NIL)
 }

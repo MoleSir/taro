@@ -1,12 +1,11 @@
 use std::any::Any;
 use std::collections::HashMap;
 
+use super::{ObjectHeap, ObjectInstanceData};
 use crate::{
-    native_a1,
-    NativeFunction, ObjectHandle,
+    NativeFunction, ObjectHandle, native_a1,
     vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine},
 };
-use super::{ObjectHeap, ObjectInstanceData};
 
 // ========================================================================== //
 //  ObjectDictIterator (iterator state)
@@ -27,9 +26,15 @@ impl ObjectInstanceData for ObjectDictIterator {
             heap.mark_object(key);
         }
     }
-    fn type_name(&self) -> &'static str { "dict iterator" }
-    fn as_any_ref(&self) -> &dyn Any { self }
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+    fn type_name(&self) -> &'static str {
+        "dict iterator"
+    }
+    fn as_any_ref(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 }
 
 impl ObjectDictIterator {
@@ -56,9 +61,15 @@ impl ObjectInstanceData for ObjectDict {
             }
         }
     }
-    fn type_name(&self) -> &'static str { "dict" }
-    fn as_any_ref(&self) -> &dyn Any { self }
-    fn as_any_mut(&mut self) -> &mut dyn Any { self }
+    fn type_name(&self) -> &'static str {
+        "dict"
+    }
+    fn as_any_ref(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 }
 
 impl ObjectDict {
@@ -69,15 +80,15 @@ impl ObjectDict {
     native_a1!(__not__, entries: &HashMap<u64, Vec<(ObjectHandle, ObjectHandle)>>, { entries.values().all(|b| b.is_empty()) });
 
     pub fn __str__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let all_entries: Vec<(ObjectHandle, ObjectHandle)> = vm.get_dict_instance(receiver)?
-            .values()
-            .flat_map(|b| b.iter().copied())
-            .collect();
+        let all_entries: Vec<(ObjectHandle, ObjectHandle)> =
+            vm.get_dict_instance(receiver)?.values().flat_map(|b| b.iter().copied()).collect();
 
         let mut result = String::from("{");
         let mut first = true;
         for (k, v) in all_entries {
-            if !first { result.push_str(", "); }
+            if !first {
+                result.push_str(", ");
+            }
             first = false;
             result.push_str(&vm.__str__(k)?);
             result.push_str(": ");
@@ -91,7 +102,9 @@ impl ObjectDict {
 
     native_a1!(__len__, entries: &HashMap<u64, Vec<(ObjectHandle, ObjectHandle)>>, { entries.values().map(|b| b.len()).sum::<usize>() as i64 });
 
-    pub fn len(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> { Self::__len__(vm, receiver) }
+    pub fn len(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+        Self::__len__(vm, receiver)
+    }
 
     pub fn __getitem__(vm: &mut VirtualMachine, receiver: ObjectHandle, key: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let hash = vm.__hash__(key)?;
@@ -110,7 +123,12 @@ impl ObjectDict {
         Err(RuntimeErrorKind::KeyNotFound)
     }
 
-    pub fn __setitem__(vm: &mut VirtualMachine, receiver: ObjectHandle, key: ObjectHandle, value: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+    pub fn __setitem__(
+        vm: &mut VirtualMachine,
+        receiver: ObjectHandle,
+        key: ObjectHandle,
+        value: ObjectHandle,
+    ) -> RuntimeResult<ObjectHandle> {
         let hash = vm.__hash__(key)?;
 
         let mut bucket = {
@@ -133,7 +151,8 @@ impl ObjectDict {
         }
 
         let inst = vm.get_instance_mut(receiver)?;
-        if let Some(dict) = inst.data.as_any_mut().downcast_mut::<ObjectDict>() { let entries = &mut dict.entries;
+        if let Some(dict) = inst.data.as_any_mut().downcast_mut::<ObjectDict>() {
+            let entries = &mut dict.entries;
             entries.insert(hash, bucket);
         }
         Ok(value)
@@ -159,19 +178,13 @@ impl ObjectDict {
 
     /// `dict.keys()` — return a list of all keys.
     pub fn keys(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let keys: Vec<ObjectHandle> = vm.get_dict_instance(receiver)?
-            .values()
-            .flat_map(|b| b.iter().map(|&(k, _)| k))
-            .collect();
+        let keys: Vec<ObjectHandle> = vm.get_dict_instance(receiver)?.values().flat_map(|b| b.iter().map(|&(k, _)| k)).collect();
         Ok(vm.obj_heap.alloc_list_instance(keys))
     }
 
     /// `dict.values()` — return a list of all values.
     pub fn values(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let values: Vec<ObjectHandle> = vm.get_dict_instance(receiver)?
-            .values()
-            .flat_map(|b| b.iter().map(|&(_, v)| v))
-            .collect();
+        let values: Vec<ObjectHandle> = vm.get_dict_instance(receiver)?.values().flat_map(|b| b.iter().map(|&(_, v)| v)).collect();
         Ok(vm.obj_heap.alloc_list_instance(values))
     }
 
@@ -182,7 +195,7 @@ impl ObjectDict {
             for &(k, _) in bucket.iter() {
                 let eq = vm.__eq__(k, key)?;
                 if vm.__bool__(eq)? {
-                    return Ok(vm.obj_heap.alloc_bool_instance(true))
+                    return Ok(vm.obj_heap.alloc_bool_instance(true));
                 }
             }
         }
@@ -212,7 +225,8 @@ impl ObjectDict {
             Some(idx) => {
                 let removed = bucket.remove(idx);
                 let inst = vm.get_instance_mut(receiver)?;
-                if let Some(dict) = inst.data.as_any_mut().downcast_mut::<ObjectDict>() { let entries = &mut dict.entries;
+                if let Some(dict) = inst.data.as_any_mut().downcast_mut::<ObjectDict>() {
+                    let entries = &mut dict.entries;
                     if bucket.is_empty() {
                         entries.remove(&hash);
                     } else {
@@ -228,10 +242,7 @@ impl ObjectDict {
     // ---- iteration protocol ----
 
     pub fn __iter__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let keys: Vec<ObjectHandle> = vm.get_dict_instance(receiver)?
-            .values()
-            .flat_map(|b| b.iter().map(|&(k, _)| k))
-            .collect();
+        let keys: Vec<ObjectHandle> = vm.get_dict_instance(receiver)?.values().flat_map(|b| b.iter().map(|&(k, _)| k)).collect();
         Ok(vm.obj_heap.alloc_instance(vm.obj_heap.dict_iter_class, ObjectDictIterator { keys, index: 0 }))
     }
 
@@ -260,19 +271,19 @@ fn identity_iter(_vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeRes
 /// Register all `Dict` magic methods directly on the class during heap init.
 pub fn register_dict_builtins(heap: &mut ObjectHeap) {
     let dc = heap.dict_class;
-    heap.register_native_method(dc, "__not__",     NativeFunction::a1(ObjectDict::__not__));
-    heap.register_native_method(dc, "__str__",     NativeFunction::a1(ObjectDict::__str__));
-    heap.register_native_method(dc, "__bool__",    NativeFunction::a1(ObjectDict::__bool__));
-    heap.register_native_method(dc, "__len__",     NativeFunction::a1(ObjectDict::__len__));
+    heap.register_native_method(dc, "__not__", NativeFunction::a1(ObjectDict::__not__));
+    heap.register_native_method(dc, "__str__", NativeFunction::a1(ObjectDict::__str__));
+    heap.register_native_method(dc, "__bool__", NativeFunction::a1(ObjectDict::__bool__));
+    heap.register_native_method(dc, "__len__", NativeFunction::a1(ObjectDict::__len__));
     heap.register_native_method(dc, "__getitem__", NativeFunction::a2(ObjectDict::__getitem__));
     heap.register_native_method(dc, "__setitem__", NativeFunction::a3(ObjectDict::__setitem__));
-    heap.register_native_method(dc, "get",         NativeFunction::a2(ObjectDict::get));
-    heap.register_native_method(dc, "keys",        NativeFunction::a1(ObjectDict::keys));
-    heap.register_native_method(dc, "values",      NativeFunction::a1(ObjectDict::values));
-    heap.register_native_method(dc, "pop",         NativeFunction::a2(ObjectDict::pop));
-    heap.register_native_method(dc, "contains",    NativeFunction::a2(ObjectDict::contains));
-    heap.register_native_method(dc, "len",         NativeFunction::a1(ObjectDict::len));
-    heap.register_native_method(dc, "__iter__",    NativeFunction::a1(ObjectDict::__iter__));
+    heap.register_native_method(dc, "get", NativeFunction::a2(ObjectDict::get));
+    heap.register_native_method(dc, "keys", NativeFunction::a1(ObjectDict::keys));
+    heap.register_native_method(dc, "values", NativeFunction::a1(ObjectDict::values));
+    heap.register_native_method(dc, "pop", NativeFunction::a2(ObjectDict::pop));
+    heap.register_native_method(dc, "contains", NativeFunction::a2(ObjectDict::contains));
+    heap.register_native_method(dc, "len", NativeFunction::a1(ObjectDict::len));
+    heap.register_native_method(dc, "__iter__", NativeFunction::a1(ObjectDict::__iter__));
 
     let dic = heap.dict_iter_class;
     heap.register_native_method(dic, "__iter__", NativeFunction::a1(identity_iter));

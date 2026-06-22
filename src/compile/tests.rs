@@ -1,6 +1,6 @@
-use crate::{ByteCode, Chunk, Instruction, ObjectHandle, ObjectHeap};
-use super::*;
 use super::parse::ParseErrorKind;
+use super::*;
+use crate::{ByteCode, Chunk, Instruction, ObjectHandle, ObjectHeap};
 
 // ------------------------------------------------------------------------
 //  Helpers
@@ -11,10 +11,7 @@ fn compile_with_heap(source: &str) -> (Chunk, ObjectHeap) {
     let mut obj_heap = ObjectHeap::new();
     let h = compile(source, &mut obj_heap).expect("compilation should succeed");
     let mut chunk = Chunk::new();
-    std::mem::swap(
-        &mut chunk,
-        &mut obj_heap.get_mut(h).as_function_mut().expect("must fun").chunk,
-    );
+    std::mem::swap(&mut chunk, &mut obj_heap.get_mut(h).as_function_mut().expect("must fun").chunk);
     (chunk, obj_heap)
 }
 
@@ -46,10 +43,7 @@ fn is_const_int(heap: &ObjectHeap, h: ObjectHandle, expected: i64) -> bool {
 /// Assert that source fails to compile.
 fn assert_err(source: &str) {
     let mut obj_heap = ObjectHeap::new();
-    assert!(
-        compile(source, &mut obj_heap).is_err(),
-        "expected compilation error for: {source:?}"
-    );
+    assert!(compile(source, &mut obj_heap).is_err(), "expected compilation error for: {source:?}");
 }
 
 /// Decode every instruction from a chunk into a Vec.
@@ -171,10 +165,7 @@ fn test_string_invalid_escape_is_error() {
     let mut obj_heap = ObjectHeap::new();
     match compile("\"hello\\xworld\";", &mut obj_heap) {
         Err(CompileError::Parse(errors)) => {
-            assert!(
-                errors.iter().any(|e| matches!(e.kind, ParseErrorKind::InvalidEscape('x'))),
-                "expected InvalidEscape error"
-            );
+            assert!(errors.iter().any(|e| matches!(e.kind, ParseErrorKind::InvalidEscape('x'))), "expected InvalidEscape error");
         }
         Err(CompileError::Scan(_)) => panic!("unexpected scan error"),
         Ok(_) => panic!("expected compilation to fail for invalid escape"),
@@ -405,13 +396,13 @@ fn test_multiple_statements() {
 #[test]
 fn test_complex_expression() {
     let c = codes("-5 * (3 + 2) / 4;");
-    assert_eq!(&c[0..3], &[ByteCode::Constant as u8, 0, 0]);  // 5
+    assert_eq!(&c[0..3], &[ByteCode::Constant as u8, 0, 0]); // 5
     assert_eq!(c[3], ByteCode::Negate as u8);
-    assert_eq!(&c[4..7], &[ByteCode::Constant as u8, 1, 0]);  // 3
+    assert_eq!(&c[4..7], &[ByteCode::Constant as u8, 1, 0]); // 3
     assert_eq!(&c[7..10], &[ByteCode::Constant as u8, 2, 0]); // 2
     assert_eq!(c[10], ByteCode::Add as u8);
     assert_eq!(c[11], ByteCode::Mul as u8);
-    assert_eq!(&c[12..15], &[ByteCode::Constant as u8, 3, 0]);// 4
+    assert_eq!(&c[12..15], &[ByteCode::Constant as u8, 3, 0]); // 4
     assert_eq!(c[15], ByteCode::Div as u8);
 }
 
@@ -553,9 +544,7 @@ fn test_duplicate_local_is_error() {
     let mut obj_heap = ObjectHeap::new();
     match compile(source, &mut obj_heap) {
         Err(CompileError::Parse(errors)) => {
-            assert!(errors.iter().any(
-                |e| matches!(e.kind, ParseErrorKind::VariableRedefine(_))
-            ), "expected VariableRedefine error");
+            assert!(errors.iter().any(|e| matches!(e.kind, ParseErrorKind::VariableRedefine(_))), "expected VariableRedefine error");
         }
         Err(CompileError::Scan(_)) => panic!("unexpected scan error"),
         Ok(_) => panic!("expected compilation to fail for duplicate local"),
@@ -668,9 +657,7 @@ fn test_for_statement_with_condition() {
 fn test_for_statement_with_initializer() {
     let (chunk, _heap) = compile_with_heap("for (var i = 0; i < 5; i = i + 1) { print(i); }");
     let c = &chunk.codes;
-    let get_local_count = c.windows(3)
-        .filter(|w| w[0] == ByteCode::GetLocal as u8)
-        .count();
+    let get_local_count = c.windows(3).filter(|w| w[0] == ByteCode::GetLocal as u8).count();
     assert!(get_local_count >= 3);
     assert!(c.windows(3).any(|w| w[0] == ByteCode::SetLocal as u8));
     let loop_count = c.iter().filter(|&&b| b == ByteCode::Loop as u8).count();
@@ -707,28 +694,44 @@ fn test_for_statement_variable_decl_in_initializer() {
 // ------------------------------------------------------------------------
 
 #[test]
-fn test_if_missing_parens() { assert_err("if true 1;"); }
+fn test_if_missing_parens() {
+    assert_err("if true 1;");
+}
 #[test]
-fn test_if_missing_condition() { assert_err("if {};"); }
+fn test_if_missing_condition() {
+    assert_err("if {};");
+}
 #[test]
-fn test_while_missing_parens() { assert_err("while true 1;"); }
+fn test_while_missing_parens() {
+    assert_err("while true 1;");
+}
 #[test]
-fn test_while_missing_condition() { assert_err("while {};"); }
+fn test_while_missing_condition() {
+    assert_err("while {};");
+}
 #[test]
-fn test_for_missing_parens() { assert_err("for var i = 0; i < 10; i = i + 1) print(i);"); }
+fn test_for_missing_parens() {
+    assert_err("for var i = 0; i < 10; i = i + 1) print(i);");
+}
 
 // ------------------------------------------------------------------------
 //  Error cases
 // ------------------------------------------------------------------------
 
 #[test]
-fn test_missing_semicolon() { assert_err("42"); }
+fn test_missing_semicolon() {
+    assert_err("42");
+}
 
 #[test]
-fn test_unterminated_grouping() { assert_err("(1 + 2;"); }
+fn test_unterminated_grouping() {
+    assert_err("(1 + 2;");
+}
 
 #[test]
-fn test_missing_expression_after_operator() { assert_err("1 + ;"); }
+fn test_missing_expression_after_operator() {
+    assert_err("1 + ;");
+}
 
 #[test]
 fn test_more_errors() {
@@ -847,9 +850,7 @@ fn test_return_in_top_level_is_error() {
     let mut obj_heap = ObjectHeap::new();
     match compile("return 5;", &mut obj_heap) {
         Err(CompileError::Parse(errors)) => {
-            assert!(errors.iter().any(
-                |e| matches!(e.kind, ParseErrorKind::ReturnInTop)
-            ), "expected ReturnInTop error");
+            assert!(errors.iter().any(|e| matches!(e.kind, ParseErrorKind::ReturnInTop)), "expected ReturnInTop error");
         }
         _ => panic!("expected compilation to fail for top-level return"),
     }
@@ -861,9 +862,7 @@ fn test_return_in_top_level_is_error() {
 
 #[test]
 fn test_closure_single_upvalue_capture() {
-    let (script_chunk, heap) = compile_with_heap(
-        "fun outer() { var x = 1; fun inner() { return x; } return inner; }"
-    );
+    let (script_chunk, heap) = compile_with_heap("fun outer() { var x = 1; fun inner() { return x; } return inner; }");
     let script_insts = instructions(&script_chunk, &heap);
     let outer_fn_handle = match &script_insts[0] {
         Instruction::Closure { function, upvalues } => {
@@ -875,12 +874,9 @@ fn test_closure_single_upvalue_capture() {
     let outer_fn = heap.get(outer_fn_handle).as_function().unwrap();
     let outer_insts = instructions(&outer_fn.chunk, &heap);
 
-    let (inner_fn_handle, upvalues) = outer_insts.iter()
-        .find_map(|inst| {
-            if let Instruction::Closure { function, upvalues } = inst {
-                Some((*function, upvalues.clone()))
-            } else { None }
-        })
+    let (inner_fn_handle, upvalues) = outer_insts
+        .iter()
+        .find_map(|inst| if let Instruction::Closure { function, upvalues } = inst { Some((*function, upvalues.clone())) } else { None })
         .expect("outer should contain a Closure for inner");
 
     assert_eq!(upvalues.len(), 1);
@@ -895,9 +891,7 @@ fn test_closure_single_upvalue_capture() {
 
 #[test]
 fn test_closure_set_upvalue_bytecode() {
-    let (script_chunk, heap) = compile_with_heap(
-        "fun outer() { var i = 0; fun inc() { i = i + 1; } }"
-    );
+    let (script_chunk, heap) = compile_with_heap("fun outer() { var i = 0; fun inc() { i = i + 1; } }");
     let script_insts = instructions(&script_chunk, &heap);
     let outer_fn_handle = match &script_insts[0] {
         Instruction::Closure { function, .. } => *function,
@@ -905,10 +899,9 @@ fn test_closure_set_upvalue_bytecode() {
     };
     let outer_fn = heap.get(outer_fn_handle).as_function().unwrap();
     let outer_insts = instructions(&outer_fn.chunk, &heap);
-    let inner_fn_handle = outer_insts.iter()
-        .find_map(|inst| {
-            if let Instruction::Closure { function, .. } = inst { Some(*function) } else { None }
-        })
+    let inner_fn_handle = outer_insts
+        .iter()
+        .find_map(|inst| if let Instruction::Closure { function, .. } = inst { Some(*function) } else { None })
         .expect("outer should contain a Closure for inc");
 
     let inner_fn = heap.get(inner_fn_handle).as_function().unwrap();
@@ -919,9 +912,7 @@ fn test_closure_set_upvalue_bytecode() {
 
 #[test]
 fn test_close_upvalue_in_block_scope() {
-    let (script_chunk, heap) = compile_with_heap(
-        "fun outer() { var x = 1; { var y = 2; fun f() { return y; } } return x; }"
-    );
+    let (script_chunk, heap) = compile_with_heap("fun outer() { var x = 1; { var y = 2; fun f() { return y; } } return x; }");
     let script_insts = instructions(&script_chunk, &heap);
     let outer_fn_handle = match &script_insts[0] {
         Instruction::Closure { function, .. } => *function,
@@ -934,9 +925,7 @@ fn test_close_upvalue_in_block_scope() {
 
 #[test]
 fn test_closure_captures_parameter() {
-    let (script_chunk, heap) = compile_with_heap(
-        "fun makeAdder(x) { fun adder(y) { return x + y; } return adder; }"
-    );
+    let (script_chunk, heap) = compile_with_heap("fun makeAdder(x) { fun adder(y) { return x + y; } return adder; }");
     let script_insts = instructions(&script_chunk, &heap);
     let outer_fn_handle = match &script_insts[0] {
         Instruction::Closure { function, .. } => *function,
@@ -944,12 +933,9 @@ fn test_closure_captures_parameter() {
     };
     let outer_fn = heap.get(outer_fn_handle).as_function().unwrap();
     let outer_insts = instructions(&outer_fn.chunk, &heap);
-    let (_, upvalues) = outer_insts.iter()
-        .find_map(|inst| {
-            if let Instruction::Closure { function, upvalues } = inst {
-                Some((*function, upvalues.clone()))
-            } else { None }
-        })
+    let (_, upvalues) = outer_insts
+        .iter()
+        .find_map(|inst| if let Instruction::Closure { function, upvalues } = inst { Some((*function, upvalues.clone())) } else { None })
         .expect("makeAdder should contain a Closure for adder");
 
     assert_eq!(upvalues.len(), 1);
@@ -959,9 +945,8 @@ fn test_closure_captures_parameter() {
 
 #[test]
 fn test_nested_closure_upvalue_chain() {
-    let (script_chunk, heap) = compile_with_heap(
-        "fun outer() { var a = 10; fun middle() { fun inner() { return a; } return inner; } return middle; }"
-    );
+    let (script_chunk, heap) =
+        compile_with_heap("fun outer() { var a = 10; fun middle() { fun inner() { return a; } return inner; } return middle; }");
     let script_insts = instructions(&script_chunk, &heap);
     let outer_fn_handle = match &script_insts[0] {
         Instruction::Closure { function, .. } => *function,
@@ -970,25 +955,25 @@ fn test_nested_closure_upvalue_chain() {
     let outer_fn = heap.get(outer_fn_handle).as_function().unwrap();
     let outer_insts = instructions(&outer_fn.chunk, &heap);
 
-    let middle_fn_handle = outer_insts.iter()
+    let middle_fn_handle = outer_insts
+        .iter()
         .find_map(|inst| {
             if let Instruction::Closure { function, upvalues } = inst {
                 assert_eq!(upvalues.len(), 1);
                 assert!(upvalues[0].is_local);
                 assert_eq!(upvalues[0].index, 1);
                 Some(*function)
-            } else { None }
+            } else {
+                None
+            }
         })
         .expect("outer should contain a Closure for middle");
 
     let middle_fn = heap.get(middle_fn_handle).as_function().unwrap();
     let middle_insts = instructions(&middle_fn.chunk, &heap);
-    let (inner_fn_handle, inner_upvalues) = middle_insts.iter()
-        .find_map(|inst| {
-            if let Instruction::Closure { function, upvalues } = inst {
-                Some((*function, upvalues.clone()))
-            } else { None }
-        })
+    let (inner_fn_handle, inner_upvalues) = middle_insts
+        .iter()
+        .find_map(|inst| if let Instruction::Closure { function, upvalues } = inst { Some((*function, upvalues.clone())) } else { None })
         .expect("middle should contain a Closure for inner");
 
     assert_eq!(inner_upvalues.len(), 1);
@@ -1002,9 +987,7 @@ fn test_nested_closure_upvalue_chain() {
 
 #[test]
 fn test_closure_multiple_upvalues() {
-    let (script_chunk, heap) = compile_with_heap(
-        "fun outer() { var a = 1; var b = 2; fun sum() { return a + b; } return sum; }"
-    );
+    let (script_chunk, heap) = compile_with_heap("fun outer() { var a = 1; var b = 2; fun sum() { return a + b; } return sum; }");
     let script_insts = instructions(&script_chunk, &heap);
     let outer_fn_handle = match &script_insts[0] {
         Instruction::Closure { function, .. } => *function,
@@ -1012,12 +995,9 @@ fn test_closure_multiple_upvalues() {
     };
     let outer_fn = heap.get(outer_fn_handle).as_function().unwrap();
     let outer_insts = instructions(&outer_fn.chunk, &heap);
-    let (sum_fn_handle, upvalues) = outer_insts.iter()
-        .find_map(|inst| {
-            if let Instruction::Closure { function, upvalues } = inst {
-                Some((*function, upvalues.clone()))
-            } else { None }
-        })
+    let (sum_fn_handle, upvalues) = outer_insts
+        .iter()
+        .find_map(|inst| if let Instruction::Closure { function, upvalues } = inst { Some((*function, upvalues.clone())) } else { None })
         .expect("outer should contain Closure for sum");
 
     assert_eq!(upvalues.len(), 2);
@@ -1067,9 +1047,7 @@ fn test_invoke_bytecode() {
 
 #[test]
 fn test_init_method_returns_self() {
-    let (chunk, heap) = compile_with_heap(
-        "class Foo { fun __init__(self, x) { self.x = x; } }"
-    );
+    let (chunk, heap) = compile_with_heap("class Foo { fun __init__(self, x) { self.x = x; } }");
     let script_insts = instructions(&chunk, &heap);
     for inst in &script_insts {
         if let Instruction::Closure { function, .. } = inst {
@@ -1077,10 +1055,7 @@ fn test_init_method_returns_self() {
             if fn_obj.name.as_str() == "__init__" {
                 let fn_insts = instructions(&fn_obj.chunk, &heap);
                 let last = &fn_insts[fn_insts.len() - 2];
-                assert!(
-                    matches!(last, Instruction::GetLocal(0)),
-                    "__init__ should end with GetLocal(0)"
-                );
+                assert!(matches!(last, Instruction::GetLocal(0)), "__init__ should end with GetLocal(0)");
                 assert!(matches!(fn_insts.last().unwrap(), Instruction::Return));
                 return;
             }

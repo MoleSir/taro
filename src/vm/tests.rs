@@ -1,5 +1,5 @@
-use crate::{Chunk, Instruction, ObjectHandle, ObjectHeap};
 use super::VirtualMachine;
+use crate::{Chunk, Instruction, ObjectHandle, ObjectHeap};
 
 /// Build a chunk and run it: creates VM first, then calls `build` with VM's heap.
 fn run_chunk(build: impl FnOnce(&mut Chunk, &mut ObjectHeap)) -> VirtualMachine {
@@ -10,7 +10,9 @@ fn run_chunk(build: impl FnOnce(&mut Chunk, &mut ObjectHeap)) -> VirtualMachine 
     // the call because `vm` is pinned on the stack.
     let heap_ptr = &mut vm.obj_heap as *mut ObjectHeap;
     let mut chunk = Chunk::new();
-    unsafe { build(&mut chunk, &mut *heap_ptr); }
+    unsafe {
+        build(&mut chunk, &mut *heap_ptr);
+    }
     let function = vm.obj_heap.alloc_function("script", 0, 0, vec![], vec![], chunk);
     vm.interpret_function(function).unwrap();
     vm
@@ -32,7 +34,9 @@ fn get_bool(vm: &VirtualMachine, handle: ObjectHandle) -> bool {
 }
 
 /// Helper: check nil.
-fn is_nil(handle: ObjectHandle) -> bool { handle.is_nil() }
+fn is_nil(handle: ObjectHandle) -> bool {
+    handle.is_nil()
+}
 
 #[test]
 pub fn test_base_arith() {
@@ -169,7 +173,10 @@ pub fn test_string_equality() {
         c.write_instruction(Instruction::Equal, 1, 1, h);
         c.write_instruction(Instruction::Return, 1, 1, h);
     });
-    assert!({let r=vm.pop_stack().unwrap(); get_bool(&vm, r)});
+    assert!({
+        let r = vm.pop_stack().unwrap();
+        get_bool(&vm, r)
+    });
 }
 
 #[test]
@@ -180,7 +187,10 @@ pub fn test_string_not_equality() {
         c.write_instruction(Instruction::NotEqual, 1, 1, h);
         c.write_instruction(Instruction::Return, 1, 1, h);
     });
-    assert!({let r=vm.pop_stack().unwrap(); get_bool(&vm, r)});
+    assert!({
+        let r = vm.pop_stack().unwrap();
+        get_bool(&vm, r)
+    });
 }
 
 #[test]
@@ -191,7 +201,13 @@ pub fn test_len_string() {
         c.write_instruction(Instruction::Call(1), 1, 1, h);
         c.write_instruction(Instruction::Return, 1, 1, h);
     });
-    assert_eq!({let r=vm.pop_stack().unwrap(); get_int(&vm, r)}, 5);
+    assert_eq!(
+        {
+            let r = vm.pop_stack().unwrap();
+            get_int(&vm, r)
+        },
+        5
+    );
 }
 
 #[test]
@@ -213,7 +229,10 @@ pub fn test_bool_negate() {
         c.write_instruction(Instruction::Not, 1, 1, h);
         c.write_instruction(Instruction::Return, 1, 1, h);
     });
-    assert!(!{let r=vm.pop_stack().unwrap(); get_bool(&vm, r)});
+    assert!(!{
+        let r = vm.pop_stack().unwrap();
+        get_bool(&vm, r)
+    });
 }
 
 #[test]
@@ -223,7 +242,10 @@ pub fn test_bool_truthy() {
         c.write_instruction(Instruction::Not, 1, 1, h);
         c.write_instruction(Instruction::Return, 1, 1, h);
     });
-    assert!({let r=vm.pop_stack().unwrap(); get_bool(&vm, r)});
+    assert!({
+        let r = vm.pop_stack().unwrap();
+        get_bool(&vm, r)
+    });
 }
 
 #[test]
@@ -248,7 +270,13 @@ pub fn test_list_index_get() {
         c.write_instruction(Instruction::IndexGet, 1, 1, h);
         c.write_instruction(Instruction::Return, 1, 1, h);
     });
-    assert_eq!({let r=vm.pop_stack().unwrap(); get_int(&vm, r)}, 10);
+    assert_eq!(
+        {
+            let r = vm.pop_stack().unwrap();
+            get_int(&vm, r)
+        },
+        10
+    );
 }
 
 #[test]
@@ -274,7 +302,13 @@ pub fn test_list_append_method() {
         c.write_instruction(Instruction::Invoke("append".into(), 1), 1, 1, h);
         c.write_instruction(Instruction::Return, 1, 1, h);
     });
-    assert_eq!({let r=vm.pop_stack().unwrap(); get_int(&vm, r)}, 2);
+    assert_eq!(
+        {
+            let r = vm.pop_stack().unwrap();
+            get_int(&vm, r)
+        },
+        2
+    );
 }
 
 #[test]
@@ -288,8 +322,7 @@ pub fn test_build_dict() {
         c.write_instruction(Instruction::Return, 1, 1, h);
     });
     let r = vm.pop_stack().unwrap();
-    let entry_count: usize = vm.obj_heap.get_dict_instance(r).unwrap()
-        .values().map(|b| b.len()).sum();
+    let entry_count: usize = vm.obj_heap.get_dict_instance(r).unwrap().values().map(|b| b.len()).sum();
     assert_eq!(entry_count, 2);
 }
 
@@ -333,7 +366,10 @@ pub fn test_dict_get_missing() {
         c.write_instruction(Instruction::Invoke("get".into(), 1), 1, 1, h);
         c.write_instruction(Instruction::Return, 1, 1, h);
     });
-    assert!({let r=vm.pop_stack().unwrap(); is_nil(r)});
+    assert!({
+        let r = vm.pop_stack().unwrap();
+        is_nil(r)
+    });
 }
 
 #[test]
@@ -372,7 +408,13 @@ pub fn test_class_instantiate() {
         c.write_instruction(Instruction::Call(0), 1, 1, h);
         c.write_instruction(Instruction::Return, 1, 1, h);
     });
-    assert!(matches!({let r=vm.pop_stack().unwrap(); vm.obj_heap.get(r)}, crate::Object::Instance(_)));
+    assert!(matches!(
+        {
+            let r = vm.pop_stack().unwrap();
+            vm.obj_heap.get(r)
+        },
+        crate::Object::Instance(_)
+    ));
 }
 
 #[test]
@@ -393,7 +435,13 @@ pub fn test_class_with_method() {
         c.write_instruction(Instruction::Invoke("double".into(), 1), 1, 1, h);
         c.write_instruction(Instruction::Return, 1, 1, h);
     });
-    assert_eq!({let r=vm.pop_stack().unwrap(); get_int(&vm, r)}, 10);
+    assert_eq!(
+        {
+            let r = vm.pop_stack().unwrap();
+            get_int(&vm, r)
+        },
+        10
+    );
 }
 
 #[test]
@@ -404,7 +452,13 @@ pub fn test_builtin_abs() {
         c.write_instruction(Instruction::Call(1), 1, 1, h);
         c.write_instruction(Instruction::Return, 1, 1, h);
     });
-    assert_eq!({let r=vm.pop_stack().unwrap(); get_int(&vm, r)}, 5);
+    assert_eq!(
+        {
+            let r = vm.pop_stack().unwrap();
+            get_int(&vm, r)
+        },
+        5
+    );
 }
 
 #[test]
@@ -417,7 +471,13 @@ pub fn test_builtin_min() {
         c.write_instruction(Instruction::Call(3), 1, 1, h);
         c.write_instruction(Instruction::Return, 1, 1, h);
     });
-    assert_eq!({let r=vm.pop_stack().unwrap(); get_int(&vm, r)}, -3);
+    assert_eq!(
+        {
+            let r = vm.pop_stack().unwrap();
+            get_int(&vm, r)
+        },
+        -3
+    );
 }
 
 #[test]
@@ -428,7 +488,10 @@ pub fn test_builtin_type() {
         c.write_instruction(Instruction::Call(1), 1, 1, h);
         c.write_instruction(Instruction::Return, 1, 1, h);
     });
-    match {let r=vm.pop_stack().unwrap(); vm.obj_heap.get(r)} {
+    match {
+        let r = vm.pop_stack().unwrap();
+        vm.obj_heap.get(r)
+    } {
         crate::Object::Class(c) => assert_eq!(c.name.as_str(), "Int"),
         _ => panic!(),
     }
@@ -460,7 +523,13 @@ pub fn test_super_invoke() {
         c.write_instruction(Instruction::Invoke("m".into(), 0), 1, 1, h);
         c.write_instruction(Instruction::Return, 1, 1, h);
     });
-    assert_eq!({let r=vm.pop_stack().unwrap(); get_int(&vm, r)}, 1);
+    assert_eq!(
+        {
+            let r = vm.pop_stack().unwrap();
+            get_int(&vm, r)
+        },
+        1
+    );
 }
 
 // ===========================================================================
@@ -514,8 +583,9 @@ pub fn test_regression_type_equality_class() {
     let mut vm = VirtualMachine::new();
     vm.interpret(
         "class Foo {} class Bar {} var f = Foo(); var b = Bar(); \
-         print(type(f) == Foo); print(type(f) == Bar); print(type(b) == Bar);"
-    ).unwrap();
+         print(type(f) == Foo); print(type(f) == Bar); print(type(b) == Bar);",
+    )
+    .unwrap();
 }
 
 #[test]
@@ -628,7 +698,10 @@ pub fn test_regression_nil_eq_nil_true() {
         c.write_instruction(Instruction::Equal, 1, 1, h);
         c.write_instruction(Instruction::Return, 1, 1, h);
     });
-    assert!({let r=vm.pop_stack().unwrap(); get_bool(&vm, r)});
+    assert!({
+        let r = vm.pop_stack().unwrap();
+        get_bool(&vm, r)
+    });
 }
 
 #[test]
@@ -640,7 +713,10 @@ pub fn test_regression_nil_ne_nil_false() {
         c.write_instruction(Instruction::NotEqual, 1, 1, h);
         c.write_instruction(Instruction::Return, 1, 1, h);
     });
-    assert!(!{let r=vm.pop_stack().unwrap(); get_bool(&vm, r)});
+    assert!(!{
+        let r = vm.pop_stack().unwrap();
+        get_bool(&vm, r)
+    });
 }
 
 #[test]
@@ -652,7 +728,10 @@ pub fn test_regression_nil_eq_int_false() {
         c.write_instruction(Instruction::Equal, 1, 1, h);
         c.write_instruction(Instruction::Return, 1, 1, h);
     });
-    assert!(!{let r=vm.pop_stack().unwrap(); get_bool(&vm, r)});
+    assert!(!{
+        let r = vm.pop_stack().unwrap();
+        get_bool(&vm, r)
+    });
 }
 
 #[test]
@@ -663,7 +742,10 @@ pub fn test_regression_not_nil_is_true() {
         c.write_instruction(Instruction::Not, 1, 1, h);
         c.write_instruction(Instruction::Return, 1, 1, h);
     });
-    assert!({let r=vm.pop_stack().unwrap(); get_bool(&vm, r)});
+    assert!({
+        let r = vm.pop_stack().unwrap();
+        get_bool(&vm, r)
+    });
 }
 
 #[test]
@@ -688,7 +770,10 @@ pub fn test_regression_bool_nil_is_false() {
         c.write_instruction(Instruction::Call(1), 1, 1, h);
         c.write_instruction(Instruction::Return, 1, 1, h);
     });
-    assert!(!{let r=vm.pop_stack().unwrap(); get_bool(&vm, r)});
+    assert!(!{
+        let r = vm.pop_stack().unwrap();
+        get_bool(&vm, r)
+    });
 }
 
 /// `type(nil)` internally: nil is stored as an Instance with NIL class,
@@ -711,7 +796,10 @@ pub fn test_regression_bool_intern_same_vm() {
         c.write_instruction(Instruction::Equal, 1, 1, h);
         c.write_instruction(Instruction::Return, 1, 1, h);
     });
-    assert!({let r=vm.pop_stack().unwrap(); get_bool(&vm, r)});
+    assert!({
+        let r = vm.pop_stack().unwrap();
+        get_bool(&vm, r)
+    });
 }
 
 /// Bool interning: `false` always returns the same ObjectHandle.
@@ -723,7 +811,10 @@ pub fn test_regression_bool_intern_false() {
         c.write_instruction(Instruction::Equal, 1, 1, h);
         c.write_instruction(Instruction::Return, 1, 1, h);
     });
-    assert!({let r=vm.pop_stack().unwrap(); get_bool(&vm, r)});
+    assert!({
+        let r = vm.pop_stack().unwrap();
+        get_bool(&vm, r)
+    });
 }
 
 /// `abs()` on non-number types should error gracefully.
@@ -740,7 +831,8 @@ pub fn test_regression_abs_on_string_error() {
 #[test]
 pub fn test_call_magic_user_method() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         class Adder {
             fun __init__(self, n) { self.n = n; }
             fun __call__(self, x) { return self.n + x; }
@@ -748,32 +840,40 @@ pub fn test_call_magic_user_method() {
         var add5 = Adder(5);
         print(add5(3));    // 8
         print(add5(10));   // 15
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 #[test]
 pub fn test_call_magic_no_args() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         class Logger {
             fun __call__(self) { print(\"called!\"); }
         }
         var log = Logger();
         log();
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 #[test]
 pub fn test_call_magic_multiple_args() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         class Multiplier {
             fun __init__(self, factor) { self.factor = factor; }
             fun __call__(self, a, b) { return self.factor * a * b; }
         }
         var double = Multiplier(2);
         print(double(3, 4));  // 24
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 #[test]
@@ -787,20 +887,24 @@ pub fn test_call_magic_on_non_callable_instance_error() {
 pub fn test_call_magic_chained() {
     let mut vm = VirtualMachine::new();
     // A callable that returns a callable.
-    vm.interpret("
+    vm.interpret(
+        "
         class Factory {
             fun __init__(self, n) { self.n = n; }
             fun __call__(self, x) { return self.n + x; }
         }
         print(Factory(10)(5));  // 15
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 #[test]
 pub fn test_call_magic_with_method() {
     let mut vm = VirtualMachine::new();
     // Instance with both regular methods and __call__.
-    vm.interpret("
+    vm.interpret(
+        "
         class Counter {
             fun __init__(self) { self.count = 0; }
             fun __call__(self) {
@@ -814,7 +918,9 @@ pub fn test_call_magic_with_method() {
         print(c());  // 2
         c.reset();
         print(c());  // 1
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 // ===========================================================================
@@ -981,21 +1087,25 @@ pub fn test_type_error_call_on_non_callable() {
 #[test]
 pub fn test_call_magic_inherited() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         class Base {
             fun __call__(self, x) { return x * 2; }
         }
         class Child extends Base {}
         var c = Child();
         print(c(21));  // 42
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 /// __call__ with super invocation.
 #[test]
 pub fn test_call_magic_with_super() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         class Base {
             fun __call__(self, x) { return x + 1; }
         }
@@ -1004,14 +1114,17 @@ pub fn test_call_magic_with_super() {
         }
         var d = Derived();
         print(d(5));  // (5 + 1) * 10 = 60
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 /// Callable that mutates self and returns accumulated state.
 #[test]
 pub fn test_call_magic_accumulator() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         class Accum {
             fun __init__(self) { self.total = 0; }
             fun __call__(self, n) {
@@ -1023,14 +1136,17 @@ pub fn test_call_magic_accumulator() {
         print(a(5));   // 5
         print(a(3));   // 8
         print(a(2));   // 10
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 /// Callable stored in a list and invoked.
 #[test]
 pub fn test_call_magic_in_list() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         class Greet {
             fun __init__(self, name) { self.name = name; }
             fun __call__(self) { print(\"Hi \" + self.name); }
@@ -1038,20 +1154,25 @@ pub fn test_call_magic_in_list() {
         var gs = [Greet(\"A\"), Greet(\"B\")];
         gs[0]();
         gs[1]();
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 /// __call__ returning a value used in an expression.
 #[test]
 pub fn test_call_magic_in_expression() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         class Doubler {
             fun __call__(self, n) { return n * 2; }
         }
         var d = Doubler();
         print(d(3) + d(4));  // 6 + 8 = 14
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 // ===========================================================================
@@ -1100,7 +1221,8 @@ pub fn test_value_type_name_builtin_types() {
 #[test]
 pub fn test_custom_bool_falsy() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         class AlwaysFalse {
             fun __bool__(self) { return false; }
         }
@@ -1109,28 +1231,34 @@ pub fn test_custom_bool_falsy() {
         print(af or 42);         // 42   — false is falsy
         print(af and 42);        // <instance> — short-circuit
         print(bool(af));         // false
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 /// Custom __len__ on a user class.
 #[test]
 pub fn test_custom_len_method() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         class MyCollection {
             fun __init__(self) { self.items = [10, 20, 30]; }
             fun __len__(self) { return len(self.items); }
         }
         var mc = MyCollection();
         print(len(mc));  // 3
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 /// Custom __getitem__ on a user class.
 #[test]
 pub fn test_custom_getitem_method() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         class MySeq {
             fun __init__(self) { self.data = [1, 2, 4, 8]; }
             fun __getitem__(self, i) { return self.data[i]; }
@@ -1138,14 +1266,17 @@ pub fn test_custom_getitem_method() {
         var ms = MySeq();
         print(ms[0]);  // 1
         print(ms[3]);  // 8
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 /// Custom __setitem__ on a user class.
 #[test]
 pub fn test_custom_setitem_method() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         class MyMutable {
             fun __init__(self) { self.data = [0, 0, 0]; }
             fun __getitem__(self, i) { return self.data[i]; }
@@ -1154,14 +1285,17 @@ pub fn test_custom_setitem_method() {
         var mm = MyMutable();
         mm[1] = 99;
         print(mm[1]);  // 99
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 /// Custom __int__ / __float__ on a user class.
 #[test]
 pub fn test_custom_int_float_methods() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         class Number {
             fun __init__(self, n) { self.n = n; }
             fun __int__(self) { return self.n; }
@@ -1170,28 +1304,34 @@ pub fn test_custom_int_float_methods() {
         var n = Number(7);
         print(int(n));    // 7
         print(float(n));  // 7.5
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 /// __not__ on a custom class (explicit override).
 #[test]
 pub fn test_custom_not_method() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         class Inverter {
             fun __init__(self, val) { self.val = val; }
             fun __not__(self) { return !self.val; }
         }
         var inv = Inverter(true);
         print(!inv);  // false
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 /// __eq__ on a custom class.
 #[test]
 pub fn test_custom_eq_method() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         class Pair {
             fun __init__(self, a, b) { self.a = a; self.b = b; }
             fun __eq__(self, other) { return self.a == other.a and self.b == other.b; }
@@ -1202,14 +1342,17 @@ pub fn test_custom_eq_method() {
         print(p1 == p2);  // true
         print(p1 == p3);  // false
         print(p1 != p3);  // true
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 /// __neg__ on a custom class.
 #[test]
 pub fn test_custom_neg_method() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         class Vec {
             fun __init__(self, x, y) { self.x = x; self.y = y; }
             fun __neg__(self) {
@@ -1219,14 +1362,17 @@ pub fn test_custom_neg_method() {
         }
         var v = Vec(3, -5);
         print(str(-v));  // Vec(-3,5)
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 /// __add__ / __mul__ on a custom class.
 #[test]
 pub fn test_custom_add_mul_methods() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         class Vec {
             fun __init__(self, x, y) { self.x = x; self.y = y; }
             fun __add__(self, other) { return Vec(self.x + other.x, self.y + other.y); }
@@ -1237,14 +1383,17 @@ pub fn test_custom_add_mul_methods() {
         var b = Vec(3, 4);
         print(str(a + b));    // (4,6)
         print(str(a * 3));    // (3,6)
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 /// Chained magic method operations.
 #[test]
 pub fn test_custom_magic_chained() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         class Num {
             fun __init__(self, v) { self.v = v; }
             fun __add__(self, o) { return Num(self.v + o.v); }
@@ -1256,7 +1405,9 @@ pub fn test_custom_magic_chained() {
         var c = Num(3);
         print((a + b) == c);   // true
         print(bool(a + b));    // true
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 // ===========================================================================
@@ -1267,33 +1418,40 @@ pub fn test_custom_magic_chained() {
 #[test]
 pub fn test_list_nested() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         var matrix = [[1, 2], [3, 4]];
         print(matrix[0][0]);  // 1
         print(matrix[1][1]);  // 4
         matrix[0][1] = 99;
         print(matrix[0][1]);  // 99
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 /// Dict with mixed key types (string only — cross-type eq not yet supported).
 #[test]
 pub fn test_dict_mixed_values() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         var d = {\"int\": 1, \"str\": \"two\", \"bool\": true};
         print(d[\"int\"]);   // 1
         print(d[\"str\"]);   // two
         print(d[\"bool\"]);  // true
         print(len(d));       // 3
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 /// Dict builtin methods: keys(), get(), values().
 #[test]
 pub fn test_dict_keys_values() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         var d = {\"a\": 1, \"b\": 2, \"c\": 3};
         var keys = d.keys();
         print(len(keys));  // 3
@@ -1303,34 +1461,42 @@ pub fn test_dict_keys_values() {
         print(missing);    // nil
         d[\"d\"] = 4;
         print(d.get(\"d\"));  // 4
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 /// Basic string operations: concatenation, length, equality.
 #[test]
 pub fn test_string_operations() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         var s = \"Hello\";
         print(s + \" World\");    // Hello World
         print(len(s));           // 5
         print(s == \"Hello\");    // true
         print(s != \"Bye\");      // true
         print(str(s));           // Hello
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 /// Bool conversion via `int()` and `float()` builtins.
 #[test]
 pub fn test_bool_int_float_conversion() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         // int() and float() on bool via builtin functions
         print(int(true));    // 1
         print(int(false));   // 0
         print(float(true));  // 1
         print(float(false)); // 0
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 /// ! on non-Instance should not error — it falls back to __bool__ + invert.
@@ -1339,8 +1505,8 @@ pub fn test_not_on_non_instance() {
     let mut vm = VirtualMachine::new();
     // !class should work: class is truthy (non-nil), so !class == false.
     // This should NOT dispatch to __not__ magic, but fall back to __bool__.
-    vm.interpret("class Foo {} print(!Foo);").unwrap();      // false
-    vm.interpret("fun f() {} print(!f);").unwrap();          // false (closure is truthy)
+    vm.interpret("class Foo {} print(!Foo);").unwrap(); // false
+    vm.interpret("fun f() {} print(!f);").unwrap(); // false (closure is truthy)
 }
 
 /// eq/ne on non-Instance should return false/true without error.
@@ -1348,10 +1514,10 @@ pub fn test_not_on_non_instance() {
 pub fn test_eq_on_non_instance() {
     let mut vm = VirtualMachine::new();
     // Class == int → false (different Object variants)
-    vm.interpret("class Foo {} print(Foo == 1);").unwrap();   // false
-    vm.interpret("class Foo {} print(Foo != 1);").unwrap();   // true
+    vm.interpret("class Foo {} print(Foo == 1);").unwrap(); // false
+    vm.interpret("class Foo {} print(Foo != 1);").unwrap(); // true
     // native fn == class → false
-    vm.interpret("class Foo {} print(print == Foo);").unwrap();  // false
+    vm.interpret("class Foo {} print(print == Foo);").unwrap(); // false
 }
 
 /// Calling a non-callable Instance (no __call__) should error.
@@ -1404,18 +1570,14 @@ pub fn test_import_module_mul_function() {
 pub fn test_import_module_use_class() {
     let mut vm = VirtualMachine::new();
     let path = math_module_path();
-    vm.interpret(&format!(
-        "import \"{path}\"; var v = math.Vec(1, 2); print(str(v));"
-    )).unwrap();
+    vm.interpret(&format!("import \"{path}\"; var v = math.Vec(1, 2); print(str(v));")).unwrap();
 }
 
 #[test]
 pub fn test_import_as_expression() {
     let mut vm = VirtualMachine::new();
     let path = math_module_path();
-    vm.interpret(&format!(
-        "var m = import \"{path}\"; print(m.PI); print(m.add(1, 2));"
-    )).unwrap();
+    vm.interpret(&format!("var m = import \"{path}\"; print(m.PI); print(m.add(1, 2));")).unwrap();
 }
 
 #[test]
@@ -1455,9 +1617,7 @@ pub fn test_import_nested() {
     let math_path = math_module_path();
     // This script imports math and uses it — the import system should handle
     // nested import (import inside a module).
-    vm.interpret(&format!(
-        "import \"{math_path}\"; var m = math; print(m.add(100, 200));"
-    )).unwrap();
+    vm.interpret(&format!("import \"{math_path}\"; var m = math; print(m.add(100, 200));")).unwrap();
 }
 
 // ===========================================================================
@@ -1500,7 +1660,8 @@ pub fn test_file_write_and_read() {
          var g = fs.File(\"{path}\", \"r\"); \
          print(g.read()); \
          g.close();"
-    )).unwrap();
+    ))
+    .unwrap();
     rm_tmp("write_read");
 }
 
@@ -1515,7 +1676,8 @@ pub fn test_file_str() {
          print(str(f)); \
          f.close(); \
          print(str(f));"
-    )).unwrap();
+    ))
+    .unwrap();
     rm_tmp("str_test");
 }
 
@@ -1536,7 +1698,8 @@ pub fn test_file_readline() {
          var eof = g.readline(); \
          print(eof == nil); \
          g.close();"
-    )).unwrap();
+    ))
+    .unwrap();
     rm_tmp("readline");
 }
 
@@ -1556,16 +1719,15 @@ pub fn test_file_seek_and_tell() {
          print(g.tell()); \
          print(g.read()); \
          g.close();"
-    )).unwrap();
+    ))
+    .unwrap();
     rm_tmp("seek_tell");
 }
 
 #[test]
 pub fn test_file_not_found_error() {
     let mut vm = VirtualMachine::new();
-    let err = vm.interpret(
-        "import \"std/fs\"; var f = fs.File(\"/tmp/nonexistent_xyz_12345\", \"r\");"
-    ).unwrap_err();
+    let err = vm.interpret("import \"std/fs\"; var f = fs.File(\"/tmp/nonexistent_xyz_12345\", \"r\");").unwrap_err();
     assert!(err.to_string().contains("cannot open"), "got: {err}");
 }
 
@@ -1580,14 +1742,17 @@ pub fn test_file_closed_error() {
          var f = fs.File(\"{path}\", \"w\"); \
          f.write(\"data\"); \
          f.close();"
-    )).unwrap();
+    ))
+    .unwrap();
     // Now try reading from a closed file.
-    let err = vm.interpret(&format!(
-        "import \"std/fs\"; \
+    let err = vm
+        .interpret(&format!(
+            "import \"std/fs\"; \
          var f = fs.File(\"{path}\", \"r\"); \
          f.close(); \
          f.read();"
-    )).unwrap_err();
+        ))
+        .unwrap_err();
     assert!(err.to_string().contains("file is closed"), "got: {err}");
     rm_tmp("closed_err");
 }
@@ -1596,9 +1761,7 @@ pub fn test_file_closed_error() {
 pub fn test_file_wrong_arg_count() {
     let mut vm = VirtualMachine::new();
     // read() takes no arguments
-    let err = vm.interpret(
-        "import \"std/fs\"; var f = fs.File(\"/tmp/t\", \"w\"); f.read(\"extra\");"
-    ).unwrap_err();
+    let err = vm.interpret("import \"std/fs\"; var f = fs.File(\"/tmp/t\", \"w\"); f.read(\"extra\");").unwrap_err();
     assert!(err.to_string().contains("argument"), "got: {err}");
 }
 
@@ -1636,8 +1799,9 @@ pub fn test_math_trig() {
          print(math.acos(1)); \
          print(math.atan(0)); \
          print(math.sin(1.5)); \
-         print(math.atan2(1, 1));"
-    ).unwrap();
+         print(math.atan2(1, 1));",
+    )
+    .unwrap();
 }
 
 #[test]
@@ -1651,8 +1815,9 @@ pub fn test_math_power_log() {
          print(math.ln(math.E)); \
          print(math.log2(8)); \
          print(math.log10(100)); \
-         print(math.hypot(3, 4));"
-    ).unwrap();
+         print(math.hypot(3, 4));",
+    )
+    .unwrap();
 }
 
 #[test]
@@ -1662,8 +1827,9 @@ pub fn test_math_rounding() {
         "import \"std/math\"; \
          print(math.floor(3.7)); \
          print(math.ceil(3.1)); \
-         print(math.round(3.5));"
-    ).unwrap();
+         print(math.round(3.5));",
+    )
+    .unwrap();
 }
 
 #[test]
@@ -1672,8 +1838,9 @@ pub fn test_math_conversion() {
     vm.interpret(
         "import \"std/math\"; \
          print(math.degrees(math.PI)); \
-         print(math.radians(180));"
-    ).unwrap();
+         print(math.radians(180));",
+    )
+    .unwrap();
 }
 
 #[test]
@@ -1686,16 +1853,15 @@ pub fn test_math_accepts_int_args() {
          print(math.sqrt(16)); \
          print(math.pow(2, 10)); \
          print(math.floor(3)); \
-         print(math.ceil(3));"
-    ).unwrap();
+         print(math.ceil(3));",
+    )
+    .unwrap();
 }
 
 #[test]
 pub fn test_math_type_error() {
     let mut vm = VirtualMachine::new();
-    let err = vm.interpret(
-        "import \"std/math\"; math.sin(\"hello\");"
-    ).unwrap_err();
+    let err = vm.interpret("import \"std/math\"; math.sin(\"hello\");").unwrap_err();
     assert!(err.to_string().contains("unsupported operand"), "got: {err}");
 }
 
@@ -1703,16 +1869,12 @@ pub fn test_math_type_error() {
 pub fn test_math_wrong_arg_count() {
     let mut vm = VirtualMachine::new();
     // sin() takes 1 argument
-    let err = vm.interpret(
-        "import \"std/math\"; math.sin();"
-    ).unwrap_err();
+    let err = vm.interpret("import \"std/math\"; math.sin();").unwrap_err();
     assert!(err.to_string().contains("argument"), "got: {err}");
 
     let mut vm2 = VirtualMachine::new();
     // sqrt() takes 1 argument
-    let err2 = vm2.interpret(
-        "import \"std/math\"; math.sqrt(4, 5);"
-    ).unwrap_err();
+    let err2 = vm2.interpret("import \"std/math\"; math.sqrt(4, 5);").unwrap_err();
     assert!(err2.to_string().contains("argument"), "got: {err2}");
 }
 
@@ -1742,8 +1904,9 @@ pub fn test_random_random_in_range() {
          for (var i = 0; i < 100; i = i + 1) { \
              var v = random.random(); \
              if v < 0 or v >= 1 { print(\"out of range: \" + str(v)); } \
-         }"
-    ).unwrap();
+         }",
+    )
+    .unwrap();
 }
 
 #[test]
@@ -1754,8 +1917,9 @@ pub fn test_random_randint() {
          var v = random.randint(1, 10); \
          if v < 1 or v > 10 { print(\"out of range: \" + str(v)); } \
          var w = random.randint(-5, 5); \
-         if w < -5 or w > 5 { print(\"out of range: \" + str(w)); }"
-    ).unwrap();
+         if w < -5 or w > 5 { print(\"out of range: \" + str(w)); }",
+    )
+    .unwrap();
 }
 
 #[test]
@@ -1764,25 +1928,22 @@ pub fn test_random_randint_min_equals_max() {
     vm.interpret(
         "import \"std/random\"; \
          var v = random.randint(7, 7); \
-         if v != 7 { print(\"expected 7, got \" + str(v)); }"
-    ).unwrap();
+         if v != 7 { print(\"expected 7, got \" + str(v)); }",
+    )
+    .unwrap();
 }
 
 #[test]
 pub fn test_random_randint_error_on_float() {
     let mut vm = VirtualMachine::new();
-    let err = vm.interpret(
-        "import \"std/random\"; random.randint(1.5, 10);"
-    ).unwrap_err();
+    let err = vm.interpret("import \"std/random\"; random.randint(1.5, 10);").unwrap_err();
     assert!(err.to_string().contains("unsupported"), "got: {err}");
 }
 
 #[test]
 pub fn test_random_randint_error_min_gt_max() {
     let mut vm = VirtualMachine::new();
-    let err = vm.interpret(
-        "import \"std/random\"; random.randint(10, 1);"
-    ).unwrap_err();
+    let err = vm.interpret("import \"std/random\"; random.randint(10, 1);").unwrap_err();
     assert!(err.to_string().contains("must be <="), "got: {err}");
 }
 
@@ -1794,8 +1955,9 @@ pub fn test_random_uniform() {
          var v = random.uniform(1.0, 5.0); \
          if v < 1.0 or v >= 5.0 { print(\"out of range: \" + str(v)); } \
          var w = random.uniform(-2.5, 3.5); \
-         if w < -2.5 or w >= 3.5 { print(\"out of range: \" + str(w)); }"
-    ).unwrap();
+         if w < -2.5 or w >= 3.5 { print(\"out of range: \" + str(w)); }",
+    )
+    .unwrap();
 }
 
 #[test]
@@ -1804,8 +1966,9 @@ pub fn test_random_uniform_accepts_int_args() {
     vm.interpret(
         "import \"std/random\"; \
          var v = random.uniform(0, 10); \
-         if v < 0 or v >= 10 { print(\"out of range: \" + str(v)); }"
-    ).unwrap();
+         if v < 0 or v >= 10 { print(\"out of range: \" + str(v)); }",
+    )
+    .unwrap();
 }
 
 #[test]
@@ -1815,25 +1978,22 @@ pub fn test_random_choice() {
         "import \"std/random\"; \
          var items = [\"a\", \"b\", \"c\"]; \
          var v = random.choice(items); \
-         if v != \"a\" and v != \"b\" and v != \"c\" { print(\"unexpected element: \" + str(v)); }"
-    ).unwrap();
+         if v != \"a\" and v != \"b\" and v != \"c\" { print(\"unexpected element: \" + str(v)); }",
+    )
+    .unwrap();
 }
 
 #[test]
 pub fn test_random_choice_empty_error() {
     let mut vm = VirtualMachine::new();
-    let err = vm.interpret(
-        "import \"std/random\"; random.choice([]);"
-    ).unwrap_err();
+    let err = vm.interpret("import \"std/random\"; random.choice([]);").unwrap_err();
     assert!(err.to_string().contains("empty"), "got: {err}");
 }
 
 #[test]
 pub fn test_random_choice_non_list_error() {
     let mut vm = VirtualMachine::new();
-    let err = vm.interpret(
-        "import \"std/random\"; random.choice(42);"
-    ).unwrap_err();
+    let err = vm.interpret("import \"std/random\"; random.choice(42);").unwrap_err();
     assert!(err.to_string().contains("unsupported"), "got: {err}");
 }
 
@@ -1844,8 +2004,9 @@ pub fn test_random_shuffle() {
         "import \"std/random\"; \
          var items = [1, 2, 3, 4, 5]; \
          var result = random.shuffle(items); \
-         if len(result) != 5 { print(\"wrong length: \" + str(len(result))); }"
-    ).unwrap();
+         if len(result) != 5 { print(\"wrong length: \" + str(len(result))); }",
+    )
+    .unwrap();
 }
 
 // ===========================================================================
@@ -1862,20 +2023,24 @@ pub fn test_while_break_terminates() {
 #[test]
 pub fn test_while_break_early_exit() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         var i = 0;
         while i < 10 {
             i = i + 1;
             if i == 3 { break; }
         }
         print(i);  // 3
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 #[test]
 pub fn test_while_continue_skips_rest() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         var i = 0;
         var sum = 0;
         while i < 5 {
@@ -1884,26 +2049,32 @@ pub fn test_while_continue_skips_rest() {
             sum = sum + i;
         }
         print(sum);  // 1 + 2 + 4 + 5 = 12
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 #[test]
 pub fn test_for_break() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         var i = 0;
         for (i = 0; i < 10; i = i + 1) {
             if i == 4 { break; }
         }
         print(i);  // 4
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 #[test]
 pub fn test_for_continue_increment_runs() {
     // Critical: verify the increment clause executes on continue.
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         var results = [];
         for (var i = 0; i < 5; i = i + 1) {
             if i == 2 { continue; }
@@ -1915,13 +2086,16 @@ pub fn test_for_continue_increment_runs() {
         print(results[1]);    // 1
         print(results[2]);    // 3
         print(results[3]);    // 4
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 #[test]
 pub fn test_nested_break() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         var i = 0;
         while i < 3 {
             var j = 0;
@@ -1932,13 +2106,16 @@ pub fn test_nested_break() {
             i = i + 1;
         }
         print(i);  // 3 — outer loop runs all iterations
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 #[test]
 pub fn test_nested_continue() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         var sum = 0;
         var i = 0;
         while i < 3 {
@@ -1953,26 +2130,32 @@ pub fn test_nested_continue() {
         // Inner loop: j=1(sum+1), j=2(skip), j=3(sum+1) => 2 per outer iter
         // 3 outer iterations => 6
         print(sum);  // 6
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 #[test]
 pub fn test_break_in_for_without_condition() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         var i = 0;
         for (;;) {
             i = i + 1;
             if i == 5 { break; }
         }
         print(i);  // 5
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 #[test]
 pub fn test_continue_in_for_without_increment() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         var sum = 0;
         for (var i = 0; i < 5;) {
             i = i + 1;
@@ -1980,20 +2163,25 @@ pub fn test_continue_in_for_without_increment() {
             sum = sum + i;
         }
         print(sum);  // 1 + 2 + 4 + 5 = 12
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 #[test]
 pub fn test_break_inside_if_inside_loop() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         var i = 0;
         while i < 10 {
             i = i + 1;
             if i == 7 { break; }
         }
         print(i);  // 7
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 #[test]
@@ -2015,7 +2203,8 @@ pub fn test_continue_outside_loop_compile_error() {
 #[test]
 pub fn test_break_inside_nested_block_in_while() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         var i = 0;
         while i < 10 {
             {
@@ -2024,14 +2213,17 @@ pub fn test_break_inside_nested_block_in_while() {
             }
         }
         print(i);  // 5
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 #[test]
 pub fn test_continue_respects_increment_in_for() {
     // Make sure the increment is evaluated exactly once per continue.
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         var count = 0;
         for (var i = 0; i < 10; i = i + 1) {
             count = count + 1;
@@ -2040,7 +2232,9 @@ pub fn test_continue_respects_increment_in_for() {
         }
         // count should be 10 (body executed 10 times)
         print(count);
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 // ------------------------------------------------------------------------
@@ -2050,87 +2244,111 @@ pub fn test_continue_respects_increment_in_for() {
 #[test]
 fn test_for_in_list() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         var acc = \"\";
         for x in [1, 2, 3] { acc = acc + str(x); }
         print(acc);
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 #[test]
 fn test_for_in_string() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         var acc = \"\";
         for c in \"ab\" { acc = acc + c; }
         print(acc);
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 #[test]
 fn test_for_in_empty_list() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         var count = 0;
         for x in [] { count = count + 1; }
         print(count);  // 0
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 #[test]
 fn test_for_in_break() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         var acc = \"\";
         for x in [1, 2, 3, 4] {
             if x > 2 { break; }
             acc = acc + str(x);
         }
         print(acc);  // \"12\"
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 #[test]
 fn test_for_in_continue() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         var acc = \"\";
         for x in [1, 2, 3] {
             if x == 2 { continue; }
             acc = acc + str(x);
         }
         print(acc);  // \"13\"
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 #[test]
 fn test_for_in_dict_keys() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         var count = 0;
         for k in {\"a\": 1, \"b\": 2} { count = count + 1; }
         print(count);  // 2
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 #[test]
 fn test_for_in_nested() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         var acc = 0;
         for x in [1, 2] {
             for y in [10, 20] { acc = acc + x + y; }
         }
         print(acc);  // 1+10 + 1+20 + 2+10 + 2+20 = 66
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 #[test]
 fn test_iter_end_global() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         print(str(IterEnd));  // IterEnd
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 #[test]
@@ -2147,47 +2365,47 @@ fn test_non_iterable_error() {
 #[test]
 pub fn test_floordiv_basic() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("print(7 ~/ 3);").unwrap();     // 2
-    vm.interpret("print(10 ~/ 3);").unwrap();    // 3
+    vm.interpret("print(7 ~/ 3);").unwrap(); // 2
+    vm.interpret("print(10 ~/ 3);").unwrap(); // 3
 }
 
 #[test]
 pub fn test_floordiv_negative() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("print(-7 ~/ 3);").unwrap();    // -3 (Python floor)
-    vm.interpret("print(7 ~/ -3);").unwrap();    // -3
-    vm.interpret("print(-7 ~/ -3);").unwrap();   // 2
+    vm.interpret("print(-7 ~/ 3);").unwrap(); // -3 (Python floor)
+    vm.interpret("print(7 ~/ -3);").unwrap(); // -3
+    vm.interpret("print(-7 ~/ -3);").unwrap(); // 2
 }
 
 #[test]
 pub fn test_floordiv_float() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("print(10.5 ~/ 3.0);").unwrap();  // 3.0
-    vm.interpret("print(10 ~/ 3.0);").unwrap();    // 3.0
-    vm.interpret("print(10.0 ~/ 3);").unwrap();    // 3.0
+    vm.interpret("print(10.5 ~/ 3.0);").unwrap(); // 3.0
+    vm.interpret("print(10 ~/ 3.0);").unwrap(); // 3.0
+    vm.interpret("print(10.0 ~/ 3);").unwrap(); // 3.0
 }
 
 #[test]
 pub fn test_mod_basic() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("print(7 % 3);").unwrap();     // 1
-    vm.interpret("print(10 % 3);").unwrap();    // 1
-    vm.interpret("print(8 % 2);").unwrap();     // 0
+    vm.interpret("print(7 % 3);").unwrap(); // 1
+    vm.interpret("print(10 % 3);").unwrap(); // 1
+    vm.interpret("print(8 % 2);").unwrap(); // 0
 }
 
 #[test]
 pub fn test_mod_negative() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("print(-7 % 3);").unwrap();    // 2 (Python-style)
-    vm.interpret("print(7 % -3);").unwrap();    // -2
-    vm.interpret("print(-7 % -3);").unwrap();   // -1
+    vm.interpret("print(-7 % 3);").unwrap(); // 2 (Python-style)
+    vm.interpret("print(7 % -3);").unwrap(); // -2
+    vm.interpret("print(-7 % -3);").unwrap(); // -1
 }
 
 #[test]
 pub fn test_mod_float() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("print(10.5 % 3.0);").unwrap();  // 1.5
-    vm.interpret("print(7.0 % 2.0);").unwrap();   // 1.0
+    vm.interpret("print(10.5 % 3.0);").unwrap(); // 1.5
+    vm.interpret("print(7.0 % 2.0);").unwrap(); // 1.0
 }
 
 #[test]
@@ -2233,27 +2451,33 @@ pub fn test_type_error_mod_class() {
 #[test]
 pub fn test_floordiv_magic_method() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         class Vec {
             fun __init__(self, x) { self.x = x; }
             fun __floordiv__(self, s) { return Vec(self.x / s); }
             fun __str__(self) { return str(self.x); }
         }
         print(Vec(10) ~/ 2);
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 #[test]
 pub fn test_mod_magic_method() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         class Vec {
             fun __init__(self, x) { self.x = x; }
             fun __mod__(self, s) { return Vec(self.x % s); }
             fun __str__(self) { return str(self.x); }
         }
         print(Vec(10) % 3);
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 // ===========================================================================
@@ -2302,8 +2526,9 @@ pub fn test_os_setenv_and_getenv() {
     vm.interpret(
         "import \"std/os\"; \
          os.setenv(\"TARO_TEST_VAR\", \"hello\"); \
-         print(os.getenv(\"TARO_TEST_VAR\") == \"hello\");"
-    ).unwrap();
+         print(os.getenv(\"TARO_TEST_VAR\") == \"hello\");",
+    )
+    .unwrap();
 }
 
 #[test]
@@ -2313,8 +2538,9 @@ pub fn test_os_env_returns_dict() {
         "import \"std/os\"; \
          var e = os.env(); \
          print(type(e) == Dict); \
-         print(len(e) > 0);"
-    ).unwrap();
+         print(len(e) > 0);",
+    )
+    .unwrap();
 }
 
 #[test]
@@ -2351,8 +2577,9 @@ pub fn test_time_time_returns_number() {
     vm.interpret(
         "import \"std/time\"; \
          var t = time.time(); \
-         print(t > 1700000000);" // well after 2023
-    ).unwrap();
+         print(t > 1700000000);", // well after 2023
+    )
+    .unwrap();
 }
 
 #[test]
@@ -2363,8 +2590,9 @@ pub fn test_time_sleep() {
          var t0 = time.time(); \
          time.sleep(0.01); \
          var t1 = time.time(); \
-         print(t1 >= t0);"
-    ).unwrap();
+         print(t1 >= t0);",
+    )
+    .unwrap();
 }
 
 #[test]
@@ -2388,16 +2616,15 @@ pub fn test_time_now_returns_object() {
          print(n.wday <= 6); \
          print(n.yday >= 1); \
          print(n.yday <= 366); \
-         print(n.timestamp > 1700000000);"
-    ).unwrap();
+         print(n.timestamp > 1700000000);",
+    )
+    .unwrap();
 }
 
 #[test]
 pub fn test_time_sleep_negative_error() {
     let mut vm = VirtualMachine::new();
-    let err = vm.interpret(
-        "import \"std/time\"; time.sleep(-1);"
-    ).unwrap_err();
+    let err = vm.interpret("import \"std/time\"; time.sleep(-1);").unwrap_err();
     assert!(err.to_string().contains("negative duration"), "got: {err}");
 }
 
@@ -2423,8 +2650,9 @@ pub fn test_json_encode_bool() {
     vm.interpret(
         "import \"std/json\"; \
          print(json.encode(true) == \"true\"); \
-         print(json.encode(false) == \"false\");"
-    ).unwrap();
+         print(json.encode(false) == \"false\");",
+    )
+    .unwrap();
 }
 
 #[test]
@@ -2445,8 +2673,9 @@ pub fn test_json_encode_string() {
     vm.interpret(
         "import \"std/json\"; \
          print(json.encode(\"hello\") == \"\\\"hello\\\"\"); \
-         print(json.encode(\"a\\nb\") == \"\\\"a\\\\nb\\\"\");"
-    ).unwrap();
+         print(json.encode(\"a\\nb\") == \"\\\"a\\\\nb\\\"\");",
+    )
+    .unwrap();
 }
 
 #[test]
@@ -2455,8 +2684,9 @@ pub fn test_json_encode_list() {
     vm.interpret(
         "import \"std/json\"; \
          print(json.encode([1, 2, 3]) == \"[1,2,3]\"); \
-         print(json.encode([\"a\", 1, true]) == \"[\\\"a\\\",1,true]\");"
-    ).unwrap();
+         print(json.encode([\"a\", 1, true]) == \"[\\\"a\\\",1,true]\");",
+    )
+    .unwrap();
 }
 
 #[test]
@@ -2469,8 +2699,9 @@ pub fn test_json_encode_dict() {
          d[\"ver\"] = 1; \
          var s = json.encode(d); \
          print(s == \"{\\\"name\\\":\\\"taro\\\",\\\"ver\\\":1}\" \
-               or s == \"{\\\"ver\\\":1,\\\"name\\\":\\\"taro\\\"}\");"
-    ).unwrap();
+               or s == \"{\\\"ver\\\":1,\\\"name\\\":\\\"taro\\\"}\");",
+    )
+    .unwrap();
 }
 
 #[test]
@@ -2479,8 +2710,9 @@ pub fn test_json_encode_deeply_nested() {
     vm.interpret(
         "import \"std/json\"; \
          var v = [1, [2, [3, 4]], {\"k\": [5, 6]}]; \
-         print(json.encode(v) == \"[1,[2,[3,4]],{\\\"k\\\":[5,6]}]\");"
-    ).unwrap();
+         print(json.encode(v) == \"[1,[2,[3,4]],{\\\"k\\\":[5,6]}]\");",
+    )
+    .unwrap();
 }
 
 #[test]
@@ -2495,8 +2727,9 @@ pub fn test_json_decode_bool() {
     vm.interpret(
         "import \"std/json\"; \
          print(json.decode(\"true\") == true); \
-         print(json.decode(\"false\") == false);"
-    ).unwrap();
+         print(json.decode(\"false\") == false);",
+    )
+    .unwrap();
 }
 
 #[test]
@@ -2506,8 +2739,9 @@ pub fn test_json_decode_number() {
         "import \"std/json\"; \
          print(json.decode(\"42\") == 42); \
          print(json.decode(\"3.14\") == 3.14); \
-         print(json.decode(\"-100\") == -100);"
-    ).unwrap();
+         print(json.decode(\"-100\") == -100);",
+    )
+    .unwrap();
 }
 
 #[test]
@@ -2516,8 +2750,9 @@ pub fn test_json_decode_string() {
     vm.interpret(
         "import \"std/json\"; \
          print(json.decode(\"\\\"hello\\\"\") == \"hello\"); \
-         print(json.decode(\"\\\"a\\\\nb\\\"\") == \"a\\nb\");"
-    ).unwrap();
+         print(json.decode(\"\\\"a\\\\nb\\\"\") == \"a\\nb\");",
+    )
+    .unwrap();
 }
 
 #[test]
@@ -2528,8 +2763,9 @@ pub fn test_json_decode_array() {
          var a = json.decode(\"[1, 2, 3]\"); \
          print(len(a) == 3); \
          print(a[0] == 1); \
-         print(a[2] == 3);"
-    ).unwrap();
+         print(a[2] == 3);",
+    )
+    .unwrap();
 }
 
 #[test]
@@ -2539,8 +2775,9 @@ pub fn test_json_decode_object() {
         "import \"std/json\"; \
          var d = json.decode(\"{\\\"x\\\": 10, \\\"y\\\": 20}\"); \
          print(d[\"x\"] == 10); \
-         print(d[\"y\"] == 20);"
-    ).unwrap();
+         print(d[\"y\"] == 20);",
+    )
+    .unwrap();
 }
 
 #[test]
@@ -2550,8 +2787,9 @@ pub fn test_json_decode_nested() {
         "import \"std/json\"; \
          var v = json.decode(\"{\\\"items\\\": [1, {\\\"nested\\\": true}]}\"); \
          print(v[\"items\"][0] == 1); \
-         print(v[\"items\"][1][\"nested\"] == true);"
-    ).unwrap();
+         print(v[\"items\"][1][\"nested\"] == true);",
+    )
+    .unwrap();
 }
 
 #[test]
@@ -2564,32 +2802,23 @@ pub fn test_json_roundtrip() {
          var decoded = json.decode(encoded); \
          print(decoded[\"a\"] == 1); \
          print(decoded[\"b\"][1] == 3); \
-         print(decoded[\"c\"][\"d\"] == \"hello\");"
-    ).unwrap();
+         print(decoded[\"c\"][\"d\"] == \"hello\");",
+    )
+    .unwrap();
 }
 
 #[test]
 pub fn test_json_encode_unsupported_type() {
     let mut vm = VirtualMachine::new();
-    let err = vm.interpret(
-        "import \"std/json\"; json.encode(print);"
-    ).unwrap_err();
-    assert!(
-        err.to_string().contains("cannot serialize"),
-        "got: {err}"
-    );
+    let err = vm.interpret("import \"std/json\"; json.encode(print);").unwrap_err();
+    assert!(err.to_string().contains("cannot serialize"), "got: {err}");
 }
 
 #[test]
 pub fn test_json_decode_invalid() {
     let mut vm = VirtualMachine::new();
-    let err = vm.interpret(
-        "import \"std/json\"; json.decode(\"not json\");"
-    ).unwrap_err();
-    assert!(
-        err.to_string().contains("json.decode"),
-        "got: {err}"
-    );
+    let err = vm.interpret("import \"std/json\"; json.decode(\"not json\");").unwrap_err();
+    assert!(err.to_string().contains("json.decode"), "got: {err}");
 }
 
 // ===========================================================================
@@ -2599,129 +2828,160 @@ pub fn test_json_decode_invalid() {
 #[test]
 pub fn test_default_param_basic() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         fun greet(name, greeting = \"Hello\") {
             print(greeting + \" \" + name);
         }
         greet(\"World\");
         greet(\"Taro\", \"Hi\");
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 #[test]
 pub fn test_default_param_multiple() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         fun add(a, b = 10, c = 20) {
             return a + b + c;
         }
         print(add(1));          // 1 + 10 + 20 = 31
         print(add(1, 2));       // 1 + 2 + 20 = 23
         print(add(1, 2, 3));    // 1 + 2 + 3 = 6
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 #[test]
 pub fn test_default_param_all_optional() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         fun wrap(x = 0, y = 0) {
             return x * 10 + y;
         }
         print(wrap());          // 0
         print(wrap(3));         // 30
         print(wrap(3, 5));      // 35
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 #[test]
 pub fn test_default_param_nil() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         fun maybe(value = nil) {
             print(value == nil);
         }
         maybe();
         maybe(42);
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 #[test]
 pub fn test_default_param_bool() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         fun flag(on = true) {
             print(on);
         }
         flag();
         flag(false);
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 #[test]
 pub fn test_default_param_string() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         fun echo(msg = \"default\") {
             print(msg);
         }
         echo();
         echo(\"custom\");
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 #[test]
 pub fn test_default_param_negative_number() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         fun offset(x, delta = -1) {
             return x + delta;
         }
         print(offset(5));       // 4
         print(offset(5, 3));    // 8
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 #[test]
 pub fn test_default_param_negative_float() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         fun shift(x = -1.5) {
             print(x);
         }
         shift();
         shift(2.5);
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 #[test]
 pub fn test_keyword_arg_basic() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         fun greet(name, greeting) {
             print(greeting + \" \" + name);
         }
         greet(name = \"World\", greeting = \"Hello\");
         greet(greeting = \"Hi\", name = \"Taro\");
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 #[test]
 pub fn test_keyword_arg_mixed_positional() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         fun describe(name, age, city = \"unknown\") {
             print(name + \" is \" + str(age) + \" from \" + city);
         }
         describe(\"Alice\", age = 30);
         describe(\"Bob\", city = \"NYC\", age = 25);
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 #[test]
 pub fn test_keyword_arg_with_defaults() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         fun build(a = 1, b = 2, c = 3) {
             return a * 100 + b * 10 + c;
         }
@@ -2730,62 +2990,85 @@ pub fn test_keyword_arg_with_defaults() {
         print(build(c = 7));         // 127
         print(build(b = 5, c = 6));  // 156
         print(build(9, c = 0));      // 900
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 #[test]
 pub fn test_keyword_arg_positional_after_keyword_error() {
     let mut vm = VirtualMachine::new();
-    let err = vm.interpret("
+    let err = vm
+        .interpret(
+            "
         fun f(a, b, c) {}
         f(a = 1, 2);
-    ").unwrap_err();
+    ",
+        )
+        .unwrap_err();
     assert!(err.to_string().contains("Positional"), "got: {err}");
 }
 
 #[test]
 pub fn test_keyword_arg_unknown_error() {
     let mut vm = VirtualMachine::new();
-    let err = vm.interpret("
+    let err = vm
+        .interpret(
+            "
         fun f(x, y) { print(x + y); }
         f(x = 1, z = 3);
-    ").unwrap_err();
+    ",
+        )
+        .unwrap_err();
     assert!(err.to_string().contains("unknown keyword"), "got: {err}");
 }
 
 #[test]
 pub fn test_keyword_arg_duplicate_error() {
     let mut vm = VirtualMachine::new();
-    let err = vm.interpret("
+    let err = vm
+        .interpret(
+            "
         fun f(x, y) { print(x + y); }
         f(x = 1, x = 2);
-    ").unwrap_err();
+    ",
+        )
+        .unwrap_err();
     assert!(err.to_string().contains("Duplicate"), "got: {err}");
 }
 
 #[test]
 pub fn test_default_param_required_after_optional_error() {
     let mut vm = VirtualMachine::new();
-    let err = vm.interpret("
+    let err = vm
+        .interpret(
+            "
         fun bad(a = 1, b) {}
-    ").unwrap_err();
+    ",
+        )
+        .unwrap_err();
     assert!(err.to_string().contains("Required"), "got: {err}");
 }
 
 #[test]
 pub fn test_arg_count_range_error() {
     let mut vm = VirtualMachine::new();
-    let err = vm.interpret("
+    let err = vm
+        .interpret(
+            "
         fun f(a, b = 2, c = 3) {}
         f();
-    ").unwrap_err();
+    ",
+        )
+        .unwrap_err();
     assert!(err.to_string().contains("arguments"), "got: {err}");
 }
 
 #[test]
 pub fn test_keyword_arg_in_class_constructor() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         class Point {
             fun __init__(self, x = 0, y = 0) {
                 self.x = x;
@@ -2798,13 +3081,16 @@ pub fn test_keyword_arg_in_class_constructor() {
         var q = Point(y = 10);
         print(q.x);  // 0
         print(q.y);  // 10
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 #[test]
 pub fn test_default_param_in_class_constructor() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         class Point {
             fun __init__(self, x = 0, y = 0) {
                 self.x = x;
@@ -2817,13 +3103,16 @@ pub fn test_default_param_in_class_constructor() {
         var q = Point(7);
         print(q.x);  // 7
         print(q.y);  // 0
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 #[test]
 pub fn test_default_param_method_positional() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         class Greeter {
             fun greet(self, name, punctuation = \"!\") {
                 print(\"Hello \" + name + punctuation);
@@ -2832,13 +3121,16 @@ pub fn test_default_param_method_positional() {
         var g = Greeter();
         g.greet(\"World\");
         g.greet(\"Taro\", \"?\");
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
 
 #[test]
 pub fn test_default_param_method() {
     let mut vm = VirtualMachine::new();
-    vm.interpret("
+    vm.interpret(
+        "
         class Greeter {
             fun greet(self, name, punctuation = \"!\") {
                 print(\"Hello \" + name + punctuation);
@@ -2847,5 +3139,7 @@ pub fn test_default_param_method() {
         var g = Greeter();
         g.greet(\"World\");
         g.greet(\"Taro\", \"?\");  // Invoke still uses positional
-    ").unwrap();
+    ",
+    )
+    .unwrap();
 }
