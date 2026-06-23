@@ -1,6 +1,6 @@
 import "std/ffi";
 
-var lib = ffi.dlopen("examples/libraylib.so.6.0.0");
+var lib = ffi.DynLibrary("examples/libraylib.so.6.0.0");
 
 // ==========================================
 // 1. 结构体定义 (使用 ctypes 风格的 CType 对象)
@@ -22,22 +22,22 @@ var Camera3D = ffi.define_struct([
 // ==========================================
 // 2. FFI 绑定
 // ==========================================
-var init_window         = ffi.bind(lib, "InitWindow", "void", ["int32", "int32", "cstring"]);
-var close_window        = ffi.bind(lib, "CloseWindow", "void", []);
-var window_should_close = ffi.bind(lib, "WindowShouldClose", "bool", []);
-var set_target_fps      = ffi.bind(lib, "SetTargetFPS", "void", ["int32"]);
-var begin_drawing       = ffi.bind(lib, "BeginDrawing", "void", []);
-var end_drawing         = ffi.bind(lib, "EndDrawing", "void", []);
-var clear_background    = ffi.bind(lib, "ClearBackground", "void", [Color]);
-var draw_text           = ffi.bind(lib, "DrawText", "void", ["cstring", "int32", "int32", "int32", Color]);
-var draw_fps            = ffi.bind(lib, "DrawFPS", "void", ["int32", "int32"]);
+var init_window         = lib.bind("InitWindow", "void", ["int32", "int32", "cstring"]);
+var close_window        = lib.bind("CloseWindow", "void", []);
+var window_should_close = lib.bind("WindowShouldClose", "bool", []);
+var set_target_fps      = lib.bind("SetTargetFPS", "void", ["int32"]);
+var begin_drawing       = lib.bind("BeginDrawing", "void", []);
+var end_drawing         = lib.bind("EndDrawing", "void", []);
+var clear_background    = lib.bind("ClearBackground", "void", [Color]);
+var draw_text           = lib.bind("DrawText", "void", ["cstring", "int32", "int32", "int32", Color]);
+var draw_fps            = lib.bind("DrawFPS", "void", ["int32", "int32"]);
 
 // 3D 专属绑定
-var begin_mode_3d   = ffi.bind(lib, "BeginMode3D", "void", [Camera3D]);
-var end_mode_3d     = ffi.bind(lib, "EndMode3D", "void", []);
-var draw_cube       = ffi.bind(lib, "DrawCube", "void", [Vector3, "float", "float", "float", Color]);
-var draw_cube_wires = ffi.bind(lib, "DrawCubeWires", "void", [Vector3, "float", "float", "float", Color]);
-var draw_grid       = ffi.bind(lib, "DrawGrid", "void", ["int32", "float"]);
+var begin_mode_3d   = lib.bind("BeginMode3D", "void", [Camera3D]);
+var end_mode_3d     = lib.bind("EndMode3D", "void", []);
+var draw_cube       = lib.bind("DrawCube", "void", [Vector3, "float", "float", "float", Color]);
+var draw_cube_wires = lib.bind("DrawCubeWires", "void", [Vector3, "float", "float", "float", Color]);
+var draw_grid       = lib.bind("DrawGrid", "void", ["int32", "float"]);
 
 // ==========================================
 // 3. 初始化与状态
@@ -109,4 +109,3 @@ while !window_should_close() {
 }
 
 close_window();
-ffi.dlclose(lib);

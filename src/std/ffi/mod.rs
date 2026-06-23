@@ -38,13 +38,10 @@
 //!
 //! ffi.dlclose(lib);
 //! ```
-
-mod bound;
-mod call;
 mod error;
 mod library;
-mod structs;
 mod types;
+mod function;
 
 #[cfg(test)]
 mod tests;
@@ -62,19 +59,27 @@ use types::CType;
 
 impl VirtualMachine {
     pub(crate) fn create_ffi_module(&mut self) -> RuntimeResult<ObjectHandle> {
-        let bound_fn_class = self.obj_heap.alloc_class("BoundFn");
-        self.register_native_method(bound_fn_class, "__new__", NativeFunction::var(bound::BoundFn::__new__));
-        self.register_native_method(bound_fn_class, "__call__", NativeFunction::var(bound::BoundFn::__call__));
+        let library_class = self.obj_heap.alloc_class("DynLibrary");
+        self.register_native_method(library_class, "__new__", NativeFunction::var(library::DynLibrary::__new__));
+        self.register_native_method(library_class, "symbol", NativeFunction::a2(library::DynLibrary::symbol));
+        self.register_native_method(library_class, "bind", NativeFunction::a4(library::DynLibrary::bind));
 
-        let struct_instance_class = self.obj_heap.alloc_class("Struct");
-        self.register_native_method(struct_instance_class, "__new__", NativeFunction::var(structs::Struct::__new__));
-        self.register_native_method(struct_instance_class, "__getattr__", NativeFunction::var(structs::Struct::__getattr__));
-        self.register_native_method(struct_instance_class, "__setattr__", NativeFunction::var(structs::Struct::__setattr__));
+        let csymbol_class = self.obj_heap.alloc_class("CSymbol");
+        self.register_native_method(csymbol_class, "__new__", NativeFunction::var(library::CSymbol::__new__));
+
+        let cfunction_class = self.obj_heap.alloc_class("CFunction");
+        self.register_native_method(cfunction_class, "__new__", NativeFunction::var(function::CFunction::__new__));
+        self.register_native_method(cfunction_class, "__call__", NativeFunction::var(function::CFunction::__call__));
 
         let ctype_class = self.obj_heap.alloc_class("CType");
-        self.register_native_method(ctype_class, "__call__", NativeFunction::var(CType::__call__));
+        self.register_native_method(ctype_class, "__new__", NativeFunction::var(types::CType::__new__));
+        self.register_native_method(ctype_class, "__call__", NativeFunction::var(types::CType::__call__));
 
-        // ---- build scalar CType singletons ----
+        let struct_instance_class = self.obj_heap.alloc_class("CStruct");
+        self.register_native_method(struct_instance_class, "__new__", NativeFunction::var(types::CStruct::__new__));
+        self.register_native_method(struct_instance_class, "__getattr__", NativeFunction::var(types::CStruct::__getattr__));
+        self.register_native_method(struct_instance_class, "__setattr__", NativeFunction::var(types::CStruct::__setattr__));
+
         macro_rules! ctype_singleton {
             ($variant:ident) => {
                 self.obj_heap.alloc_instance(ctype_class, CType::$variant)
@@ -82,19 +87,11 @@ impl VirtualMachine {
         }
 
         // ---- export functions ----
-        let dlopen_fn = self.obj_heap.alloc_native_fn("dlopen", NativeFunction::a1(library::dlopen));
-        let dlsym_fn = self.obj_heap.alloc_native_fn("dlsym", NativeFunction::a2(library::dlsym));
-        let dlclose_fn = self.obj_heap.alloc_native_fn("dlclose", NativeFunction::a1(library::dlclose));
-        let call_fn = self.obj_heap.alloc_native_fn("call", NativeFunction::var(call::ffi_call));
-        let bind_fn = self.obj_heap.alloc_native_fn("bind", NativeFunction::a4(bound::bind));
-        let define_struct_fn = self.obj_heap.alloc_native_fn("define_struct", NativeFunction::var(structs::define_struct));
+        let call_fn = self.obj_heap.alloc_native_fn("call", NativeFunction::var(function::call));
+        let define_struct_fn = self.obj_heap.alloc_native_fn("define_struct", NativeFunction::var(types::define_struct));
 
         let mut exports: HashMap<ShrString, ObjectHandle> = HashMap::new();
-        exports.insert(ShrString::new_str("dlopen"), dlopen_fn);
-        exports.insert(ShrString::new_str("dlsym"), dlsym_fn);
-        exports.insert(ShrString::new_str("dlclose"), dlclose_fn);
         exports.insert(ShrString::new_str("call"), call_fn);
-        exports.insert(ShrString::new_str("bind"), bind_fn);
         exports.insert(ShrString::new_str("define_struct"), define_struct_fn);
 
         // ---- export CType scalar singletons ----
@@ -112,19 +109,19 @@ impl VirtualMachine {
         exports.insert(ShrString::new_str("c_pointer"), ctype_singleton!(Pointer));
         exports.insert(ShrString::new_str("c_cstring"), ctype_singleton!(CString));
 
-        // Internal classes are not user-visible, but are stored as exports
-        // so module-level functions can resolve them via the module registry.
-        exports.insert(ShrString::new_str("BoundFn"), bound_fn_class);
-        exports.insert(ShrString::new_str("Struct"), struct_instance_class);
+        exports.insert(ShrString::new_str("DynLibrary"), library_class);
+        exports.insert(ShrString::new_str("CSymbol"), csymbol_class);
+        exports.insert(ShrString::new_str("CFunction"), cfunction_class);
         exports.insert(ShrString::new_str("CType"), ctype_class);
+        exports.insert(ShrString::new_str("CStruct"), struct_instance_class);
 
         let module = self.obj_heap.alloc_fields_instance(self.obj_heap.module_class, exports);
 
-        // Back-link all internal classes to the module so method-level lookups
-        // (CType.__call__, BoundFn.__call__) can find sibling classes.
-        self.obj_heap.get_class_mut(bound_fn_class).expect("BoundFn").module = Some(module);
-        self.obj_heap.get_class_mut(struct_instance_class).expect("Struct").module = Some(module);
+        self.obj_heap.get_class_mut(library_class).expect("DynLibrary").module = Some(module);
+        self.obj_heap.get_class_mut(csymbol_class).expect("CSymbol").module = Some(module);
+        self.obj_heap.get_class_mut(cfunction_class).expect("CFunction").module = Some(module);
         self.obj_heap.get_class_mut(ctype_class).expect("CType").module = Some(module);
+        self.obj_heap.get_class_mut(struct_instance_class).expect("CStruct").module = Some(module);
 
         Ok(module)
     }

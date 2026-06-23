@@ -18,7 +18,7 @@ use std::ffi::{CString, c_char, c_void};
 
 use crate::object::{ObjectHeap, ObjectInstanceData};
 use crate::vm::{RuntimeResult, VirtualMachine};
-use crate::{ObjectHandle, ShrString, ToShrString};
+use crate::{ObjectHandle, ShrString};
 use std::any::Any;
 
 use super::error::FfiError;
@@ -231,7 +231,7 @@ impl CType {
             CType::Void => Err(FfiError::VoidAsArgument.into()),
             CType::Struct(layout) => {
                 // Rebuild raw byte buffer from the Struct instance's named fields.
-                let struct_data = vm.obj_heap.get_native::<super::structs::Struct>(handle).ok_or(FfiError::ExpectedStruct)?;
+                let struct_data = vm.obj_heap.get_native::<CStruct>(handle).ok_or(FfiError::ExpectedStruct)?;
 
                 let mut data = vec![0u8; layout.size];
                 for (i, (name, fct)) in layout.field_names.iter().zip(&layout.field_types).enumerate() {
@@ -285,7 +285,7 @@ impl CType {
             CType::Void => Err(FfiError::VoidAsField.into()),
             CType::Struct(_) => {
                 // Recursively serialize a nested struct instance into the buffer.
-                let struct_data = vm.obj_heap.get_native::<super::structs::Struct>(handle).ok_or(FfiError::ExpectedNestedStruct)?;
+                let struct_data = vm.obj_heap.get_native::<CStruct>(handle).ok_or(FfiError::ExpectedNestedStruct)?;
 
                 // Get the nested struct's CType from its back-link to extract the layout.
                 let ctype = vm
@@ -306,84 +306,6 @@ impl CType {
                 }
                 Ok(())
             }
-        }
-    }
-
-    // ------------------------------------------------------------------
-    // call_ffi — invoke the CIF and convert the return value
-    // ------------------------------------------------------------------
-
-    pub(super) fn call_ffi(
-        self,
-        vm: &mut VirtualMachine,
-        cif: &libffi::middle::Cif,
-        code_ptr: libffi::middle::CodePtr,
-        args: &[libffi::middle::Arg],
-    ) -> RuntimeResult<ObjectHandle> {
-        match self {
-            CType::Void => {
-                unsafe { cif.call::<()>(code_ptr, args) };
-                Ok(ObjectHandle::NIL)
-            }
-            CType::I8 => {
-                let v: i8 = unsafe { cif.call::<i8>(code_ptr, args) };
-                Ok(vm.obj_heap.alloc_integer_instance(v as i64))
-            }
-            CType::I16 => {
-                let v: i16 = unsafe { cif.call::<i16>(code_ptr, args) };
-                Ok(vm.obj_heap.alloc_integer_instance(v as i64))
-            }
-            CType::I32 => {
-                let v: i32 = unsafe { cif.call::<i32>(code_ptr, args) };
-                Ok(vm.obj_heap.alloc_integer_instance(v as i64))
-            }
-            CType::I64 => {
-                let v: i64 = unsafe { cif.call::<i64>(code_ptr, args) };
-                Ok(vm.obj_heap.alloc_integer_instance(v))
-            }
-            CType::U8 => {
-                let v: u8 = unsafe { cif.call::<u8>(code_ptr, args) };
-                Ok(vm.obj_heap.alloc_integer_instance(v as i64))
-            }
-            CType::U16 => {
-                let v: u16 = unsafe { cif.call::<u16>(code_ptr, args) };
-                Ok(vm.obj_heap.alloc_integer_instance(v as i64))
-            }
-            CType::U32 => {
-                let v: u32 = unsafe { cif.call::<u32>(code_ptr, args) };
-                Ok(vm.obj_heap.alloc_integer_instance(v as i64))
-            }
-            CType::U64 => {
-                let v: u64 = unsafe { cif.call::<u64>(code_ptr, args) };
-                Ok(vm.obj_heap.alloc_integer_instance(v as i64))
-            }
-            CType::F32 => {
-                let v: f32 = unsafe { cif.call::<f32>(code_ptr, args) };
-                Ok(vm.obj_heap.alloc_float_instance(v as f64))
-            }
-            CType::F64 => {
-                let v: f64 = unsafe { cif.call::<f64>(code_ptr, args) };
-                Ok(vm.obj_heap.alloc_float_instance(v))
-            }
-            CType::Pointer => {
-                let v: *const c_void = unsafe { cif.call::<*const c_void>(code_ptr, args) };
-                Ok(vm.obj_heap.alloc_integer_instance(v as usize as i64))
-            }
-            CType::Bool => {
-                let v: u8 = unsafe { cif.call::<u8>(code_ptr, args) };
-                Ok(vm.obj_heap.alloc_bool_instance(v != 0))
-            }
-            CType::CString => {
-                let v: *const c_char = unsafe { cif.call::<*const c_char>(code_ptr, args) };
-                if v.is_null() {
-                    Ok(ObjectHandle::NIL)
-                } else {
-                    let bytes = unsafe { std::ffi::CStr::from_ptr(v) };
-                    let s = bytes.to_string_lossy().into_owned().to_shrstring();
-                    Ok(vm.obj_heap.alloc_string_instance(s))
-                }
-            }
-            CType::Struct(_) => Err(FfiError::StructReturnUnsupported.into()),
         }
     }
 
@@ -413,9 +335,9 @@ impl CType {
                     fields.insert(ShrString::new_string(name.as_str()), field_values[i]);
                 }
 
-                let instance_data = super::structs::Struct { ctype: self_handle, fields };
+                let instance_data = CStruct { ctype: self_handle, fields };
 
-                let class = vm.lookup_module_export(self_handle, &ShrString::new_str("Struct")).ok_or(FfiError::StructClassNotFound)?;
+                let class = vm.lookup_module_export(self_handle, &ShrString::new_str("CStruct")).ok_or(FfiError::StructClassNotFound)?;
                 Ok(vm.obj_heap.alloc_instance(class, instance_data))
             }
             _ => {
@@ -428,6 +350,10 @@ impl CType {
                 Ok(field_values[0])
             }
         }
+    }
+
+    pub(super) fn __new__(_vm: &mut VirtualMachine, _args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
+        Err(FfiError::CTypeDirectConstruction)?
     }
 }
 
@@ -489,6 +415,123 @@ impl CValue {
         }
     }
 }
+
+// ===========================================================================
+// Struct — concrete struct instance (named fields + type back-link)
+// ===========================================================================
+
+pub(super) struct CStruct {
+    /// Back-link to the `CType` instance that describes this struct's layout.
+    pub(super) ctype: ObjectHandle,
+    /// Field values keyed by field name.
+    pub(super) fields: HashMap<ShrString, ObjectHandle>,
+}
+
+impl ObjectInstanceData for CStruct {
+    fn mark_references(&self, heap: &mut ObjectHeap) {
+        heap.mark_object(self.ctype);
+        for (_, &value) in &self.fields {
+            heap.mark_object(value);
+        }
+    }
+
+    fn type_name(&self) -> &'static str {
+        "StructInstance"
+    }
+
+    fn as_any_ref(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
+}
+
+impl CStruct {
+    pub(super) fn __new__(_vm: &mut VirtualMachine, _args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
+        Err(FfiError::StructDirectConstruction.into())
+    }
+
+    pub(super) fn __getattr__(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
+        if args.len() < 2 {
+            return Err(FfiError::GetAttrArgCount.into());
+        }
+        let self_handle = args[0];
+        let field_name = vm.expect_type(vm.obj_heap.get_string_instance(args[1]), args[1], "string")?.as_str().to_string();
+
+        let data = vm.obj_heap.get_native::<CStruct>(self_handle).ok_or(FfiError::GetAttrNotStruct)?;
+
+        let key = ShrString::new_string(field_name.as_str());
+        data.fields.get(&key).copied().ok_or_else(|| FfiError::StructNoField(field_name).into())
+    }
+
+    pub(super) fn __setattr__(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
+        if args.len() < 3 {
+            return Err(FfiError::SetAttrArgCount.into());
+        }
+        let self_handle = args[0];
+        let field_name = vm.expect_type(vm.obj_heap.get_string_instance(args[1]), args[1], "string")?.as_str().to_string();
+        let value = args[2];
+
+        let data = vm.obj_heap.get_native_mut::<CStruct>(self_handle).ok_or(FfiError::SetAttrNotStruct)?;
+
+        data.fields.insert(ShrString::new_string(field_name.as_str()), value);
+        Ok(ObjectHandle::NIL)
+    }
+}
+
+// ===========================================================================
+// define_struct — define a C struct type, return a CType instance
+// ===========================================================================
+
+pub(super) fn define_struct(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
+    if args.is_empty() {
+        return Err(FfiError::StructDefExpectedList.into());
+    }
+    let field_descriptors = args[0];
+    let descriptors = parse_struct_descriptors(vm, field_descriptors)?;
+    let layout = struct_layout_from_descriptors(&descriptors)?;
+    let ctype_instance = CType::Struct(layout);
+
+    let class = vm.lookup_loaded_module_export("std/ffi", &ShrString::new_str("CType")).ok_or(FfiError::CTypeClassNotFound)?;
+    Ok(vm.obj_heap.alloc_instance(class, ctype_instance))
+}
+
+// ===========================================================================
+// parse_struct_descriptors — parse field descriptor list
+// ===========================================================================
+
+fn parse_struct_descriptors(vm: &VirtualMachine, handle: ObjectHandle) -> RuntimeResult<Vec<(String, CType)>> {
+    let items = vm.obj_heap.get_list_instance(handle).ok_or(FfiError::StructDefInvalidFormat)?;
+
+    if items.is_empty() {
+        return Err(FfiError::StructDefEmptyList.into());
+    }
+
+    let is_named = vm.obj_heap.get_list_instance(items[0]).is_some();
+
+    let mut descriptors = Vec::with_capacity(items.len());
+
+    if is_named {
+        for (i, &item) in items.iter().enumerate() {
+            let pair = vm.obj_heap.get_list_instance(item).ok_or(FfiError::StructDefExpectedPair(i))?;
+            if pair.len() != 2 {
+                return Err(FfiError::StructDefPairLen(pair.len(), i).into());
+            }
+            let name = vm.obj_heap.get_string_instance(pair[0]).ok_or(FfiError::StructDefNameNotString(i))?;
+            let ct = CType::from_handle(vm, pair[1]).map_err(|e| FfiError::StructDefInvalidType { pos: i, reason: e.to_string() })?;
+            descriptors.push((name.as_str().to_string(), ct));
+        }
+    } else {
+        for (i, &item) in items.iter().enumerate() {
+            let ct = CType::from_handle(vm, item).map_err(|e| FfiError::StructDefInvalidType { pos: i, reason: e.to_string() })?;
+            descriptors.push((i.to_string(), ct));
+        }
+    }
+
+    Ok(descriptors)
+}
+
 
 // ===========================================================================
 // Helpers

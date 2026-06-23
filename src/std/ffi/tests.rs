@@ -14,7 +14,7 @@ fn ffi_dlopen_nonexistent_library() {
     let result = vm.interpret(
         r#"
         import "std/ffi";
-        ffi.dlopen("/nonexistent/lib_does_not_exist.so");
+        ffi.DynLibrary("/nonexistent/lib_does_not_exist.so");
         "#,
     );
     assert!(result.is_err(), "dlopen of nonexistent library should fail");
@@ -34,8 +34,8 @@ fn ffi_libm_cos() {
     let source = format!(
         r##"
         import "std/ffi";
-        var lib = ffi.dlopen("{lib_path}");
-        var cos = ffi.dlsym(lib, "cos");
+        var lib = ffi.DynLibrary("{lib_path}");
+        var cos = lib.symbol("cos");
         var r = ffi.call(cos, "double", ["double"], [0.0]);
         print(r);
         "##
@@ -57,8 +57,8 @@ fn ffi_call_void_return() {
     let source = format!(
         r##"
         import "std/ffi";
-        var lib = ffi.dlopen("{lib_path}");
-        var srand = ffi.dlsym(lib, "srand");
+        var lib = ffi.DynLibrary("{lib_path}");
+        var srand = lib.symbol("srand");
         var result = ffi.call(srand, "void", ["uint32"], [42]);
         print(result);
         "##
@@ -137,8 +137,8 @@ fn ffi_bind_cos() {
     let source = format!(
         r##"
         import "std/ffi";
-        var lib = ffi.dlopen("{lib_path}");
-        var cos = ffi.bind(lib, "cos", "double", ["double"]);
+        var lib = ffi.DynLibrary("{lib_path}");
+        var cos = lib.bind("cos", "double", ["double"]);
         var r = cos(0.0);
         print(r);
         "##
@@ -160,8 +160,8 @@ fn ffi_bind_abs() {
     let source = format!(
         r##"
         import "std/ffi";
-        var lib = ffi.dlopen("{lib_path}");
-        var abs = ffi.bind(lib, "abs", "int32", ["int32"]);
+        var lib = ffi.DynLibrary("{lib_path}");
+        var abs = lib.bind("abs", "int32", ["int32"]);
         var r = abs(-42);
         print(r);
         "##
@@ -183,8 +183,8 @@ fn ffi_bind_void_return() {
     let source = format!(
         r##"
         import "std/ffi";
-        var lib = ffi.dlopen("{lib_path}");
-        var srand = ffi.bind(lib, "srand", "void", ["uint32"]);
+        var lib = ffi.DynLibrary("{lib_path}");
+        var srand = lib.bind("srand", "void", ["uint32"]);
         var r = srand(42);
         print(r);
         "##
@@ -207,10 +207,10 @@ fn ffi_bind_with_struct() {
     let source = format!(
         r##"
         import "std/ffi";
-        var lib = ffi.dlopen("{lib_path}");
+        var lib = ffi.DynLibrary("{lib_path}");
         var Seed = ffi.define_struct([["val", "uint32"]]);
         var s = Seed(42);
-        var srand = ffi.bind(lib, "srand", "void", [Seed]);
+        var srand = lib.bind("srand", "void", [Seed]);
         var r = srand(s);
         print(r);
         "##
@@ -332,7 +332,7 @@ fn ffi_nested_struct_passed_to_bind() {
     let source = format!(
         r##"
         import "std/ffi";
-        var lib = ffi.dlopen("{lib_path}");
+        var lib = ffi.DynLibrary("{lib_path}");
 
         // Inner struct: a single int32
         var Inner = ffi.define_struct([["val", ffi.c_uint32]]);
@@ -344,7 +344,7 @@ fn ffi_nested_struct_passed_to_bind() {
 
         // Bind srand with the Outer struct type — this exercises the
         // recursive marshal path (nested struct → buffer).
-        var srand = ffi.bind(lib, "srand", "void", [Outer]);
+        var srand = lib.bind("srand", "void", [Outer]);
         var r = srand(s);
         print(r);
         "##
@@ -367,8 +367,8 @@ fn ffi_ctype_in_bind_arg_types() {
     let source = format!(
         r##"
         import "std/ffi";
-        var lib = ffi.dlopen("{lib_path}");
-        var cos = ffi.bind(lib, "cos", "double", [ffi.c_double]);
+        var lib = ffi.DynLibrary("{lib_path}");
+        var cos = lib.bind("cos", "double", [ffi.c_double]);
         var r = cos(0.0);
         print(r);
         "##

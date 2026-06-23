@@ -1,6 +1,6 @@
 import "std/ffi";
 
-var lib = ffi.dlopen("examples/libraylib.so.6.0.0");
+var lib = ffi.DynLibrary("examples/libraylib.so.6.0.0");
 
 // ==========================================
 // 1. 结构体定义
@@ -12,23 +12,23 @@ var Rectangle = ffi.define_struct([["x", "float"], ["y", "float"], ["width", "fl
 // ==========================================
 // 2. FFI 绑定 (原有 + 新增)
 // ==========================================
-var init_window          = ffi.bind(lib, "InitWindow", "void", ["int32", "int32", "cstring"]);
-var close_window         = ffi.bind(lib, "CloseWindow", "void", []);
-var window_should_close  = ffi.bind(lib, "WindowShouldClose", "bool", []);
-var set_target_fps       = ffi.bind(lib, "SetTargetFPS", "void", ["int32"]);
-var begin_drawing        = ffi.bind(lib, "BeginDrawing", "void", []);
-var end_drawing          = ffi.bind(lib, "EndDrawing", "void", []);
-var clear_background     = ffi.bind(lib, "ClearBackground", "void", [Color]);
+var init_window          = lib.bind("InitWindow", "void", ["int32", "int32", "cstring"]);
+var close_window         = lib.bind("CloseWindow", "void", []);
+var window_should_close  = lib.bind("WindowShouldClose", "bool", []);
+var set_target_fps       = lib.bind("SetTargetFPS", "void", ["int32"]);
+var begin_drawing        = lib.bind("BeginDrawing", "void", []);
+var end_drawing          = lib.bind("EndDrawing", "void", []);
+var clear_background     = lib.bind("ClearBackground", "void", [Color]);
 
-var draw_circle          = ffi.bind(lib, "DrawCircle", "void", ["int32", "int32", "float", Color]);
-var draw_rectangle_rec   = ffi.bind(lib, "DrawRectangleRec", "void", [Rectangle, Color]);
-var draw_text            = ffi.bind(lib, "DrawText", "void", ["cstring", "int32", "int32", "int32", Color]);
+var draw_circle          = lib.bind("DrawCircle", "void", ["int32", "int32", "float", Color]);
+var draw_rectangle_rec   = lib.bind("DrawRectangleRec", "void", [Rectangle, Color]);
+var draw_text            = lib.bind("DrawText", "void", ["cstring", "int32", "int32", "int32", Color]);
 
 // 新增 FFI：随机数、帧率绘制、碰撞检测
-var is_key_pressed       = ffi.bind(lib, "IsKeyPressed", "bool", ["int32"]);
-var get_random_value     = ffi.bind(lib, "GetRandomValue", "int32", ["int32", "int32"]);
-var draw_fps             = ffi.bind(lib, "DrawFPS", "void", ["int32", "int32"]);
-var check_col_circle_rec = ffi.bind(lib, "CheckCollisionCircleRec", "bool", [Vector2, "float", Rectangle]);
+var is_key_pressed       = lib.bind("IsKeyPressed", "bool", ["int32"]);
+var get_random_value     = lib.bind("GetRandomValue", "int32", ["int32", "int32"]);
+var draw_fps             = lib.bind("DrawFPS", "void", ["int32", "int32"]);
+var check_col_circle_rec = lib.bind("CheckCollisionCircleRec", "bool", [Vector2, "float", Rectangle]);
 
 // ==========================================
 // 3. 游戏常量与初始化
@@ -146,4 +146,3 @@ while !window_should_close() {
 }
 
 close_window();
-ffi.dlclose(lib);

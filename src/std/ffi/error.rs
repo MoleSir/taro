@@ -1,16 +1,4 @@
-//! Structured FFI error types.
-//!
-//! [`FfiError`] replaces ad-hoc `RuntimeErrorKind::FfiError(format!(...))`
-//! strings with typed variants that carry context.  Every variant implements
-//! [`Display`](std::fmt::Display) with a human-readable message; the blanket
-//! `From<FfiError> for RuntimeErrorKind` conversion lets `?` and `.into()`
-//! work anywhere a [`RuntimeResult`] is expected.
-
 use crate::vm::RuntimeErrorKind;
-
-// ===========================================================================
-// FfiError — typed FFI errors
-// ===========================================================================
 
 #[derive(Debug, thiserror::Error)]
 pub(super) enum FfiError {
@@ -60,6 +48,12 @@ pub(super) enum FfiError {
     #[error("Struct cannot be constructed directly; use ffi.define_struct() to create a struct type")]
     StructDirectConstruction,
 
+    #[error("CSymbol cannot be constructed directly")]
+    CSymbolDirectConstruction,
+
+    #[error("CType cannot be constructed directly")]
+    CTypeDirectConstruction,
+
     // ---- struct accessors ----
     #[error("__getattr__ requires 2 arguments (self, name)")]
     GetAttrArgCount,
@@ -105,22 +99,16 @@ pub(super) enum FfiError {
     BoundFnArgCount { expected: usize, got: usize },
     #[error("BoundFn cannot be constructed directly; use ffi.bind()")]
     BoundFnDirectConstruction,
-    #[error("BoundFn class not found in ffi module")]
-    BoundFnClassNotFound,
 
     // ---- bind ----
     #[error("bind: not a library handle")]
     BindNotLibrary,
-    #[error("bind('{name}'): {error}")]
-    BindSymbol { name: String, error: String },
     #[error("bind: argument types must be a list")]
     BindArgTypesNotList,
 
     // ---- ffi.call ----
     #[error("ffi.call requires at least 3 arguments (func_ptr, ret_type, arg_types[, args])")]
     CallTooFewArgs,
-    #[error("argument count mismatch: {values} value(s) but {types} type(s)")]
-    CallArgCountMismatch { values: usize, types: usize },
 
     // ---- library ----
     #[error("dlopen: {0}")]
@@ -129,13 +117,7 @@ pub(super) enum FfiError {
     DlSymNotLibrary,
     #[error("dlsym('{name}'): {error}")]
     DlSym { name: String, error: String },
-    #[error("dlclose: not a library handle")]
-    DlCloseNotLibrary,
 }
-
-// ===========================================================================
-// Conversion to RuntimeErrorKind
-// ===========================================================================
 
 impl From<FfiError> for RuntimeErrorKind {
     fn from(e: FfiError) -> Self {
