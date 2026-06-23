@@ -71,8 +71,8 @@ impl ObjectList {
     native_a1!(__not__, items: &Vec<ObjectHandle>, { items.is_empty() });
 
     pub fn __add__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let lhs_items = vm.get_list_instance(lhs)?.clone();
-        if let Ok(rhs_items) = vm.get_list_instance(rhs) {
+        let lhs_items = vm.expect_type(vm.obj_heap.get_list_instance(lhs), lhs, "list")?.clone();
+        if let Some(rhs_items) = vm.obj_heap.get_list_instance(rhs) {
             let mut new_items = lhs_items;
             new_items.extend_from_slice(rhs_items);
             return Ok(vm.obj_heap.alloc_list_instance(new_items));
@@ -81,7 +81,7 @@ impl ObjectList {
     }
 
     pub fn __str__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let items = vm.get_list_instance(receiver)?.clone();
+        let items = vm.expect_type(vm.obj_heap.get_list_instance(receiver), receiver, "list")?.clone();
         let mut result = String::from("[");
         for (i, &item) in items.iter().enumerate() {
             if i > 0 {
@@ -102,8 +102,8 @@ impl ObjectList {
     }
 
     pub fn __getitem__(vm: &mut VirtualMachine, receiver: ObjectHandle, idx_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let items = vm.get_list_instance(receiver).cloned()?;
-        let idx_val = *vm.get_integer_instance(idx_handle)?;
+        let items = vm.expect_type(vm.obj_heap.get_list_instance(receiver), receiver, "list").cloned()?;
+        let idx_val = *vm.expect_type(vm.obj_heap.get_integer_instance(idx_handle), idx_handle, "int")?;
         let len = items.len();
         let idx = if idx_val < 0 { len as i64 + idx_val } else { idx_val };
         if idx < 0 || idx as usize >= len {
@@ -118,8 +118,9 @@ impl ObjectList {
         idx_handle: ObjectHandle,
         value: ObjectHandle,
     ) -> RuntimeResult<ObjectHandle> {
-        let idx_val = *vm.get_integer_instance(idx_handle)?;
-        let items = vm.get_list_instance_mut(receiver)?;
+        let idx_val = *vm.expect_type(vm.obj_heap.get_integer_instance(idx_handle), idx_handle, "int")?;
+        let found = vm.value_type_name(receiver);
+        let items = vm.obj_heap.get_list_instance_mut(receiver).ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "list", found })?;
         let len = items.len();
         let idx = if idx_val < 0 { len as i64 + idx_val } else { idx_val };
         if idx < 0 || idx as usize >= len {
@@ -130,8 +131,8 @@ impl ObjectList {
     }
 
     pub fn __eq__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        if let Ok(rhs_items) = vm.get_list_instance(rhs) {
-            let lhs_items = vm.get_list_instance(lhs)?.clone();
+        if let Some(rhs_items) = vm.obj_heap.get_list_instance(rhs) {
+            let lhs_items = vm.expect_type(vm.obj_heap.get_list_instance(lhs), lhs, "list")?.clone();
             let rhs_items = rhs_items.clone();
             if lhs_items.len() != rhs_items.len() {
                 return Ok(vm.obj_heap.alloc_bool_instance(false));
@@ -149,27 +150,30 @@ impl ObjectList {
 
     pub fn __ne__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let eq = Self::__eq__(vm, lhs, rhs)?;
-        let b = *vm.get_bool_instance(eq)?;
+        let b = *vm.expect_type(vm.obj_heap.get_bool_instance(eq), eq, "bool")?;
         Ok(vm.obj_heap.alloc_bool_instance(!b))
     }
 
     /// `list.append(value)` — add an item to the end of the list.
     pub fn append(vm: &mut VirtualMachine, receiver: ObjectHandle, value: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let items = vm.get_list_instance_mut(receiver)?;
+        let found = vm.value_type_name(receiver);
+        let items = vm.obj_heap.get_list_instance_mut(receiver).ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "list", found })?;
         items.push(value);
         Ok(value)
     }
 
     /// `list.pop()` — remove and return the last item.
     pub fn pop(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let items = vm.get_list_instance_mut(receiver)?;
+        let found = vm.value_type_name(receiver);
+        let items = vm.obj_heap.get_list_instance_mut(receiver).ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "list", found })?;
         items.pop().ok_or(RuntimeErrorKind::EmptyPop)
     }
 
     /// `list.extend(other)` — extend this list with all items from another list.
     pub fn extend(vm: &mut VirtualMachine, receiver: ObjectHandle, other: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let other_items = vm.get_list_instance(other)?.clone();
-        let items = vm.get_list_instance_mut(receiver)?;
+        let other_items = vm.expect_type(vm.obj_heap.get_list_instance(other), other, "list")?.clone();
+        let found = vm.value_type_name(receiver);
+        let items = vm.obj_heap.get_list_instance_mut(receiver).ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "list", found })?;
         items.extend(other_items);
         Ok(ObjectHandle::NIL)
     }
@@ -183,17 +187,18 @@ impl ObjectList {
 
     pub fn iter_next(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let (list_handle, idx) = {
-            let iter = vm.get_list_iter(receiver)?;
+            let iter = vm.expect_type(vm.obj_heap.get_list_iter(receiver), receiver, "list iterator")?;
             (iter.list_handle, iter.index)
         };
-        let items = vm.get_list_instance(list_handle)?;
+        let items = vm.expect_type(vm.obj_heap.get_list_instance(list_handle), list_handle, "list")?;
         if idx >= items.len() {
             return Ok(ObjectHandle::ITER_END);
         }
         let value = items[idx];
         // NLL drops `items` reference here; the &mut self borrow below is
         // now exclusive, allowing the index update.
-        let iter = vm.get_list_iter_mut(receiver)?;
+        let found = vm.value_type_name(receiver);
+        let iter = vm.obj_heap.get_list_iter_mut(receiver).ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "list iterator", found })?;
         iter.index = idx + 1;
         Ok(value)
     }

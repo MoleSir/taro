@@ -7,7 +7,7 @@
 - [x] default arguments 
 - [x] source line in run time error
 - [ ] str formart
-- [ ] ffi
+- [x] ffi
 - [ ] module class in vm 
 - [x] more str method
 - [x] bytes

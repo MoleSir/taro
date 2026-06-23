@@ -60,10 +60,10 @@ impl ObjectBytes {
 
     /// Build a `Bytes` instance from a list of integers (0-255).
     pub fn from_list(vm: &mut VirtualMachine, list_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let items = vm.get_list_instance(list_handle)?.clone();
+        let items = vm.expect_type(vm.obj_heap.get_list_instance(list_handle), list_handle, "list")?.clone();
         let mut data = Vec::with_capacity(items.len());
         for &item in &items {
-            let b = *vm.get_integer_instance(item)?;
+            let b = *vm.expect_type(vm.obj_heap.get_integer_instance(item), item, "int")?;
             if b < 0 || b > 255 {
                 return Err(RuntimeErrorKind::UnexpectedType("byte value in range 0-255", vm.value_type_name(item)));
             }
@@ -77,7 +77,7 @@ impl ObjectBytes {
     native_a1!(__not__, data: &Vec<u8>, { data.is_empty() });
 
     pub fn __str__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let data = vm.get_bytes_instance(receiver)?.clone();
+        let data = vm.expect_type(vm.obj_heap.get_bytes_instance(receiver), receiver, "bytes")?.clone();
         let mut result = String::from("b\"");
         for &byte in &data {
             match byte {
@@ -110,8 +110,8 @@ impl ObjectBytes {
     }
 
     pub fn __getitem__(vm: &mut VirtualMachine, receiver: ObjectHandle, idx_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let data = vm.get_bytes_instance(receiver)?.clone();
-        let idx_val = *vm.get_integer_instance(idx_handle)?;
+        let data = vm.expect_type(vm.obj_heap.get_bytes_instance(receiver), receiver, "bytes")?.clone();
+        let idx_val = *vm.expect_type(vm.obj_heap.get_integer_instance(idx_handle), idx_handle, "int")?;
         let len = data.len();
         let idx = if idx_val < 0 { len as i64 + idx_val } else { idx_val };
         if idx < 0 || idx as usize >= len {
@@ -121,8 +121,8 @@ impl ObjectBytes {
     }
 
     pub fn __eq__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        if let Ok(rhs_data) = vm.get_bytes_instance(rhs) {
-            let lhs_data = vm.get_bytes_instance(lhs)?;
+        if let Some(rhs_data) = vm.obj_heap.get_bytes_instance(rhs) {
+            let lhs_data = vm.expect_type(vm.obj_heap.get_bytes_instance(lhs), lhs, "bytes")?;
             Ok(vm.obj_heap.alloc_bool_instance(lhs_data == rhs_data))
         } else {
             Ok(vm.obj_heap.alloc_bool_instance(false))
@@ -131,13 +131,13 @@ impl ObjectBytes {
 
     pub fn __ne__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let eq = Self::__eq__(vm, lhs, rhs)?;
-        let b = *vm.get_bool_instance(eq)?;
+        let b = *vm.expect_type(vm.obj_heap.get_bool_instance(eq), eq, "bool")?;
         Ok(vm.obj_heap.alloc_bool_instance(!b))
     }
 
     pub fn __add__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let mut lhs_data = vm.get_bytes_instance(lhs)?.clone();
-        if let Ok(rhs_data) = vm.get_bytes_instance(rhs) {
+        let mut lhs_data = vm.expect_type(vm.obj_heap.get_bytes_instance(lhs), lhs, "bytes")?.clone();
+        if let Some(rhs_data) = vm.obj_heap.get_bytes_instance(rhs) {
             lhs_data.extend_from_slice(rhs_data);
             return Ok(vm.obj_heap.alloc_bytes_instance(lhs_data));
         }
@@ -145,16 +145,16 @@ impl ObjectBytes {
     }
 
     pub fn __contains__(vm: &mut VirtualMachine, receiver: ObjectHandle, item: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let byte_val = *vm.get_integer_instance(item)?;
+        let byte_val = *vm.expect_type(vm.obj_heap.get_integer_instance(item), item, "int")?;
         if byte_val < 0 || byte_val > 255 {
             return Ok(vm.obj_heap.alloc_bool_instance(false));
         }
-        let data = vm.get_bytes_instance(receiver)?;
+        let data = vm.expect_type(vm.obj_heap.get_bytes_instance(receiver), receiver, "bytes")?;
         Ok(vm.obj_heap.alloc_bool_instance(data.contains(&(byte_val as u8))))
     }
 
     pub fn __hash__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let data = vm.get_bytes_instance(receiver)?;
+        let data = vm.expect_type(vm.obj_heap.get_bytes_instance(receiver), receiver, "bytes")?;
         let mut hasher = DefaultHasher::new();
         data.hash(&mut hasher);
         Ok(vm.obj_heap.alloc_integer_instance(hasher.finish() as i64))
@@ -164,11 +164,11 @@ impl ObjectBytes {
 
     /// `bytes.decode("utf-8")` — decode bytes to a string.
     pub fn decode(vm: &mut VirtualMachine, receiver: ObjectHandle, encoding: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let enc = vm.get_string_instance(encoding)?.as_str().to_ascii_lowercase();
+        let enc = vm.expect_type(vm.obj_heap.get_string_instance(encoding), encoding, "string")?.as_str().to_ascii_lowercase();
         if enc != "utf-8" && enc != "utf8" {
             return Err(RuntimeErrorKind::TypeMismatch { expected: "encoding 'utf-8'", found: "other encoding" });
         }
-        let data = vm.get_bytes_instance(receiver)?;
+        let data = vm.expect_type(vm.obj_heap.get_bytes_instance(receiver), receiver, "bytes")?;
         let s = String::from_utf8(data.clone())
             .map_err(|_| RuntimeErrorKind::TypeMismatch { expected: "valid utf-8 bytes", found: "invalid utf-8 bytes" })?;
         Ok(vm.obj_heap.alloc_string_instance(s.into()))
@@ -176,14 +176,14 @@ impl ObjectBytes {
 
     /// `bytes.hex()` — return a hex string representation.
     pub fn hex(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let data = vm.get_bytes_instance(receiver)?;
+        let data = vm.expect_type(vm.obj_heap.get_bytes_instance(receiver), receiver, "bytes")?;
         let hex_str: String = data.iter().map(|b| format!("{:02x}", b)).collect();
         Ok(vm.obj_heap.alloc_string_instance(hex_str.into()))
     }
 
     /// `bytes.to_list()` — convert bytes to a list of integers.
     pub fn to_list(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let data = vm.get_bytes_instance(receiver)?.clone();
+        let data = vm.expect_type(vm.obj_heap.get_bytes_instance(receiver), receiver, "bytes")?.clone();
         let items: Vec<ObjectHandle> = data.iter().map(|&b| vm.obj_heap.alloc_integer_instance(b as i64)).collect();
         Ok(vm.obj_heap.alloc_list_instance(items))
     }
@@ -197,16 +197,17 @@ impl ObjectBytes {
 
     pub fn iter_next(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let (bytes_handle, idx) = {
-            let iter = vm.get_bytes_iter(receiver)?;
+            let iter = vm.expect_type(vm.obj_heap.get_bytes_iter(receiver), receiver, "bytes iterator")?;
             (iter.bytes_handle, iter.index)
         };
-        let data = vm.get_bytes_instance(bytes_handle)?;
+        let data = vm.expect_type(vm.obj_heap.get_bytes_instance(bytes_handle), bytes_handle, "bytes")?;
         if idx >= data.len() {
             return Ok(ObjectHandle::ITER_END);
         }
         let value = data[idx];
         // NLL drops `data` reference here; mut borrow below is now exclusive.
-        let iter = vm.get_bytes_iter_mut(receiver)?;
+        let found = vm.value_type_name(receiver);
+        let iter = vm.obj_heap.get_bytes_iter_mut(receiver).ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "bytes iterator", found })?;
         iter.index = idx + 1;
         Ok(vm.obj_heap.alloc_integer_instance(value as i64))
     }

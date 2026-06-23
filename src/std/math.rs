@@ -177,9 +177,9 @@ fn radians(vm: &mut VirtualMachine, deg: ObjectHandle) -> RuntimeResult<ObjectHa
 
 /// Extract an `f64` from a numeric handle (int or float).
 fn as_f64(vm: &VirtualMachine, handle: ObjectHandle, fn_name: &'static str) -> RuntimeResult<f64> {
-    if let Ok(v) = vm.get_integer_instance(handle) {
+    if let Some(v) = vm.obj_heap.get_integer_instance(handle) {
         Ok(*v as f64)
-    } else if let Ok(v) = vm.get_float_instance(handle) {
+    } else if let Some(v) = vm.obj_heap.get_float_instance(handle) {
         Ok(*v)
     } else {
         Err(RuntimeErrorKind::BinaryOpTypeMismatch(fn_name, "float", vm.value_type_name(handle)))

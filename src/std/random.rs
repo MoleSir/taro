@@ -55,28 +55,28 @@ fn choice(vm: &mut VirtualMachine, seq: ObjectHandle) -> RuntimeResult<ObjectHan
     // the mutable borrow on `vm.rng`.
     let len = {
         let list = vm
-            .get_list_instance(seq)
-            .map_err(|_| RuntimeErrorKind::BinaryOpTypeMismatch("choice", "list", vm.value_type_name(seq)))?;
+            .obj_heap.get_list_instance(seq)
+            .ok_or_else(|| RuntimeErrorKind::BinaryOpTypeMismatch("choice", "list", vm.value_type_name(seq)))?;
         if list.is_empty() {
             return Err(RuntimeErrorKind::RandomError("choice: list is empty".into()));
         }
         list.len()
     };
     let idx = rand::random_range(0..len);
-    Ok(vm.get_list_instance(seq).unwrap()[idx])
+    Ok(vm.obj_heap.get_list_instance(seq).unwrap()[idx])
 }
 
 fn shuffle(vm: &mut VirtualMachine, seq: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     // Pre-generate swap indices to avoid overlapping borrows.
     let n = {
         let list = vm
-            .get_list_instance(seq)
-            .map_err(|_| RuntimeErrorKind::BinaryOpTypeMismatch("shuffle", "list", vm.value_type_name(seq)))?;
+            .obj_heap.get_list_instance(seq)
+            .ok_or_else(|| RuntimeErrorKind::BinaryOpTypeMismatch("shuffle", "list", vm.value_type_name(seq)))?;
         list.len()
     };
     // Fisher-Yates shuffle: for each i, pick j in [i, n).
     let swaps: Vec<(usize, usize)> = (0..n).map(|i| (i, rand::random_range(i..n))).collect();
-    let list = vm.get_list_instance_mut(seq).expect("just checked");
+    let list = vm.obj_heap.get_list_instance_mut(seq).expect("just checked");
     for (i, j) in swaps {
         list.swap(i, j);
     }
@@ -85,9 +85,9 @@ fn shuffle(vm: &mut VirtualMachine, seq: ObjectHandle) -> RuntimeResult<ObjectHa
 
 /// Extract an `f64` from a numeric handle (int or float).
 fn as_f64(vm: &VirtualMachine, handle: ObjectHandle, fn_name: &'static str) -> RuntimeResult<f64> {
-    if let Ok(v) = vm.get_integer_instance(handle) {
+    if let Some(v) = vm.obj_heap.get_integer_instance(handle) {
         Ok(*v as f64)
-    } else if let Ok(v) = vm.get_float_instance(handle) {
+    } else if let Some(v) = vm.obj_heap.get_float_instance(handle) {
         Ok(*v)
     } else {
         Err(RuntimeErrorKind::BinaryOpTypeMismatch(fn_name, "float", vm.value_type_name(handle)))
@@ -96,7 +96,7 @@ fn as_f64(vm: &VirtualMachine, handle: ObjectHandle, fn_name: &'static str) -> R
 
 /// Extract an `f64` from a numeric handle (int or float).
 fn as_i64(vm: &VirtualMachine, handle: ObjectHandle, fn_name: &'static str) -> RuntimeResult<i64> {
-    if let Ok(v) = vm.get_integer_instance(handle) {
+    if let Some(v) = vm.obj_heap.get_integer_instance(handle) {
         Ok(*v)
     } else {
         Err(RuntimeErrorKind::BinaryOpTypeMismatch(fn_name, "i64", vm.value_type_name(handle)))

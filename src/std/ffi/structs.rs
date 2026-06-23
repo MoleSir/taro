@@ -66,7 +66,7 @@ impl StructDef {
     
         let self_handle = args[0];
         let field_values = &args[1..];
-        let struct_def = vm.get_native::<StructDef>(self_handle)?;
+        let struct_def = vm.expect_type(vm.obj_heap.get_native::<StructDef>(self_handle), self_handle, "native")?;
     
         if field_values.len() != struct_def.field_types.len() {
             return Err(RuntimeErrorKind::FfiError(format!("struct expects {} value(s), got {}", struct_def.field_types.len(), field_values.len())));
@@ -154,7 +154,7 @@ impl Struct {
             return Err(RuntimeErrorKind::FfiError("__getattr__ requires 2 arguments (self, name)".into()));
         }
         let self_handle = args[0];
-        let field_name = vm.get_string_instance(args[1])?.as_str().to_string();
+        let field_name = vm.expect_type(vm.obj_heap.get_string_instance(args[1]), args[1], "string")?.as_str().to_string();
 
         let data = vm
             .obj_heap
@@ -171,7 +171,7 @@ impl Struct {
             return Err(RuntimeErrorKind::FfiError("__setattr__ requires 3 arguments (self, name, value)".into()));
         }
         let self_handle = args[0];
-        let field_name = vm.get_string_instance(args[1])?.as_str().to_string();
+        let field_name = vm.expect_type(vm.obj_heap.get_string_instance(args[1]), args[1], "string")?.as_str().to_string();
         let value = args[2];
 
         let data = vm
@@ -192,8 +192,8 @@ impl Struct {
 /// Parse the `struct_def` argument into `(name, type)` pairs.
 fn parse_struct_descriptors(vm: &VirtualMachine, handle: ObjectHandle) -> RuntimeResult<Vec<(String, String)>> {
     let items = vm
-        .get_list_instance(handle)
-        .map_err(|_| RuntimeErrorKind::FfiError("struct_def: expected a list of types or a list of [name, type] pairs".into()))?;
+        .obj_heap.get_list_instance(handle)
+        .ok_or_else(|| RuntimeErrorKind::FfiError("struct_def: expected a list of types or a list of [name, type] pairs".into()))?;
 
     if items.is_empty() {
         return Err(RuntimeErrorKind::FfiError("struct_def: field list must not be empty".into()));
@@ -201,15 +201,15 @@ fn parse_struct_descriptors(vm: &VirtualMachine, handle: ObjectHandle) -> Runtim
 
     // Detect format: if the first element is itself a list, treat as named
     // pairs; otherwise treat as positional type strings.
-    let is_named = vm.get_list_instance(items[0]).is_ok();
+    let is_named = vm.obj_heap.get_list_instance(items[0]).is_some();
 
     let mut descriptors = Vec::with_capacity(items.len());
 
     if is_named {
         for (i, &item) in items.iter().enumerate() {
             let pair = vm
-                .get_list_instance(item)
-                .map_err(|_| RuntimeErrorKind::FfiError(format!("struct_def: expected [name, type] pair at position {i}")))?;
+                .obj_heap.get_list_instance(item)
+                .ok_or_else(|| RuntimeErrorKind::FfiError(format!("struct_def: expected [name, type] pair at position {i}")))?;
             if pair.len() != 2 {
                 return Err(RuntimeErrorKind::FfiError(format!(
                     "struct_def: each pair must be [name, type], got {} elements at position {i}",
@@ -217,18 +217,18 @@ fn parse_struct_descriptors(vm: &VirtualMachine, handle: ObjectHandle) -> Runtim
                 )));
             }
             let name = vm
-                .get_string_instance(pair[0])
-                .map_err(|_| RuntimeErrorKind::FfiError(format!("struct_def: field name at position {i} must be a string")))?;
+                .obj_heap.get_string_instance(pair[0])
+                .ok_or_else(|| RuntimeErrorKind::FfiError(format!("struct_def: field name at position {i} must be a string")))?;
             let type_str = vm
-                .get_string_instance(pair[1])
-                .map_err(|_| RuntimeErrorKind::FfiError(format!("struct_def: field type at position {i} must be a string")))?;
+                .obj_heap.get_string_instance(pair[1])
+                .ok_or_else(|| RuntimeErrorKind::FfiError(format!("struct_def: field type at position {i} must be a string")))?;
             descriptors.push((name.as_str().to_string(), type_str.as_str().to_string()));
         }
     } else {
         for (i, &item) in items.iter().enumerate() {
             let type_str = vm
-                .get_string_instance(item)
-                .map_err(|_| RuntimeErrorKind::FfiError(format!("struct_def: expected type string at position {i}")))?;
+                .obj_heap.get_string_instance(item)
+                .ok_or_else(|| RuntimeErrorKind::FfiError(format!("struct_def: expected type string at position {i}")))?;
             descriptors.push((i.to_string(), type_str.as_str().to_string()));
         }
     }

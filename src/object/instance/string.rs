@@ -65,8 +65,8 @@ impl_object_instance_data!(ObjectString, "string");
 macro_rules! string_cmp_op {
     ($name:ident, $op:expr, $op_name:literal) => {
         pub fn $name(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-            let lhs_s = vm.get_string_instance(lhs)?.clone();
-            if let Ok(rhs_s) = vm.get_string_instance(rhs) {
+            let lhs_s = vm.expect_type(vm.obj_heap.get_string_instance(lhs), lhs, "string")?.clone();
+            if let Some(rhs_s) = vm.obj_heap.get_string_instance(rhs) {
                 return Ok(vm.obj_heap.alloc_bool_instance($op(lhs_s.as_str(), rhs_s.as_str())));
             }
             Err(RuntimeErrorKind::BinaryOpTypeMismatch($op_name, "string", vm.value_type_name(rhs)))
@@ -80,8 +80,8 @@ impl ObjectString {
     }
 
     pub fn __add__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let lhs_s = vm.get_string_instance(lhs)?.clone();
-        if let Ok(rhs_s) = vm.get_string_instance(rhs) {
+        let lhs_s = vm.expect_type(vm.obj_heap.get_string_instance(lhs), lhs, "string")?.clone();
+        if let Some(rhs_s) = vm.obj_heap.get_string_instance(rhs) {
             let result = format!("{}{}", lhs_s.as_str(), rhs_s.as_str());
             return Ok(vm.obj_heap.alloc_string_instance(result.into()));
         }
@@ -96,7 +96,7 @@ impl ObjectString {
     string_cmp_op!(__le__, |a, b| a <= b, "le");
 
     pub fn __not__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?;
+        let s = vm.expect_type(vm.obj_heap.get_string_instance(receiver), receiver, "string")?;
         Ok(vm.obj_heap.alloc_bool_instance(s.is_empty()))
     }
 
@@ -107,7 +107,7 @@ impl ObjectString {
     native_a1!(__bool__, s: &ShrString, { !s.is_empty() });
 
     pub fn __hash__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?;
+        let s = vm.expect_type(vm.obj_heap.get_string_instance(receiver), receiver, "string")?;
         use std::hash::Hasher;
         let mut h = std::collections::hash_map::DefaultHasher::new();
         std::hash::Hash::hash(s.as_str(), &mut h);
@@ -115,13 +115,13 @@ impl ObjectString {
     }
 
     pub fn __int__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?;
+        let s = vm.expect_type(vm.obj_heap.get_string_instance(receiver), receiver, "string")?;
         let val: i64 = s.as_str().parse().map_err(|_| RuntimeErrorKind::BadIntResult("string"))?;
         Ok(vm.obj_heap.alloc_integer_instance(val))
     }
 
     pub fn __float__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?;
+        let s = vm.expect_type(vm.obj_heap.get_string_instance(receiver), receiver, "string")?;
         let val: f64 = s.as_str().parse().map_err(|_| RuntimeErrorKind::BadFloatResult("string"))?;
         Ok(vm.obj_heap.alloc_float_instance(val))
     }
@@ -140,7 +140,7 @@ impl ObjectString {
 
     /// `string.capitalize()` — first character uppercase, rest lowercase.
     pub fn capitalize(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?;
+        let s = vm.expect_type(vm.obj_heap.get_string_instance(receiver), receiver, "string")?;
         let mut chars = s.chars();
         match chars.next() {
             None => Ok(receiver),
@@ -156,7 +156,7 @@ impl ObjectString {
 
     /// `string.swapcase()` — swap the case of each character.
     pub fn swapcase(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?;
+        let s = vm.expect_type(vm.obj_heap.get_string_instance(receiver), receiver, "string")?;
         let result: String = s
             .chars()
             .map(|c| {
@@ -174,7 +174,7 @@ impl ObjectString {
 
     /// `string.title()` — title-case the string (first char of each word uppercase).
     pub fn title(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?;
+        let s = vm.expect_type(vm.obj_heap.get_string_instance(receiver), receiver, "string")?;
         let mut result = String::with_capacity(s.len());
         let mut new_word = true;
         for c in s.chars() {
@@ -193,19 +193,19 @@ impl ObjectString {
 
     /// `string.trim()` — remove leading and trailing whitespace.
     pub fn trim(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?;
+        let s = vm.expect_type(vm.obj_heap.get_string_instance(receiver), receiver, "string")?;
         Ok(vm.obj_heap.alloc_string_instance(s.trim().to_string().into()))
     }
 
     /// `string.trim_start()` — remove leading whitespace.
     pub fn trim_start(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?;
+        let s = vm.expect_type(vm.obj_heap.get_string_instance(receiver), receiver, "string")?;
         Ok(vm.obj_heap.alloc_string_instance(s.trim_start().to_string().into()))
     }
 
     /// `string.trim_end()` — remove trailing whitespace.
     pub fn trim_end(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?;
+        let s = vm.expect_type(vm.obj_heap.get_string_instance(receiver), receiver, "string")?;
         Ok(vm.obj_heap.alloc_string_instance(s.trim_end().to_string().into()))
     }
 
@@ -216,8 +216,8 @@ impl ObjectString {
 
     /// `string.split(delim)` — split the string by `delim` and return a list.
     pub fn split(vm: &mut VirtualMachine, receiver: ObjectHandle, delim_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?.clone();
-        let delim = vm.get_string_instance(delim_handle)?.clone();
+        let s = vm.expect_type(vm.obj_heap.get_string_instance(receiver), receiver, "string")?.clone();
+        let delim = vm.expect_type(vm.obj_heap.get_string_instance(delim_handle), delim_handle, "string")?.clone();
         let parts: Vec<ObjectHandle> =
             s.split(delim.as_str()).map(|part| vm.obj_heap.alloc_string_instance(part.to_string().into())).collect();
         Ok(vm.obj_heap.alloc_list_instance(parts))
@@ -227,8 +227,8 @@ impl ObjectString {
     /// Without a `maxsplit` argument this behaves identically to `split`
     /// (Python's `rsplit` only differs when `maxsplit` is given).
     pub fn rsplit(vm: &mut VirtualMachine, receiver: ObjectHandle, delim_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?.clone();
-        let delim = vm.get_string_instance(delim_handle)?.clone();
+        let s = vm.expect_type(vm.obj_heap.get_string_instance(receiver), receiver, "string")?.clone();
+        let delim = vm.expect_type(vm.obj_heap.get_string_instance(delim_handle), delim_handle, "string")?.clone();
         let parts: Vec<ObjectHandle> =
             s.split(delim.as_str()).map(|part| vm.obj_heap.alloc_string_instance(part.to_string().into())).collect();
         Ok(vm.obj_heap.alloc_list_instance(parts))
@@ -236,7 +236,7 @@ impl ObjectString {
 
     /// `string.splitlines()` — split on line boundaries, return a list.
     pub fn splitlines(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?.clone();
+        let s = vm.expect_type(vm.obj_heap.get_string_instance(receiver), receiver, "string")?.clone();
         let parts: Vec<ObjectHandle> = s.lines().map(|part| vm.obj_heap.alloc_string_instance(part.to_string().into())).collect();
         Ok(vm.obj_heap.alloc_list_instance(parts))
     }
@@ -244,8 +244,8 @@ impl ObjectString {
     /// `string.partition(sep)` — split at the first occurrence of `sep`, return
     /// a list of [before, sep, after]. If sep is not found, returns [string, "", ""].
     pub fn partition(vm: &mut VirtualMachine, receiver: ObjectHandle, sep_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?.clone();
-        let sep = vm.get_string_instance(sep_handle)?.clone();
+        let s = vm.expect_type(vm.obj_heap.get_string_instance(receiver), receiver, "string")?.clone();
+        let sep = vm.expect_type(vm.obj_heap.get_string_instance(sep_handle), sep_handle, "string")?.clone();
         let sep_str = sep.as_str();
         if let Some(idx) = s.find(sep_str) {
             let before = &s.as_str()[..idx];
@@ -265,8 +265,8 @@ impl ObjectString {
     /// `string.rpartition(sep)` — split at the last occurrence of `sep`, return
     /// a list of [before, sep, after]. If sep is not found, returns ["", "", string].
     pub fn rpartition(vm: &mut VirtualMachine, receiver: ObjectHandle, sep_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?.clone();
-        let sep = vm.get_string_instance(sep_handle)?.clone();
+        let s = vm.expect_type(vm.obj_heap.get_string_instance(receiver), receiver, "string")?.clone();
+        let sep = vm.expect_type(vm.obj_heap.get_string_instance(sep_handle), sep_handle, "string")?.clone();
         let sep_str = sep.as_str();
         if let Some(idx) = s.rfind(sep_str) {
             let before = &s.as_str()[..idx];
@@ -290,9 +290,9 @@ impl ObjectString {
         start_handle: ObjectHandle,
         length_handle: ObjectHandle,
     ) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?.clone();
-        let start = *vm.get_integer_instance(start_handle)?;
-        let length = *vm.get_integer_instance(length_handle)?;
+        let s = vm.expect_type(vm.obj_heap.get_string_instance(receiver), receiver, "string")?.clone();
+        let start = *vm.expect_type(vm.obj_heap.get_integer_instance(start_handle), start_handle, "int")?;
+        let length = *vm.expect_type(vm.obj_heap.get_integer_instance(length_handle), length_handle, "int")?;
         let s_str = s.as_str();
         let char_len = char_count(s_str) as i64;
 
@@ -347,8 +347,8 @@ impl ObjectString {
 
     /// `string.repeat(n)` — repeat the string `n` times.
     pub fn repeat(vm: &mut VirtualMachine, receiver: ObjectHandle, n_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?.clone();
-        let n = *vm.get_integer_instance(n_handle)?;
+        let s = vm.expect_type(vm.obj_heap.get_string_instance(receiver), receiver, "string")?.clone();
+        let n = *vm.expect_type(vm.obj_heap.get_integer_instance(n_handle), n_handle, "int")?;
         if n < 0 {
             return Err(RuntimeErrorKind::IndexOutOfRange(n, 0));
         }
@@ -368,9 +368,9 @@ impl ObjectString {
         width_handle: ObjectHandle,
         fillchar_handle: ObjectHandle,
     ) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?;
-        let width = *vm.get_integer_instance(width_handle)? as usize;
-        let fill_str = vm.get_string_instance(fillchar_handle)?;
+        let s = vm.expect_type(vm.obj_heap.get_string_instance(receiver), receiver, "string")?;
+        let width = *vm.expect_type(vm.obj_heap.get_integer_instance(width_handle), width_handle, "int")? as usize;
+        let fill_str = vm.expect_type(vm.obj_heap.get_string_instance(fillchar_handle), fillchar_handle, "string")?;
         let fill_char = fill_str.chars().next().unwrap_or(' ');
         let s_str = s.as_str();
         let s_char_len = char_count(s_str);
@@ -398,9 +398,9 @@ impl ObjectString {
         width_handle: ObjectHandle,
         fillchar_handle: ObjectHandle,
     ) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?;
-        let width = *vm.get_integer_instance(width_handle)? as usize;
-        let fill_str = vm.get_string_instance(fillchar_handle)?;
+        let s = vm.expect_type(vm.obj_heap.get_string_instance(receiver), receiver, "string")?;
+        let width = *vm.expect_type(vm.obj_heap.get_integer_instance(width_handle), width_handle, "int")? as usize;
+        let fill_str = vm.expect_type(vm.obj_heap.get_string_instance(fillchar_handle), fillchar_handle, "string")?;
         let fill_char = fill_str.chars().next().unwrap_or(' ');
         let s_str = s.as_str();
         let s_char_len = char_count(s_str);
@@ -424,9 +424,9 @@ impl ObjectString {
         width_handle: ObjectHandle,
         fillchar_handle: ObjectHandle,
     ) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?;
-        let width = *vm.get_integer_instance(width_handle)? as usize;
-        let fill_str = vm.get_string_instance(fillchar_handle)?;
+        let s = vm.expect_type(vm.obj_heap.get_string_instance(receiver), receiver, "string")?;
+        let width = *vm.expect_type(vm.obj_heap.get_integer_instance(width_handle), width_handle, "int")? as usize;
+        let fill_str = vm.expect_type(vm.obj_heap.get_string_instance(fillchar_handle), fillchar_handle, "string")?;
         let fill_char = fill_str.chars().next().unwrap_or(' ');
         let s_str = s.as_str();
         let s_char_len = char_count(s_str);
@@ -444,8 +444,8 @@ impl ObjectString {
 
     /// `string.zfill(width)` — pad the string on the left with zeros.
     pub fn zfill(vm: &mut VirtualMachine, receiver: ObjectHandle, width_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?.clone();
-        let width = *vm.get_integer_instance(width_handle)? as usize;
+        let s = vm.expect_type(vm.obj_heap.get_string_instance(receiver), receiver, "string")?.clone();
+        let width = *vm.expect_type(vm.obj_heap.get_integer_instance(width_handle), width_handle, "int")? as usize;
         let s_str = s.as_str();
         let s_char_len = char_count(s_str);
         if width <= s_char_len {
@@ -473,7 +473,7 @@ impl ObjectString {
     /// `string.is_lower()` — at least one cased character exists and all cased
     /// characters are lowercase.
     pub fn is_lower(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?;
+        let s = vm.expect_type(vm.obj_heap.get_string_instance(receiver), receiver, "string")?;
         let mut has_cased = false;
         for c in s.chars() {
             if c.is_uppercase() {
@@ -489,7 +489,7 @@ impl ObjectString {
     /// `string.is_upper()` — at least one cased character exists and all cased
     /// characters are uppercase.
     pub fn is_upper(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?;
+        let s = vm.expect_type(vm.obj_heap.get_string_instance(receiver), receiver, "string")?;
         let mut has_cased = false;
         for c in s.chars() {
             if c.is_lowercase() {
@@ -505,7 +505,7 @@ impl ObjectString {
     /// `string.is_title()` — the string is title-cased: each word starts with an
     /// uppercase character and the rest are lowercase.
     pub fn is_title(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?;
+        let s = vm.expect_type(vm.obj_heap.get_string_instance(receiver), receiver, "string")?;
         let mut has_cased = false;
         let mut new_word = true;
         for c in s.chars() {
@@ -537,8 +537,8 @@ impl ObjectString {
     }
 
     pub fn __getitem__(vm: &mut VirtualMachine, receiver: ObjectHandle, idx_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = vm.get_string_instance(receiver)?.clone();
-        let idx_val = *vm.get_integer_instance(idx_handle)?;
+        let s = vm.expect_type(vm.obj_heap.get_string_instance(receiver), receiver, "string")?.clone();
+        let idx_val = *vm.expect_type(vm.obj_heap.get_integer_instance(idx_handle), idx_handle, "int")?;
         let char_len = char_count(s.as_str());
         let idx = if idx_val < 0 { char_len as i64 + idx_val } else { idx_val };
         if idx < 0 || idx as usize >= char_len {
@@ -557,13 +557,13 @@ impl ObjectString {
 
     pub fn iter_next(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let (string_handle, byte_index) = {
-            let iter = vm.get_string_iter(receiver)?;
+            let iter = vm.expect_type(vm.obj_heap.get_string_iter(receiver), receiver, "string iterator")?;
             (iter.string_handle, iter.byte_index)
         };
         // Borrow the string immutably to extract the next character, then
         // drop the borrow before mutably updating byte_index in the iterator.
         let (char_str, char_len) = {
-            let s = vm.get_string_instance(string_handle)?;
+            let s = vm.expect_type(vm.obj_heap.get_string_instance(string_handle), string_handle, "string")?;
             let remaining = &s.as_str()[byte_index..];
             if let Some(ch) = remaining.chars().next() {
                 let cs: String = ch.into();
@@ -573,7 +573,8 @@ impl ObjectString {
                 return Ok(ObjectHandle::ITER_END);
             }
         };
-        let iter = vm.get_string_iter_mut(receiver)?;
+        let found = vm.value_type_name(receiver);
+        let iter = vm.obj_heap.get_string_iter_mut(receiver).ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "string iterator", found })?;
         iter.byte_index += char_len;
         Ok(vm.obj_heap.alloc_string_instance(char_str.into()))
     }

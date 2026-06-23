@@ -96,12 +96,12 @@ impl Socket {
 
         let addr = if let Some(&port_handle) = args.get(2) {
             // Two-arg form: connect("host", port)
-            let host = vm.get_string_instance(args[1])?.as_str().to_string();
-            let port = *vm.get_integer_instance(port_handle)?;
+            let host = vm.expect_type(vm.obj_heap.get_string_instance(args[1]), args[1], "string")?.as_str().to_string();
+            let port = *vm.expect_type(vm.obj_heap.get_integer_instance(port_handle), port_handle, "int")?;
             format!("{}:{}", host, port)
         } else {
             // One-arg form: connect("host:port")
-            vm.get_string_instance(args[1])?.as_str().to_string()
+            vm.expect_type(vm.obj_heap.get_string_instance(args[1]), args[1], "string")?.as_str().to_string()
         };
 
         let stream = TcpStream::connect(&addr).map_err(|e| RuntimeErrorKind::NetError(format!("cannot connect to '{}': {}", addr, e)))?;
@@ -114,9 +114,12 @@ impl Socket {
 
     /// `socket.send(data)` — send a string.
     fn send(vm: &mut VirtualMachine, receiver: ObjectHandle, data: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let text = vm.get_string_instance(data)?.clone();
+        let text = vm.expect_type(vm.obj_heap.get_string_instance(data), data, "string")?.clone();
+        let found = vm.value_type_name(receiver);
         let stream = vm
-            .get_native_mut::<Socket>(receiver)?
+            .obj_heap
+            .get_native_mut::<Socket>(receiver)
+            .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "native", found })?
             .stream
             .as_mut()
             .ok_or_else(|| RuntimeErrorKind::NetError("socket is closed".into()))?;
@@ -126,12 +129,15 @@ impl Socket {
 
     /// `socket.recv(bufsize)` — receive up to `bufsize` bytes, return as string.
     fn recv(vm: &mut VirtualMachine, receiver: ObjectHandle, bufsize: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let n = *vm.get_integer_instance(bufsize)?;
+        let n = *vm.expect_type(vm.obj_heap.get_integer_instance(bufsize), bufsize, "int")?;
         if n <= 0 || n > 65536 {
             return Err(RuntimeErrorKind::NetError(format!("recv: bufsize must be 1..65536, got {}", n)));
         }
+        let found = vm.value_type_name(receiver);
         let stream = vm
-            .get_native_mut::<Socket>(receiver)?
+            .obj_heap
+            .get_native_mut::<Socket>(receiver)
+            .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "native", found })?
             .stream
             .as_mut()
             .ok_or_else(|| RuntimeErrorKind::NetError("socket is closed".into()))?;
@@ -144,21 +150,23 @@ impl Socket {
 
     /// `socket.close()` — close the socket.
     fn close(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        vm.get_native_mut::<Socket>(receiver)?.stream = None;
+        let found = vm.value_type_name(receiver);
+        vm.obj_heap.get_native_mut::<Socket>(receiver).ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "native", found })?.stream = None;
         Ok(ObjectHandle::NIL)
     }
 
     /// `socket.settimeout(seconds)` — set the read timeout.
     fn settimeout(vm: &mut VirtualMachine, receiver: ObjectHandle, seconds: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let secs = if let Ok(v) = vm.get_float_instance(seconds) {
+        let secs = if let Some(v) = vm.obj_heap.get_float_instance(seconds) {
             *v
-        } else if let Ok(v) = vm.get_integer_instance(seconds) {
+        } else if let Some(v) = vm.obj_heap.get_integer_instance(seconds) {
             *v as f64
         } else {
             return Err(RuntimeErrorKind::UnexpectedType("number", vm.value_type_name(seconds)));
         };
         let dur = Duration::from_secs_f64(secs);
-        let data = vm.get_native_mut::<Socket>(receiver)?;
+        let found = vm.value_type_name(receiver);
+        let data = vm.obj_heap.get_native_mut::<Socket>(receiver).ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "native", found })?;
         if let Some(ref stream) = data.stream {
             stream.set_read_timeout(Some(dur)).map_err(|e| RuntimeErrorKind::NetError(format!("settimeout: {}", e)))?;
         }
@@ -193,15 +201,15 @@ impl Server {
 
         let addr = if explicit == 2 {
             // Two-arg form: bind(host, port)
-            let host = vm.get_string_instance(args[1])?.as_str().to_string();
-            let port = *vm.get_integer_instance(args[2])?;
+            let host = vm.expect_type(vm.obj_heap.get_string_instance(args[1]), args[1], "string")?.as_str().to_string();
+            let port = *vm.expect_type(vm.obj_heap.get_integer_instance(args[2]), args[2], "int")?;
             format!("{}:{}", host, port)
-        } else if let Ok(port) = vm.get_integer_instance(args[1]) {
+        } else if let Some(port) = vm.obj_heap.get_integer_instance(args[1]) {
             // One-arg: bind(port) → bind 0.0.0.0:port
             format!("0.0.0.0:{}", port)
         } else {
             // One-arg: bind("host:port")
-            vm.get_string_instance(args[1])?.as_str().to_string()
+            vm.expect_type(vm.obj_heap.get_string_instance(args[1]), args[1], "string")?.as_str().to_string()
         };
 
         let listener = TcpListener::bind(&addr).map_err(|e| RuntimeErrorKind::NetError(format!("cannot bind '{}': {}", addr, e)))?;
@@ -220,8 +228,11 @@ impl Server {
 
     /// `server.accept()` — accept a connection, return a Socket instance.
     fn accept(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+        let found = vm.value_type_name(receiver);
         let listener = vm
-            .get_native_mut::<Server>(receiver)?
+            .obj_heap
+            .get_native_mut::<Server>(receiver)
+            .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "native", found })?
             .listener
             .as_mut()
             .ok_or_else(|| RuntimeErrorKind::NetError("server is closed".into()))?;
@@ -238,7 +249,8 @@ impl Server {
 
     /// `server.close()` — close the listener.
     fn close(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        vm.get_native_mut::<Server>(receiver)?.listener = None;
+        let found = vm.value_type_name(receiver);
+        vm.obj_heap.get_native_mut::<Server>(receiver).ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "native", found })?.listener = None;
         Ok(ObjectHandle::NIL)
     }
 

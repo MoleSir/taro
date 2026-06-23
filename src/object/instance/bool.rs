@@ -44,13 +44,13 @@ impl ObjectBool {
 
     pub fn __add__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let lhs_val = Self::as_int(vm, lhs)?;
-        if let Ok(rhs) = vm.get_integer_instance(rhs) {
+        if let Some(rhs) = vm.obj_heap.get_integer_instance(rhs) {
             return Ok(vm.obj_heap.alloc_integer_instance(lhs_val.wrapping_add(*rhs)));
         }
-        if let Ok(rhs) = vm.get_float_instance(rhs) {
+        if let Some(rhs) = vm.obj_heap.get_float_instance(rhs) {
             return Ok(vm.obj_heap.alloc_float_instance(lhs_val as f64 + *rhs));
         }
-        if vm.get_bool_instance(rhs).is_ok() {
+        if vm.obj_heap.get_bool_instance(rhs).is_some() {
             let rhs_val = Self::as_int(vm, rhs)?;
             return Ok(vm.obj_heap.alloc_integer_instance(lhs_val.wrapping_add(rhs_val)));
         }
@@ -59,13 +59,13 @@ impl ObjectBool {
 
     pub fn __sub__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let lhs_val = Self::as_int(vm, lhs)?;
-        if let Ok(rhs) = vm.get_integer_instance(rhs) {
+        if let Some(rhs) = vm.obj_heap.get_integer_instance(rhs) {
             return Ok(vm.obj_heap.alloc_integer_instance(lhs_val.wrapping_sub(*rhs)));
         }
-        if let Ok(rhs) = vm.get_float_instance(rhs) {
+        if let Some(rhs) = vm.obj_heap.get_float_instance(rhs) {
             return Ok(vm.obj_heap.alloc_float_instance(lhs_val as f64 - *rhs));
         }
-        if vm.get_bool_instance(rhs).is_ok() {
+        if vm.obj_heap.get_bool_instance(rhs).is_some() {
             let rhs_val = Self::as_int(vm, rhs)?;
             return Ok(vm.obj_heap.alloc_integer_instance(lhs_val.wrapping_sub(rhs_val)));
         }
@@ -74,13 +74,13 @@ impl ObjectBool {
 
     pub fn __mul__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let lhs_val = Self::as_int(vm, lhs)?;
-        if let Ok(rhs) = vm.get_integer_instance(rhs) {
+        if let Some(rhs) = vm.obj_heap.get_integer_instance(rhs) {
             return Ok(vm.obj_heap.alloc_integer_instance(lhs_val.wrapping_mul(*rhs)));
         }
-        if let Ok(rhs) = vm.get_float_instance(rhs) {
+        if let Some(rhs) = vm.obj_heap.get_float_instance(rhs) {
             return Ok(vm.obj_heap.alloc_float_instance(lhs_val as f64 * *rhs));
         }
-        if vm.get_bool_instance(rhs).is_ok() {
+        if vm.obj_heap.get_bool_instance(rhs).is_some() {
             let rhs_val = Self::as_int(vm, rhs)?;
             return Ok(vm.obj_heap.alloc_integer_instance(lhs_val.wrapping_mul(rhs_val)));
         }
@@ -89,19 +89,19 @@ impl ObjectBool {
 
     pub fn __div__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let lhs_val = Self::as_int(vm, lhs)? as f64;
-        if let Ok(rhs) = vm.get_integer_instance(rhs) {
+        if let Some(rhs) = vm.obj_heap.get_integer_instance(rhs) {
             if *rhs == 0 {
                 return Err(RuntimeErrorKind::DivideByZero);
             }
             return Ok(vm.obj_heap.alloc_float_instance(lhs_val / *rhs as f64));
         }
-        if let Ok(rhs) = vm.get_float_instance(rhs) {
+        if let Some(rhs) = vm.obj_heap.get_float_instance(rhs) {
             if *rhs == 0.0 {
                 return Err(RuntimeErrorKind::DivideByZero);
             }
             return Ok(vm.obj_heap.alloc_float_instance(lhs_val / *rhs));
         }
-        if vm.get_bool_instance(rhs).is_ok() {
+        if vm.obj_heap.get_bool_instance(rhs).is_some() {
             let rhs_val = Self::as_int(vm, rhs)?;
             if rhs_val == 0 {
                 return Err(RuntimeErrorKind::DivideByZero);
@@ -113,19 +113,19 @@ impl ObjectBool {
 
     pub fn __floordiv__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let lhs_val = Self::as_int(vm, lhs)?;
-        if let Ok(rhs) = vm.get_integer_instance(rhs) {
+        if let Some(rhs) = vm.obj_heap.get_integer_instance(rhs) {
             if *rhs == 0 {
                 return Err(RuntimeErrorKind::DivideByZero);
             }
             return Ok(vm.obj_heap.alloc_integer_instance(i64::wrapping_div_euclid(lhs_val, *rhs)));
         }
-        if let Ok(rhs) = vm.get_float_instance(rhs) {
+        if let Some(rhs) = vm.obj_heap.get_float_instance(rhs) {
             if *rhs == 0.0 {
                 return Err(RuntimeErrorKind::DivideByZero);
             }
             return Ok(vm.obj_heap.alloc_float_instance((lhs_val as f64 / *rhs).floor()));
         }
-        if vm.get_bool_instance(rhs).is_ok() {
+        if vm.obj_heap.get_bool_instance(rhs).is_some() {
             let rhs_val = Self::as_int(vm, rhs)?;
             if rhs_val == 0 {
                 return Err(RuntimeErrorKind::DivideByZero);
@@ -137,19 +137,19 @@ impl ObjectBool {
 
     pub fn __mod__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let lhs_val = Self::as_int(vm, lhs)?;
-        if let Ok(rhs) = vm.get_integer_instance(rhs) {
+        if let Some(rhs) = vm.obj_heap.get_integer_instance(rhs) {
             if *rhs == 0 {
                 return Err(RuntimeErrorKind::DivideByZero);
             }
             return Ok(vm.obj_heap.alloc_integer_instance(i64::wrapping_rem_euclid(lhs_val, *rhs)));
         }
-        if let Ok(rhs) = vm.get_float_instance(rhs) {
+        if let Some(rhs) = vm.obj_heap.get_float_instance(rhs) {
             if *rhs == 0.0 {
                 return Err(RuntimeErrorKind::DivideByZero);
             }
             return Ok(vm.obj_heap.alloc_float_instance((lhs_val as f64).rem_euclid(*rhs)));
         }
-        if vm.get_bool_instance(rhs).is_ok() {
+        if vm.obj_heap.get_bool_instance(rhs).is_some() {
             let rhs_val = Self::as_int(vm, rhs)?;
             if rhs_val == 0 {
                 return Err(RuntimeErrorKind::DivideByZero);
@@ -162,15 +162,15 @@ impl ObjectBool {
     // ---- comparison ----
 
     pub fn __eq__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let lhs_val = *vm.get_bool_instance(lhs)?;
-        if let Ok(rhs) = vm.get_bool_instance(rhs) {
+        let lhs_val = *vm.expect_type(vm.obj_heap.get_bool_instance(lhs), lhs, "bool")?;
+        if let Some(rhs) = vm.obj_heap.get_bool_instance(rhs) {
             return Ok(vm.obj_heap.alloc_bool_instance(lhs_val == *rhs));
         }
         let lhs_int = if lhs_val { 1i64 } else { 0 };
-        if let Ok(rhs) = vm.get_integer_instance(rhs) {
+        if let Some(rhs) = vm.obj_heap.get_integer_instance(rhs) {
             return Ok(vm.obj_heap.alloc_bool_instance(lhs_int == *rhs));
         }
-        if let Ok(rhs) = vm.get_float_instance(rhs) {
+        if let Some(rhs) = vm.obj_heap.get_float_instance(rhs) {
             return Ok(vm.obj_heap.alloc_bool_instance(lhs_int as f64 == *rhs));
         }
         Ok(vm.obj_heap.alloc_bool_instance(false))
@@ -178,65 +178,65 @@ impl ObjectBool {
 
     pub fn __ne__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let eq = Self::__eq__(vm, lhs, rhs)?;
-        let b = vm.get_bool_instance_mut(eq).expect("must return bool");
+        let b = vm.obj_heap.get_bool_instance_mut(eq).expect("must return bool");
         *b = !*b;
         Ok(eq)
     }
 
     pub fn __gt__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let lhs_int = Self::as_int(vm, lhs)?;
-        if let Ok(rhs) = vm.get_bool_instance(rhs) {
+        if let Some(rhs) = vm.obj_heap.get_bool_instance(rhs) {
             return Ok(vm.obj_heap.alloc_bool_instance(lhs_int > (if *rhs { 1 } else { 0 })));
         }
-        if let Ok(rhs) = vm.get_integer_instance(rhs) {
+        if let Some(rhs) = vm.obj_heap.get_integer_instance(rhs) {
             return Ok(vm.obj_heap.alloc_bool_instance(lhs_int > *rhs));
         }
-        if let Ok(rhs) = vm.get_float_instance(rhs) {
+        if let Some(rhs) = vm.obj_heap.get_float_instance(rhs) {
             return Ok(vm.obj_heap.alloc_bool_instance(lhs_int as f64 > *rhs));
         }
         Err(RuntimeErrorKind::BinaryOpTypeMismatch("gt", "bool", vm.value_type_name(rhs)))
     }
 
     pub fn __ge__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let lhs_val = *vm.get_bool_instance(lhs)?;
+        let lhs_val = *vm.expect_type(vm.obj_heap.get_bool_instance(lhs), lhs, "bool")?;
         let lhs_int = if lhs_val { 1i64 } else { 0 };
-        if let Ok(rhs_val) = vm.get_bool_instance(rhs) {
+        if let Some(rhs_val) = vm.obj_heap.get_bool_instance(rhs) {
             return Ok(vm.obj_heap.alloc_bool_instance(lhs_int >= (if *rhs_val { 1 } else { 0 })));
         }
-        if let Ok(rhs_val) = vm.get_integer_instance(rhs) {
+        if let Some(rhs_val) = vm.obj_heap.get_integer_instance(rhs) {
             return Ok(vm.obj_heap.alloc_bool_instance(lhs_int >= *rhs_val));
         }
-        if let Ok(rhs_val) = vm.get_float_instance(rhs) {
+        if let Some(rhs_val) = vm.obj_heap.get_float_instance(rhs) {
             return Ok(vm.obj_heap.alloc_bool_instance(lhs_int as f64 >= *rhs_val));
         }
         Err(RuntimeErrorKind::BinaryOpTypeMismatch("ge", "bool", vm.value_type_name(rhs)))
     }
 
     pub fn __lt__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let lhs_val = *vm.get_bool_instance(lhs)?;
+        let lhs_val = *vm.expect_type(vm.obj_heap.get_bool_instance(lhs), lhs, "bool")?;
         let lhs_int = if lhs_val { 1i64 } else { 0 };
-        if let Ok(rhs_val) = vm.get_bool_instance(rhs) {
+        if let Some(rhs_val) = vm.obj_heap.get_bool_instance(rhs) {
             return Ok(vm.obj_heap.alloc_bool_instance(lhs_int < (if *rhs_val { 1 } else { 0 })));
         }
-        if let Ok(rhs_val) = vm.get_integer_instance(rhs) {
+        if let Some(rhs_val) = vm.obj_heap.get_integer_instance(rhs) {
             return Ok(vm.obj_heap.alloc_bool_instance(lhs_int < *rhs_val));
         }
-        if let Ok(rhs_val) = vm.get_float_instance(rhs) {
+        if let Some(rhs_val) = vm.obj_heap.get_float_instance(rhs) {
             return Ok(vm.obj_heap.alloc_bool_instance((lhs_int as f64) < *rhs_val));
         }
         Err(RuntimeErrorKind::BinaryOpTypeMismatch("lt", "bool", vm.value_type_name(rhs)))
     }
 
     pub fn __le__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let lhs_val = *vm.get_bool_instance(lhs)?;
+        let lhs_val = *vm.expect_type(vm.obj_heap.get_bool_instance(lhs), lhs, "bool")?;
         let lhs_int = if lhs_val { 1i64 } else { 0 };
-        if let Ok(rhs_val) = vm.get_bool_instance(rhs) {
+        if let Some(rhs_val) = vm.obj_heap.get_bool_instance(rhs) {
             return Ok(vm.obj_heap.alloc_bool_instance(lhs_int <= (if *rhs_val { 1 } else { 0 })));
         }
-        if let Ok(rhs_val) = vm.get_integer_instance(rhs) {
+        if let Some(rhs_val) = vm.obj_heap.get_integer_instance(rhs) {
             return Ok(vm.obj_heap.alloc_bool_instance(lhs_int <= *rhs_val));
         }
-        if let Ok(rhs_val) = vm.get_float_instance(rhs) {
+        if let Some(rhs_val) = vm.obj_heap.get_float_instance(rhs) {
             return Ok(vm.obj_heap.alloc_bool_instance(lhs_int as f64 <= *rhs_val));
         }
         Err(RuntimeErrorKind::BinaryOpTypeMismatch("le", "bool", vm.value_type_name(rhs)))
@@ -245,7 +245,7 @@ impl ObjectBool {
     // ---- conversion ----
 
     pub fn __str__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let val = *vm.get_bool_instance(receiver)?;
+        let val = *vm.expect_type(vm.obj_heap.get_bool_instance(receiver), receiver, "bool")?;
         Ok(vm.obj_heap.alloc_string_instance(if val { crate::ShrString::from("true") } else { crate::ShrString::from("false") }))
     }
 
@@ -254,17 +254,17 @@ impl ObjectBool {
     }
 
     pub fn __hash__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let val = *vm.get_bool_instance(receiver)?;
+        let val = *vm.expect_type(vm.obj_heap.get_bool_instance(receiver), receiver, "bool")?;
         Ok(vm.obj_heap.alloc_integer_instance(if val { 1 } else { 0 }))
     }
 
     pub fn __int__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let val = *vm.get_bool_instance(receiver)?;
+        let val = *vm.expect_type(vm.obj_heap.get_bool_instance(receiver), receiver, "bool")?;
         Ok(vm.obj_heap.alloc_integer_instance(if val { 1 } else { 0 }))
     }
 
     pub fn __float__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let val = *vm.get_bool_instance(receiver)?;
+        let val = *vm.expect_type(vm.obj_heap.get_bool_instance(receiver), receiver, "bool")?;
         Ok(vm.obj_heap.alloc_float_instance(if val { 1.0 } else { 0.0 }))
     }
 }

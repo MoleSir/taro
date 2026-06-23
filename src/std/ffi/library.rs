@@ -26,7 +26,7 @@ impl_object_instance_data!(LibraryHandle, "LibraryHandle");
 // ===========================================================================
 
 pub(super) fn dlopen(vm: &mut VirtualMachine, path: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-    let path_str = vm.get_string_instance(path)?;
+    let path_str = vm.expect_type(vm.obj_heap.get_string_instance(path), path, "string")?;
     let lib = unsafe { libloading::Library::new(path_str.as_str()) }.map_err(|e| RuntimeErrorKind::FfiError(format!("dlopen: {e}")))?;
 
     let lib_handle = LibraryHandle::new(lib);
@@ -35,7 +35,7 @@ pub(super) fn dlopen(vm: &mut VirtualMachine, path: ObjectHandle) -> RuntimeResu
 }
 
 pub(super) fn dlsym(vm: &mut VirtualMachine, library_handle: ObjectHandle, name: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-    let name_str = vm.get_string_instance(name)?;
+    let name_str = vm.expect_type(vm.obj_heap.get_string_instance(name), name, "string")?;
     let lib = vm
         .obj_heap
         .get_native::<LibraryHandle>(library_handle)

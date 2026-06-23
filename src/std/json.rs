@@ -178,7 +178,7 @@ fn encode_json_string(s: &str, out: &mut String) {
 ///   array  → List
 ///   object → Dict (string keys)
 fn decode(vm: &mut VirtualMachine, text: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-    let s = vm.get_string_instance(text)?;
+    let s = vm.expect_type(vm.obj_heap.get_string_instance(text), text, "string")?;
 
     let value: serde_json::Value =
         serde_json::from_str(s.as_str()).map_err(|e| RuntimeErrorKind::JosnError(format!("json.decode: {e}")))?;

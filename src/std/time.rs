@@ -47,9 +47,9 @@ fn time(vm: &mut VirtualMachine) -> RuntimeResult<ObjectHandle> {
 
 /// `time.sleep(secs)` — pause execution for `secs` seconds (may be fractional).
 fn sleep(vm: &mut VirtualMachine, secs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-    let s = if let Ok(v) = vm.get_float_instance(secs) {
+    let s = if let Some(v) = vm.obj_heap.get_float_instance(secs) {
         *v
-    } else if let Ok(v) = vm.get_integer_instance(secs) {
+    } else if let Some(v) = vm.obj_heap.get_integer_instance(secs) {
         *v as f64
     } else {
         return Err(RuntimeErrorKind::UnexpectedType("number", vm.value_type_name(secs)));

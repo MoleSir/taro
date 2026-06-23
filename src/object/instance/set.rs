@@ -90,7 +90,7 @@ impl ObjectSet {
         let hash = vm.__hash__(item)?;
 
         let mut bucket = {
-            let entries = vm.get_set_instance(receiver)?;
+            let entries = vm.expect_type(vm.obj_heap.get_set_instance(receiver), receiver, "set")?;
             entries.get(&hash).cloned().unwrap_or_default()
         };
 
@@ -102,7 +102,8 @@ impl ObjectSet {
         }
         bucket.push(item);
 
-        let inst = vm.get_instance_mut(receiver)?;
+        let found = vm.value_type_name(receiver);
+        let inst = vm.obj_heap.get_instance_mut(receiver).ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "instance", found })?;
         if let Some(set) = inst.data.as_any_mut().downcast_mut::<ObjectSet>() {
             let entries = &mut set.entries;
             entries.insert(hash, bucket);
@@ -115,7 +116,7 @@ impl ObjectSet {
         let hash = vm.__hash__(item)?;
 
         let mut bucket = {
-            let entries = vm.get_set_instance(receiver)?;
+            let entries = vm.expect_type(vm.obj_heap.get_set_instance(receiver), receiver, "set")?;
             entries.get(&hash).cloned().unwrap_or_default()
         };
 
@@ -131,7 +132,8 @@ impl ObjectSet {
         match found_idx {
             Some(idx) => {
                 let removed = bucket.remove(idx);
-                let inst = vm.get_instance_mut(receiver)?;
+                let found = vm.value_type_name(receiver);
+        let inst = vm.obj_heap.get_instance_mut(receiver).ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "instance", found })?;
                 if let Some(set) = inst.data.as_any_mut().downcast_mut::<ObjectSet>() {
                     let entries = &mut set.entries;
                     if bucket.is_empty() {
@@ -151,7 +153,7 @@ impl ObjectSet {
         let hash = vm.__hash__(item)?;
 
         let bucket = {
-            let entries = vm.get_set_instance(receiver)?;
+            let entries = vm.expect_type(vm.obj_heap.get_set_instance(receiver), receiver, "set")?;
             entries.get(&hash).cloned().unwrap_or_default()
         };
 
@@ -167,7 +169,7 @@ impl ObjectSet {
     // ---- magic methods ----
 
     pub fn __str__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let all_items: Vec<ObjectHandle> = vm.get_set_instance(receiver)?.values().flat_map(|b| b.iter().copied()).collect();
+        let all_items: Vec<ObjectHandle> = vm.expect_type(vm.obj_heap.get_set_instance(receiver), receiver, "set")?.values().flat_map(|b| b.iter().copied()).collect();
 
         let mut result = String::from("{");
         let mut first = true;
@@ -191,12 +193,13 @@ impl ObjectSet {
     // ---- iteration protocol ----
 
     pub fn __iter__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let items: Vec<ObjectHandle> = vm.get_set_instance(receiver)?.values().flat_map(|b| b.iter().copied()).collect();
+        let items: Vec<ObjectHandle> = vm.expect_type(vm.obj_heap.get_set_instance(receiver), receiver, "set")?.values().flat_map(|b| b.iter().copied()).collect();
         Ok(vm.obj_heap.alloc_instance(vm.obj_heap.set_iter_class, ObjectSetIterator::new(items)))
     }
 
     pub fn iter_next(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let iter = vm.get_set_iter_mut(receiver)?;
+        let found = vm.value_type_name(receiver);
+        let iter = vm.obj_heap.get_set_iter_mut(receiver).ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "set iterator", found })?;
         if iter.index < iter.items.len() {
             let item = iter.items[iter.index];
             iter.index += 1;

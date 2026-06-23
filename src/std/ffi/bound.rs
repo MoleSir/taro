@@ -87,7 +87,7 @@ pub(super) fn bind(
     vm: &mut VirtualMachine, library_handle: ObjectHandle, name: ObjectHandle, ret_type_handle: ObjectHandle, arg_types_list: ObjectHandle,
 ) -> RuntimeResult<ObjectHandle> {
     // --- Resolve function pointer ---
-    let name_str = vm.get_string_instance(name)?;
+    let name_str = vm.expect_type(vm.obj_heap.get_string_instance(name), name, "string")?;
     let lib = vm
         .obj_heap
         .get_native::<super::library::LibraryHandle>(library_handle)
@@ -102,13 +102,13 @@ pub(super) fn bind(
     };
 
     // --- Parse return type ---
-    let ret_type_str = vm.get_string_instance(ret_type_handle)?.as_str().to_string();
+    let ret_type_str = vm.expect_type(vm.obj_heap.get_string_instance(ret_type_handle), ret_type_handle, "string")?.as_str().to_string();
     let ret_type = CType::from_str(&ret_type_str)?;
 
     // --- Parse argument types ---
     let arg_type_handles = vm
-        .get_list_instance(arg_types_list)
-        .map_err(|_| RuntimeErrorKind::FfiError("bind: argument types must be a list".into()))?;
+        .obj_heap.get_list_instance(arg_types_list)
+        .ok_or_else(|| RuntimeErrorKind::FfiError("bind: argument types must be a list".into()))?;
     let arg_types: Vec<CType> = arg_type_handles.iter().map(|&h| CType::from_handle(vm, h)).collect::<RuntimeResult<_>>()?;
 
     // --- Build CIF once ---

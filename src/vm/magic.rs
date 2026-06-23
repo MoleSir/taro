@@ -14,10 +14,10 @@ impl VirtualMachine {
         method_name: &'static str,
         args: &[ObjectHandle],
     ) -> RuntimeResult<ObjectHandle> {
-        let class_handle = self.get_instance(receiver)?.class;
+        let class_handle = self.expect_type(self.obj_heap.get_instance(receiver), receiver, "instance")?.class;
 
         let method = {
-            let class = self.get_class(class_handle)?;
+            let class = self.expect_type(self.obj_heap.get_class(class_handle), class_handle, "class")?;
             class
                 .methods
                 .get(method_name)
@@ -49,9 +49,9 @@ impl VirtualMachine {
     /// `arg_count` is the number of explicit arguments (the N in `callee(a1..aN)`),
     /// so the stack has `arg_count + 1` items belonging to this call.
     pub fn __call__(&mut self, callee: ObjectHandle, arg_count: usize) -> RuntimeResult<()> {
-        let instance = self.get_instance(callee).map_err(|_| RuntimeErrorKind::CanNotCall(self.value_type_name(callee)))?;
+        let instance = self.obj_heap.get_instance(callee).ok_or_else(|| RuntimeErrorKind::CanNotCall(self.value_type_name(callee)))?;
         let method = {
-            let class = self.get_class(instance.class)?;
+            let class = self.expect_type(self.obj_heap.get_class(instance.class), instance.class, "class")?;
             class
                 .methods
                 .get("__call__")
@@ -293,8 +293,8 @@ impl VirtualMachine {
                         .ok_or_else(|| RuntimeErrorKind::BadStrResult(self.value_type_name(result)).into()),
                     Err(RuntimeErrorKind::NoImplementMethod(_, _)) => {
                         // Default representation for instances without __str__.
-                        let class_handle = self.get_instance(handle)?.class;
-                        let class = self.get_class(class_handle)?;
+                        let class_handle = self.expect_type(self.obj_heap.get_instance(handle), handle, "instance")?.class;
+                        let class = self.expect_type(self.obj_heap.get_class(class_handle), class_handle, "class")?;
                         Ok(format_shr!("<instance of {}>", class.name))
                     }
                     Err(other) => Err(other),

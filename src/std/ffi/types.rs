@@ -114,7 +114,7 @@ impl CType {
     pub(super) fn from_handle(vm: &VirtualMachine, handle: ObjectHandle) -> RuntimeResult<Self> {
         if let Some(def) = vm.obj_heap.get_native::<super::structs::StructDef>(handle) {
             Ok(CType::Struct(def.field_types.clone()))
-        } else if let Ok(s) = vm.get_string_instance(handle) {
+        } else if let Some(s) = vm.obj_heap.get_string_instance(handle) {
             CType::from_str(s.as_str())
         } else {
             Err(RuntimeErrorKind::FfiError(format!("expected type string or struct def, got {}", vm.value_type_name(handle))))
@@ -144,17 +144,17 @@ impl CType {
                 Ok(CValue::F64(v))
             }
             CType::Pointer => {
-                let v = vm.get_integer_instance(handle).copied()?;
+                let v = vm.expect_type(vm.obj_heap.get_integer_instance(handle), handle, "int").copied()?;
                 Ok(CValue::Pointer(v as *const c_void))
             }
             CType::CString => {
-                let s = vm.get_string_instance(handle)?;
+                let s = vm.expect_type(vm.obj_heap.get_string_instance(handle), handle, "string")?;
                 let cs = CString::new(s.as_str()).map_err(|e| RuntimeErrorKind::FfiError(format!("CString error: {e}")))?;
                 let ptr: *const c_char = cs.as_ptr();
                 Ok(CValue::CString { _cstring: cs, ptr })
             }
             CType::Bool => {
-                let v = vm.get_bool_instance(handle).copied()?;
+                let v = vm.expect_type(vm.obj_heap.get_bool_instance(handle), handle, "bool").copied()?;
                 Ok(CValue::Bool(if v { 1u8 } else { 0u8 }))
             }
             CType::Void => Err(RuntimeErrorKind::FfiError("cannot marshal void as argument".into())),
@@ -194,12 +194,12 @@ impl CType {
     pub(super) fn write_to_buffer(&self, vm: &VirtualMachine, handle: ObjectHandle, buf: &mut [u8]) -> RuntimeResult<()> {
         match self {
             CType::I8 | CType::U8 | CType::Bool => {
-                let v = vm.get_integer_instance(handle).copied()? as i8;
+                let v = vm.expect_type(vm.obj_heap.get_integer_instance(handle), handle, "int").copied()? as i8;
                 buf[0] = v.to_ne_bytes()[0];
                 Ok(())
             }
             CType::I16 | CType::U16 => {
-                let v = vm.get_integer_instance(handle).copied()? as i16;
+                let v = vm.expect_type(vm.obj_heap.get_integer_instance(handle), handle, "int").copied()? as i16;
                 buf[..2].copy_from_slice(&v.to_ne_bytes());
                 Ok(())
             }
@@ -208,7 +208,7 @@ impl CType {
                     let v = as_f64(vm, handle)? as f32;
                     buf[..4].copy_from_slice(&v.to_ne_bytes());
                 } else {
-                    let v = vm.get_integer_instance(handle).copied()? as i32;
+                    let v = vm.expect_type(vm.obj_heap.get_integer_instance(handle), handle, "int").copied()? as i32;
                     buf[..4].copy_from_slice(&v.to_ne_bytes());
                 }
                 Ok(())
@@ -218,7 +218,7 @@ impl CType {
                     let v = as_f64(vm, handle)?;
                     buf[..8].copy_from_slice(&v.to_ne_bytes());
                 } else {
-                    let v = vm.get_integer_instance(handle).copied()?;
+                    let v = vm.expect_type(vm.obj_heap.get_integer_instance(handle), handle, "int").copied()?;
                     buf[..8].copy_from_slice(&v.to_ne_bytes());
                 }
                 Ok(())
@@ -376,15 +376,15 @@ fn int_to_cvalue<F>(vm: &VirtualMachine, handle: ObjectHandle, f: F) -> RuntimeR
 where
     F: FnOnce(i64) -> CValue,
 {
-    let v = vm.get_integer_instance(handle).copied()?;
+    let v = vm.expect_type(vm.obj_heap.get_integer_instance(handle), handle, "int").copied()?;
     Ok(f(v))
 }
 
 /// Convert a Taro value to `f64`, accepting both integer and float instances.
 pub(super) fn as_f64(vm: &VirtualMachine, handle: ObjectHandle) -> RuntimeResult<f64> {
-    if let Ok(v) = vm.get_integer_instance(handle) {
+    if let Some(v) = vm.obj_heap.get_integer_instance(handle) {
         Ok(*v as f64)
-    } else if let Ok(v) = vm.get_float_instance(handle) {
+    } else if let Some(v) = vm.obj_heap.get_float_instance(handle) {
         Ok(*v)
     } else {
         Err(RuntimeErrorKind::FfiError(format!("expected number, got {}", vm.value_type_name(handle))))

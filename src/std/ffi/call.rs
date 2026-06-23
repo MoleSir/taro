@@ -71,10 +71,10 @@ pub(super) fn ffi_call(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> Runtim
         return Err(RuntimeErrorKind::FfiError("ffi.call(func_ptr, ret_type, arg_types, args) — need at least 3 arguments".into()));
     }
 
-    let func_ptr = vm.get_integer_instance(args[0]).copied()?;
-    let ret_type = vm.get_string_instance(args[1])?.as_str().to_string();
-    let arg_types_list: Vec<ObjectHandle> = vm.get_list_instance(args[2])?.clone();
-    let arg_values: Vec<ObjectHandle> = if args.len() > 3 { vm.get_list_instance(args[3])?.clone() } else { vec![] };
+    let func_ptr = vm.expect_type(vm.obj_heap.get_integer_instance(args[0]), args[0], "int").copied()?;
+    let ret_type = vm.expect_type(vm.obj_heap.get_string_instance(args[1]), args[1], "string")?.as_str().to_string();
+    let arg_types_list: Vec<ObjectHandle> = vm.expect_type(vm.obj_heap.get_list_instance(args[2]), args[2], "list")?.clone();
+    let arg_values: Vec<ObjectHandle> = if args.len() > 3 { vm.expect_type(vm.obj_heap.get_list_instance(args[3]), args[3], "list")?.clone() } else { vec![] };
 
     ffi_call_impl(vm, func_ptr, &ret_type, &arg_types_list, &arg_values)
 }
