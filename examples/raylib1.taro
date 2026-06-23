@@ -1,6 +1,6 @@
 import "std/ffi";
 
-var lib = ffi.DynLibrary("examples/libraylib.so.6.0.0");
+var lib = ffi.CDynLib("examples/libraylib.so.6.0.0");
 
 // ==========================================
 // 1. 结构体定义

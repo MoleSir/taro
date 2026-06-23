@@ -1,0 +1,114 @@
+import "std/ffi";
+
+var lib = ffi.CDynLib("examples/libraylib.so.6.0.0");
+
+// ==========================================
+// 1. 结构体定义
+// ==========================================
+var Color     = ffi.define_struct([["r", "uint8"], ["g", "uint8"], ["b", "uint8"], ["a", "uint8"]]);
+var Vector2   = ffi.define_struct([["x", "float"], ["y", "float"]]);
+var Rectangle = ffi.define_struct([["x", "float"], ["y", "float"], ["width", "float"], ["height", "float"]]);
+
+var Camera2D  = ffi.define_struct([
+    ["offset", Vector2],
+    ["target", Vector2],
+    ["rotation", "float"],
+    ["zoom", "float"]
+]);
+
+// ==========================================
+// 2. FFI 绑定
+// ==========================================
+var init_window          = lib.bind("InitWindow", "void", ["int32", "int32", "cstring"]);
+var close_window         = lib.bind("CloseWindow", "void", []);
+var window_should_close  = lib.bind("WindowShouldClose", "bool", []);
+var set_target_fps       = lib.bind("SetTargetFPS", "void", ["int32"]);
+var begin_drawing        = lib.bind("BeginDrawing", "void", []);
+var end_drawing          = lib.bind("EndDrawing", "void", []);
+var clear_background     = lib.bind("ClearBackground", "void", [Color]);
+var draw_text            = lib.bind("DrawText", "void", ["cstring", "int32", "int32", "int32", Color]);
+
+var begin_mode_2d        = lib.bind("BeginMode2D", "void", [Camera2D]);
+var end_mode_2d          = lib.bind("EndMode2D", "void", []);
+var draw_circle_v        = lib.bind("DrawCircleV", "void", [Vector2, "float", Color]);
+var draw_line            = lib.bind("DrawLine", "void", ["int32", "int32", "int32", "int32", Color]);
+
+var is_mouse_button_down = lib.bind("IsMouseButtonDown", "bool", ["int32"]);
+var get_mouse_wheel_move = lib.bind("GetMouseWheelMove", "float", []);
+
+var get_mouse_delta        = lib.bind("GetMouseDelta", Vector2, []);
+var get_mouse_position     = lib.bind("GetMousePosition", Vector2, []);
+var get_screen_to_world_2d = lib.bind("GetScreenToWorld2D", Vector2, [Vector2, Camera2D]);
+
+// ==========================================
+// 3. 初始设置
+// ==========================================
+init_window(800, 600, "Taro FFI: Infinite Panning Camera (Struct Return Test)");
+set_target_fps(60);
+
+var MOUSE_BUTTON_RIGHT = 1;
+var bg_color    = Color(40, 40, 40, 255);
+var grid_color  = Color(80, 80, 80, 255);
+var point_color = Color(255, 109, 194, 255);
+var text_color  = Color(200, 200, 200, 255);
+
+// 初始化 2D 摄像机
+var camera = Camera2D(
+    Vector2(400.0, 300.0), // offset: 屏幕中心
+    Vector2(0.0, 0.0),     // target: 看向世界原点
+    0.0,                   // rotation: 不旋转
+    1.0                    // zoom: 初始缩放为 1倍
+);
+
+// ==========================================
+// 4. 主循环
+// ==========================================
+while !window_should_close() {
+    
+    // --- 逻辑更新 ---
+    
+    // 1. 鼠标滚轮控制缩放 (修改结构体内部属性)
+    var wheel = get_mouse_wheel_move();
+    if wheel != 0.0 {
+        camera.zoom = camera.zoom + (wheel * 0.1);
+        // 限制缩放范围
+        if camera.zoom < 0.1 { camera.zoom = 0.1; }
+        if camera.zoom > 5.0 { camera.zoom = 5.0; }
+    }
+
+    // 2. 右键拖拽平移画布
+    if is_mouse_button_down(MOUSE_BUTTON_RIGHT) {
+        var delta = get_mouse_delta();
+        
+        // 动态修改嵌套结构体的值
+        camera.target.x = camera.target.x - (delta.x / camera.zoom);
+        camera.target.y = camera.target.y - (delta.y / camera.zoom);
+    }
+
+    var mouse_pos = get_mouse_position();
+    var world_pos = get_screen_to_world_2d(mouse_pos, camera);
+
+    // --- 渲染 ---
+    begin_drawing();
+    clear_background(bg_color);
+
+    begin_mode_2d(camera);
+        // 在世界原点画一个大十字准星
+        draw_line(int(-1000.0), 0, int(1000.0), 0, grid_color);
+        draw_line(0, int(-1000.0), 0, int(1000.0), grid_color);
+
+        // 使用 DrawCircleV 直接传入 Vector2 绘制鼠标在世界中的真实投影位置
+        draw_circle_v(world_pos, 5.0, point_color);
+    end_mode_2d();
+
+    // UI 绘制 (不受摄像机缩放平移影响)
+    draw_text("Right Click & Drag to PAN", 10, 10, 20, text_color);
+    draw_text("Mouse Wheel to ZOOM", 10, 40, 20, text_color);
+    
+    // 你甚至可以在这里打印出解析到的世界坐标，验证结构体返回是否正确
+    // print(world_pos.x, world_pos.y);
+
+    end_drawing();
+}
+
+close_window();

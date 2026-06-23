@@ -26,12 +26,12 @@ impl CSymbol {
     }
 }
 
-pub(super) struct DynLibrary {
+pub(super) struct CDynLib {
     pub(super) lib: libloading::Library,
 }
-impl_object_instance_data!(DynLibrary, "DynLibrary");
+impl_object_instance_data!(CDynLib, "CDynLib");
 
-impl DynLibrary {
+impl CDynLib {
     pub(super) fn symbol_impl(&self, name: &str) -> RuntimeResult<CSymbol> {
         unsafe {
             let symbol: libloading::Symbol<*const c_void> = self.lib
@@ -44,7 +44,7 @@ impl DynLibrary {
     }
 }
 
-impl DynLibrary {
+impl CDynLib {
     pub(super) fn __new__(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
         if args.len() != 2 {
             Err(RuntimeErrorKind::ArgumentCountMismatch { expected: 2, got: args.len() })?;

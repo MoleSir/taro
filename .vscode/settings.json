@@ -1,6 +1,6 @@
 {
     "rust-analyzer.cargo.features": [
-        "debug-gc "
+        "debug-gc"
     ],
     "editor.gotoLocation.alternativeDeclarationCommand": "editor.action.revealDefinition",
     "editor.gotoLocation.alternativeDefinitionCommand": "editor.action.revealDefinition",

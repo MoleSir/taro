@@ -192,10 +192,6 @@ impl CType {
         Err(FfiError::ExpectedType(vm.value_type_name(handle).into()).into())
     }
 
-    // ------------------------------------------------------------------
-    // taro_to_cvalue — convert a Taro value to a CValue for FFI args
-    // ------------------------------------------------------------------
-
     pub(super) fn taro_to_cvalue(&self, vm: &VirtualMachine, handle: ObjectHandle) -> RuntimeResult<CValue> {
         match self {
             CType::I8 => int_to_cvalue(vm, handle, |v| CValue::I8(v as i8)),
@@ -245,10 +241,6 @@ impl CType {
             }
         }
     }
-
-    // ------------------------------------------------------------------
-    // write_to_buffer — write a Taro value into a raw byte slice
-    // ------------------------------------------------------------------
 
     pub(super) fn write_to_buffer(&self, vm: &VirtualMachine, handle: ObjectHandle, buf: &mut [u8]) -> RuntimeResult<()> {
         match self {
@@ -305,6 +297,90 @@ impl CType {
                     fct.write_to_buffer(vm, value_handle, &mut buf[layout.offsets[i]..])?;
                 }
                 Ok(())
+            }
+        }
+    }
+
+    pub(super) fn read_from_buffer(&self, vm: &mut VirtualMachine, buf: &[u8]) -> RuntimeResult<ObjectHandle> {
+        match self {
+            CType::I8 => {
+                let v = buf[0] as i8;
+                Ok(vm.obj_heap.alloc_integer_instance(v as i64))
+            }
+            CType::I16 => {
+                let v = i16::from_ne_bytes(buf[..2].try_into().unwrap());
+                Ok(vm.obj_heap.alloc_integer_instance(v as i64))
+            }
+            CType::I32 => {
+                let v = i32::from_ne_bytes(buf[..4].try_into().unwrap());
+                Ok(vm.obj_heap.alloc_integer_instance(v as i64))
+            }
+            CType::I64 => {
+                let v = i64::from_ne_bytes(buf[..8].try_into().unwrap());
+                Ok(vm.obj_heap.alloc_integer_instance(v))
+            }
+            CType::U8 => {
+                Ok(vm.obj_heap.alloc_integer_instance(buf[0] as i64))
+            }
+            CType::U16 => {
+                let v = u16::from_ne_bytes(buf[..2].try_into().unwrap());
+                Ok(vm.obj_heap.alloc_integer_instance(v as i64))
+            }
+            CType::U32 => {
+                let v = u32::from_ne_bytes(buf[..4].try_into().unwrap());
+                Ok(vm.obj_heap.alloc_integer_instance(v as i64))
+            }
+            CType::U64 => {
+                let v = u64::from_ne_bytes(buf[..8].try_into().unwrap());
+                Ok(vm.obj_heap.alloc_integer_instance(v as i64))
+            }
+            CType::F32 => {
+                let v = f32::from_ne_bytes(buf[..4].try_into().unwrap());
+                Ok(vm.obj_heap.alloc_float_instance(v as f64))
+            }
+            CType::F64 => {
+                let v = f64::from_ne_bytes(buf[..8].try_into().unwrap());
+                Ok(vm.obj_heap.alloc_float_instance(v))
+            }
+            CType::Bool => {
+                Ok(vm.obj_heap.alloc_bool_instance(buf[0] != 0))
+            }
+            CType::Pointer => {
+                let v = usize::from_ne_bytes(buf[..8].try_into().unwrap());
+                Ok(vm.obj_heap.alloc_integer_instance(v as i64))
+            }
+            CType::CString => {
+                let v = usize::from_ne_bytes(buf[..8].try_into().unwrap());
+                let ptr = v as *const c_char;
+                if ptr.is_null() {
+                    Ok(ObjectHandle::NIL)
+                } else {
+                    let bytes = unsafe { std::ffi::CStr::from_ptr(ptr) };
+                    let s = bytes.to_string_lossy().into_owned();
+                    Ok(vm.obj_heap.alloc_string_instance(ShrString::new_string(&s)))
+                }
+            }
+            CType::Void => Err(FfiError::VoidAsField.into()),
+            CType::Struct(inner_layout) => {
+                // Allocate a temporary CType instance on the heap as the
+                // ctype back-link for the nested result struct.
+                let ctype_class = vm
+                    .lookup_loaded_module_export("std/ffi", &ShrString::new_str("CType"))
+                    .ok_or(FfiError::CTypeClassNotFound)?;
+                let inner_ctype_handle = vm.obj_heap.alloc_instance(ctype_class, self.clone());
+
+                let mut fields = HashMap::with_capacity(inner_layout.field_names.len());
+                for (i, name) in inner_layout.field_names.iter().enumerate() {
+                    let field_val = inner_layout.field_types[i]
+                        .read_from_buffer(vm, &buf[inner_layout.offsets[i]..])?;
+                    fields.insert(ShrString::new_string(name), field_val);
+                }
+
+                let struct_class = vm
+                    .lookup_module_export(inner_ctype_handle, &ShrString::new_str("CStruct"))
+                    .ok_or(FfiError::StructClassNotFound)?;
+                let instance = CStruct { ctype: inner_ctype_handle, fields };
+                Ok(vm.obj_heap.alloc_instance(struct_class, instance))
             }
         }
     }

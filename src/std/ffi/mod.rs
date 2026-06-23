@@ -59,10 +59,10 @@ use types::CType;
 
 impl VirtualMachine {
     pub(crate) fn create_ffi_module(&mut self) -> RuntimeResult<ObjectHandle> {
-        let library_class = self.obj_heap.alloc_class("DynLibrary");
-        self.register_native_method(library_class, "__new__", NativeFunction::var(library::DynLibrary::__new__));
-        self.register_native_method(library_class, "symbol", NativeFunction::a2(library::DynLibrary::symbol));
-        self.register_native_method(library_class, "bind", NativeFunction::a4(library::DynLibrary::bind));
+        let library_class = self.obj_heap.alloc_class("CDynLib");
+        self.register_native_method(library_class, "__new__", NativeFunction::var(library::CDynLib::__new__));
+        self.register_native_method(library_class, "symbol", NativeFunction::a2(library::CDynLib::symbol));
+        self.register_native_method(library_class, "bind", NativeFunction::a4(library::CDynLib::bind));
 
         let csymbol_class = self.obj_heap.alloc_class("CSymbol");
         self.register_native_method(csymbol_class, "__new__", NativeFunction::var(library::CSymbol::__new__));
@@ -109,7 +109,7 @@ impl VirtualMachine {
         exports.insert(ShrString::new_str("c_pointer"), ctype_singleton!(Pointer));
         exports.insert(ShrString::new_str("c_cstring"), ctype_singleton!(CString));
 
-        exports.insert(ShrString::new_str("DynLibrary"), library_class);
+        exports.insert(ShrString::new_str("CDynLib"), library_class);
         exports.insert(ShrString::new_str("CSymbol"), csymbol_class);
         exports.insert(ShrString::new_str("CFunction"), cfunction_class);
         exports.insert(ShrString::new_str("CType"), ctype_class);
@@ -117,7 +117,7 @@ impl VirtualMachine {
 
         let module = self.obj_heap.alloc_fields_instance(self.obj_heap.module_class, exports);
 
-        self.obj_heap.get_class_mut(library_class).expect("DynLibrary").module = Some(module);
+        self.obj_heap.get_class_mut(library_class).expect("CDynLib").module = Some(module);
         self.obj_heap.get_class_mut(csymbol_class).expect("CSymbol").module = Some(module);
         self.obj_heap.get_class_mut(cfunction_class).expect("CFunction").module = Some(module);
         self.obj_heap.get_class_mut(ctype_class).expect("CType").module = Some(module);

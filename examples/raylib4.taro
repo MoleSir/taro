@@ -1,0 +1,145 @@
+import "std/ffi";
+
+var lib = ffi.CDynLib("examples/libraylib.so.6.0.0");
+
+// ==========================================
+// 1. 结构体与绑定
+// ==========================================
+var Color = ffi.define_struct([["r", "uint8"], ["g", "uint8"], ["b", "uint8"], ["a", "uint8"]]);
+
+var init_window          = lib.bind("InitWindow", "void", ["int32", "int32", "cstring"]);
+var close_window         = lib.bind("CloseWindow", "void", []);
+var window_should_close  = lib.bind("WindowShouldClose", "bool", []);
+var set_target_fps       = lib.bind("SetTargetFPS", "void", ["int32"]);
+var begin_drawing        = lib.bind("BeginDrawing", "void", []);
+var end_drawing          = lib.bind("EndDrawing", "void", []);
+var clear_background     = lib.bind("ClearBackground", "void", [Color]);
+var draw_circle          = lib.bind("DrawCircle", "void", ["int32", "int32", "float", Color]);
+var draw_text            = lib.bind("DrawText", "void", ["cstring", "int32", "int32", "int32", Color]);
+var draw_fps             = lib.bind("DrawFPS", "void", ["int32", "int32"]);
+
+var get_mouse_x          = lib.bind("GetMouseX", "int32", []);
+var get_mouse_y          = lib.bind("GetMouseY", "int32", []);
+var is_mouse_button_down = lib.bind("IsMouseButtonDown", "bool", ["int32"]);
+var get_random_value     = lib.bind("GetRandomValue", "int32", ["int32", "int32"]);
+
+// 🔥 新增：混合模式，用于实现粒子的“发光/火焰”叠加效果
+var begin_blend_mode     = lib.bind("BeginBlendMode", "void", ["int32"]);
+var end_blend_mode       = lib.bind("EndBlendMode", "void", []);
+
+var BLEND_ADDITIVE = 1; // Raylib 中的加法混合模式
+
+init_window(800, 600, "Taro FFI: FFI Performance & GC Stress Test");
+set_target_fps(60);
+
+var bg_color = Color(15, 10, 20, 255); // 深邃的暗紫色背景
+
+// ==========================================
+// 2. 粒子系统数据结构
+// ==========================================
+// 为了兼容性，这里使用平行数组(Parallel Arrays)来存储粒子。
+// 假设 Taro 支持数组的声明、push() 操作以及 len() 函数。
+var p_x = [];
+var p_y = [];
+var p_vx = [];
+var p_vy = [];
+var p_life = [];
+var p_color = [];
+
+var gravity = 0.15;
+var MOUSE_BUTTON_LEFT = 0;
+
+// ==========================================
+// 3. 主循环
+// ==========================================
+while !window_should_close() {
+    
+    // --- 1. 发射器逻辑 ---
+    // 按住鼠标左键，每帧生成 10 个粒子，测试内存分配和数组操作能力
+    if is_mouse_button_down(MOUSE_BUTTON_LEFT) {
+        var mx = float(get_mouse_x());
+        var my = float(get_mouse_y());
+        
+        var i = 0;
+        while i < 10 {
+            // 随机初速度 (向四周喷射)
+            var rx = float(get_random_value(-50, 50)) / 10.0;
+            var ry = float(get_random_value(-80, 10)) / 10.0;
+            
+            // 随机颜色 (偏向火焰的红/黄/橙色)
+            var r = get_random_value(200, 255);
+            var g = get_random_value(50, 200);
+            var b = get_random_value(0, 50);
+            
+            // 请根据 Taro 的数组追加语法修改这里的 push
+            p_x.append(mx);
+            p_y.append(my);
+            p_vx.append(rx);
+            p_vy.append(ry);
+            p_life.append(1.0); // 生命周期 1.0 表示 100%
+            p_color.append(Color(r, g, b, 255));
+            
+            i = i + 1;
+        }
+    }
+
+    // --- 2. 物理与生命周期更新 ---
+    // 采用逆向遍历，方便在粒子死亡时进行数组元素移除。
+    // 如果 Taro 暂不支持数组移除 (pop/remove)，可以忽略移除，只更新 life > 0 的粒子。
+    var count = len(p_x);
+    var j = 0;
+    while j < count {
+        if p_life[j] > 0.0 {
+            // 施加重力
+            p_vy[j] = p_vy[j] + gravity;
+            
+            // 更新位置
+            p_x[j] = p_x[j] + p_vx[j];
+            p_y[j] = p_y[j] + p_vy[j];
+            
+            // 衰减生命值
+            p_life[j] = p_life[j] - 0.02;
+        }
+        j = j + 1;
+    }
+
+    // --- 3. 渲染逻辑 ---
+    begin_drawing();
+    clear_background(bg_color);
+
+    // 开启加法混合模式！多个粒子重叠时会变成耀眼的白光！
+    begin_blend_mode(BLEND_ADDITIVE);
+
+    var k = 0;
+    var active_particles = 0;
+    while k < count {
+        if p_life[k] > 0.0 {
+            active_particles = active_particles + 1;
+            
+            // 根据生命周期计算透明度与大小
+            var alpha = int(p_life[k] * 255.0);
+            if alpha < 0 { alpha = 0; }
+            if alpha > 255 { alpha = 255; }
+            
+            var c = p_color[k];
+            var render_color = Color(c.r, c.g, c.b, alpha);
+            var size = p_life[k] * 8.0;
+
+            // 高频 FFI 调用：如果你的 FFI 性能不够好，这里游戏就会掉帧！
+            draw_circle(int(p_x[k]), int(p_y[k]), size, render_color);
+        }
+        k = k + 1;
+    }
+
+    end_blend_mode();
+
+    // UI 显示
+    draw_text("Click and hold to spawn FIREWORKS!", 10, 40, 20, Color(200, 200, 200, 255));
+    // 显示当前活动的粒子数量，测试虚拟机的极限
+    // draw_text("Particles: " + str(active_particles), 10, 70, 20, Color(200, 200, 200, 255)); 
+    draw_fps(10, 10);
+
+    end_drawing();
+}
+
+close_window();

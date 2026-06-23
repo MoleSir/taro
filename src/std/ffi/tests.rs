@@ -14,7 +14,7 @@ fn ffi_dlopen_nonexistent_library() {
     let result = vm.interpret(
         r#"
         import "std/ffi";
-        ffi.DynLibrary("/nonexistent/lib_does_not_exist.so");
+        ffi.CDynLib("/nonexistent/lib_does_not_exist.so");
         "#,
     );
     assert!(result.is_err(), "dlopen of nonexistent library should fail");
@@ -34,7 +34,7 @@ fn ffi_libm_cos() {
     let source = format!(
         r##"
         import "std/ffi";
-        var lib = ffi.DynLibrary("{lib_path}");
+        var lib = ffi.CDynLib("{lib_path}");
         var cos = lib.symbol("cos");
         var r = ffi.call(cos, "double", ["double"], [0.0]);
         print(r);
@@ -57,7 +57,7 @@ fn ffi_call_void_return() {
     let source = format!(
         r##"
         import "std/ffi";
-        var lib = ffi.DynLibrary("{lib_path}");
+        var lib = ffi.CDynLib("{lib_path}");
         var srand = lib.symbol("srand");
         var result = ffi.call(srand, "void", ["uint32"], [42]);
         print(result);
@@ -137,7 +137,7 @@ fn ffi_bind_cos() {
     let source = format!(
         r##"
         import "std/ffi";
-        var lib = ffi.DynLibrary("{lib_path}");
+        var lib = ffi.CDynLib("{lib_path}");
         var cos = lib.bind("cos", "double", ["double"]);
         var r = cos(0.0);
         print(r);
@@ -160,7 +160,7 @@ fn ffi_bind_abs() {
     let source = format!(
         r##"
         import "std/ffi";
-        var lib = ffi.DynLibrary("{lib_path}");
+        var lib = ffi.CDynLib("{lib_path}");
         var abs = lib.bind("abs", "int32", ["int32"]);
         var r = abs(-42);
         print(r);
@@ -183,7 +183,7 @@ fn ffi_bind_void_return() {
     let source = format!(
         r##"
         import "std/ffi";
-        var lib = ffi.DynLibrary("{lib_path}");
+        var lib = ffi.CDynLib("{lib_path}");
         var srand = lib.bind("srand", "void", ["uint32"]);
         var r = srand(42);
         print(r);
@@ -207,7 +207,7 @@ fn ffi_bind_with_struct() {
     let source = format!(
         r##"
         import "std/ffi";
-        var lib = ffi.DynLibrary("{lib_path}");
+        var lib = ffi.CDynLib("{lib_path}");
         var Seed = ffi.define_struct([["val", "uint32"]]);
         var s = Seed(42);
         var srand = lib.bind("srand", "void", [Seed]);
@@ -332,7 +332,7 @@ fn ffi_nested_struct_passed_to_bind() {
     let source = format!(
         r##"
         import "std/ffi";
-        var lib = ffi.DynLibrary("{lib_path}");
+        var lib = ffi.CDynLib("{lib_path}");
 
         // Inner struct: a single int32
         var Inner = ffi.define_struct([["val", ffi.c_uint32]]);
@@ -353,6 +353,63 @@ fn ffi_nested_struct_passed_to_bind() {
 }
 
 #[test]
+fn ffi_bind_struct_return() {
+    // Test that bind() can handle a C function that returns a struct by value.
+    // div() in libc returns div_t {{ int quot; int rem; }}.
+    let lib_path = if cfg!(target_os = "linux") {
+        "libc.so.6"
+    } else if cfg!(target_os = "macos") {
+        "libSystem.dylib"
+    } else {
+        return;
+    };
+
+    let mut vm = VirtualMachine::new();
+    let source = format!(
+        r##"
+        import "std/ffi";
+        var lib = ffi.CDynLib("{lib_path}");
+
+        var DivT = ffi.define_struct([["quot", "int32"], ["rem", "int32"]]);
+        var div = lib.bind("div", DivT, [ffi.c_int32, ffi.c_int32]);
+
+        var r = div(10, 3);
+        print(r.quot);  // 3
+        print(r.rem);   // 1
+        "##
+    );
+    vm.interpret(&source).expect("ffi_bind_struct_return should succeed");
+}
+
+#[test]
+fn ffi_call_struct_return() {
+    // Test that ffi.call() can handle a C function that returns a struct by value.
+    let lib_path = if cfg!(target_os = "linux") {
+        "libc.so.6"
+    } else if cfg!(target_os = "macos") {
+        "libSystem.dylib"
+    } else {
+        return;
+    };
+
+    let mut vm = VirtualMachine::new();
+    let source = format!(
+        r##"
+        import "std/ffi";
+        var lib = ffi.CDynLib("{lib_path}");
+
+        var DivT = ffi.define_struct([["quot", "int32"], ["rem", "int32"]]);
+        var divSym = lib.symbol("div");
+
+        var r = ffi.call(divSym, DivT, [ffi.c_int32, ffi.c_int32], [10, 3]);
+        print(r.quot);  // 3
+        print(r.rem);   // 1
+        "##
+    );
+    vm.interpret(&source).expect("ffi_call_struct_return should succeed");
+}
+
+#[test]
 fn ffi_ctype_in_bind_arg_types() {
     let lib_path = if cfg!(target_os = "linux") {
         "libm.so.6"
@@ -367,7 +424,7 @@ fn ffi_ctype_in_bind_arg_types() {
     let source = format!(
         r##"
         import "std/ffi";
-        var lib = ffi.DynLibrary("{lib_path}");
+        var lib = ffi.CDynLib("{lib_path}");
         var cos = lib.bind("cos", "double", [ffi.c_double]);
         var r = cos(0.0);
         print(r);

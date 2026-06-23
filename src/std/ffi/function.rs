@@ -1,15 +1,20 @@
+use std::collections::HashMap;
 use std::ffi::{c_char, c_void};
 use crate::vm::{RuntimeResult, VirtualMachine};
-use crate::{impl_object_instance_data, ObjectHandle, ToShrString};
+use crate::{impl_object_instance_data, ObjectHandle, ShrString, ToShrString};
 use super::error::FfiError;
 use super::library::CSymbol;
-use super::types::{CType, CValue};
+use super::types::{CStruct, CType, CValue};
 
 pub(super) struct CFunction {
     pub(super) ptr: libffi::middle::CodePtr,
     pub(super) ret_type: CType,
     pub(super) param_types: Vec<CType>,
     cif: libffi::middle::Cif,
+    /// When `ret_type` is `Struct(layout)`, this holds the CType instance
+    /// handle that describes the struct.  Used when constructing the result
+    /// [`CStruct`](super::types::CStruct).
+    struct_type_handle: Option<ObjectHandle>,
 }
 
 unsafe impl Send for CFunction {}
@@ -18,22 +23,27 @@ unsafe impl Sync for CFunction {}
 impl_object_instance_data!(CFunction, "CFunction");
 
 impl CFunction {
-    pub(super) fn new(symbol: CSymbol, ret_type: CType, param_types: Vec<CType>) -> Self {
+    pub(super) fn new(symbol: CSymbol, ret_type: CType, param_types: Vec<CType>, struct_type_handle: Option<ObjectHandle>) -> Self {
         let ffi_arg_types: Vec<libffi::middle::Type> = param_types.iter().map(|ct| ct.to_ffi_type()).collect();
         let cif = libffi::middle::Cif::new(ffi_arg_types, ret_type.to_ffi_type());
-        Self { ptr: libffi::middle::CodePtr(symbol.raw), ret_type, param_types, cif }
-    } 
+        Self { ptr: libffi::middle::CodePtr(symbol.raw), ret_type, param_types, cif, struct_type_handle }
+    }
 
-    pub(crate) fn from_handle(vm: &mut VirtualMachine, symbol: CSymbol, ret_type: ObjectHandle, arg_types: ObjectHandle) -> RuntimeResult<Self> {
-        // Parse return type
-        let ret_type_str = vm.expect_type(vm.obj_heap.get_string_instance(ret_type), ret_type, "string")?.as_str().to_string();
-        let ret_type = CType::from_str(&ret_type_str)?;
+    pub(crate) fn from_handle(vm: &mut VirtualMachine, symbol: CSymbol, ret_type_handle: ObjectHandle, arg_types: ObjectHandle) -> RuntimeResult<Self> {
+        // Parse return type — supports both string names ("int32", …)
+        // and CType struct instances (for struct return types).
+        let ret_type = CType::from_handle(vm, ret_type_handle)?;
+        let struct_type_handle = if matches!(ret_type, CType::Struct(_)) {
+            Some(ret_type_handle)
+        } else {
+            None
+        };
 
         // Parse argument types
         let arg_type_handles = vm.obj_heap.get_list_instance(arg_types).ok_or(FfiError::BindArgTypesNotList)?;
         let arg_types: Vec<CType> = arg_type_handles.iter().map(|&h| CType::from_handle(vm, h)).collect::<RuntimeResult<_>>()?;
 
-        Ok(Self::new(symbol, ret_type, arg_types))
+        Ok(Self::new(symbol, ret_type, arg_types, struct_type_handle))
     }
 
     fn call_cif<R>(&self, args: &[libffi::middle::Arg]) -> R {
@@ -131,7 +141,45 @@ impl CFunction {
                     Ok(vm.obj_heap.alloc_string_instance(s))
                 }
             }
-            CType::Struct(_) => Err(FfiError::StructReturnUnsupported.into()),
+            CType::Struct(layout) => {
+                // Struct return — we must use raw::ffi_call because the
+                // struct size isn't known at compile time, so we can't
+                // use the generic middle::Cif::call::<R>().
+                let cif_raw = function.cif.as_raw_ptr();
+                let code_ptr = function.ptr;
+                let struct_type_handle = function
+                    .struct_type_handle
+                    .ok_or(FfiError::StructReturnUnsupported)?;
+                // Clone layout to detach from `function`'s borrow of
+                // obj_heap before mutating vm below.
+                let layout = layout.clone();
+
+                let mut buffer = vec![0u8; layout.size];
+                unsafe {
+                    libffi::raw::ffi_call(
+                        cif_raw,
+                        Some(*code_ptr.as_safe_fun()),
+                        buffer.as_mut_ptr().cast::<c_void>(),
+                        ffi_args.as_ptr() as *mut *mut c_void,
+                    );
+                }
+                // `function` borrow ends here — NLL allows mutable vm
+                // accesses below.
+
+                // Decode each field from the raw buffer.
+                let mut fields = HashMap::with_capacity(layout.field_names.len());
+                for (i, name) in layout.field_names.iter().enumerate() {
+                    let field_val = layout.field_types[i]
+                        .read_from_buffer(vm, &buffer[layout.offsets[i]..])?;
+                    fields.insert(ShrString::new_string(name), field_val);
+                }
+
+                let struct_class = vm
+                    .lookup_module_export(struct_type_handle, &ShrString::new_str("CStruct"))
+                    .ok_or(FfiError::StructClassNotFound)?;
+                let instance = CStruct { ctype: struct_type_handle, fields };
+                Ok(vm.obj_heap.alloc_instance(struct_class, instance))
+            }
         }
     }
 
