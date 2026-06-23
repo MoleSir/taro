@@ -92,7 +92,7 @@ impl VirtualMachine {
 
     /// `abs(value)` — return the absolute value of a number.
     pub fn abs(&mut self, arg: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let bi = self.get_instance(arg)?;
+        let bi = self.expect_type(self.obj_heap.get_instance(arg), arg, "instance")?;
         if let Some(v) = bi.data.as_any_ref().downcast_ref::<crate::object::ObjectInt>() {
             Ok(self.obj_heap.alloc_integer_instance(v.value.wrapping_abs()))
         } else if let Some(v) = bi.data.as_any_ref().downcast_ref::<crate::object::ObjectFloat>() {
@@ -210,7 +210,7 @@ impl VirtualMachine {
             .unwrap_or(false);
 
         if is_string {
-            let s = self.get_string_instance(arg)?.as_str().to_string();
+            let s = self.obj_heap.get_string_instance(arg).expect("must string").as_str().to_string();
             ObjectBytes::from_string(self, s.as_str())
         } else if is_list {
             ObjectBytes::from_list(self, arg)

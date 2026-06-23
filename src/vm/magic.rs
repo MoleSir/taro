@@ -28,7 +28,7 @@ impl VirtualMachine {
         match method {
             Method::User(closure_handle) => self.invoke_method_sync(receiver, closure_handle, args),
             Method::Native(handle) => {
-                let native_fn = self.get_native_fn(handle).expect("must fn").function;
+                let native_fn = self.obj_heap.get_native_fn(handle).expect("must fn").function;
                 self.push_stack(receiver);
                 for &arg in args {
                     self.push_stack(arg);
@@ -62,7 +62,7 @@ impl VirtualMachine {
         match method {
             Method::User(closure_handle) => self.call_closure(closure_handle, arg_count + 1, false),
             Method::Native(handle) => {
-                let native_fn = self.get_native_fn(handle)?.function;
+                let native_fn = self.obj_heap.get_native_fn(handle).expect("must fn").function;
                 self.call_native_fn(native_fn, arg_count + 1, false)
             }
         }
@@ -288,9 +288,9 @@ impl VirtualMachine {
             Object::Instance(_) => {
                 match self.dispatch_magic(handle, "__str__", &[]) {
                     Ok(result) => self
-                        .get_string_instance(result)
+                        .obj_heap.get_string_instance(result)
                         .cloned()
-                        .map_err(|_| RuntimeErrorKind::BadStrResult(self.value_type_name(result)).into()),
+                        .ok_or_else(|| RuntimeErrorKind::BadStrResult(self.value_type_name(result)).into()),
                     Err(RuntimeErrorKind::NoImplementMethod(_, _)) => {
                         // Default representation for instances without __str__.
                         let class_handle = self.get_instance(handle)?.class;
@@ -320,7 +320,7 @@ impl VirtualMachine {
         let object = self.obj_heap.get(handle);
         match object {
             Object::Instance(_) => match self.dispatch_magic(handle, "__bool__", &[]) {
-                Ok(result) => Ok(*self.get_bool_instance(result)?),
+                Ok(result) => Ok(*self.expect_type(self.obj_heap.get_bool_instance(result), result, "bool")?),
                 Err(RuntimeErrorKind::NoImplementMethod(_, _)) => Ok(true),
                 Err(other) => Err(other),
             },
@@ -333,7 +333,7 @@ impl VirtualMachine {
             return Err(RuntimeErrorKind::UnexpectedType("object with __len__", self.value_type_name(handle)));
         }
         let result = self.dispatch_magic(handle, "__len__", &[]).map_err(|e| self.remap_len_error(e, handle))?;
-        Ok(*self.get_integer_instance(result)?)
+        Ok(*self.expect_type(self.obj_heap.get_integer_instance(result), result, "int")?)
     }
 
     pub fn __getitem__(&mut self, collection: ObjectHandle, index: ObjectHandle) -> RuntimeResult<ObjectHandle> {
@@ -350,12 +350,34 @@ impl VirtualMachine {
         self.dispatch_magic(collection, "__setitem__", &[index, value])
     }
 
+    // -- property access --------------------------------------------------------
+
+    /// Attribute read fallback — `obj.field` when the field is neither an
+    /// instance field nor a regular method.
+    pub fn __getattr__(&mut self, receiver: ObjectHandle, field_name: &ShrString) -> RuntimeResult<ObjectHandle> {
+        if !matches!(self.obj_heap.get(receiver), Object::Instance(_)) {
+            return Err(RuntimeErrorKind::UnexpectedType("object with __getattr__", self.value_type_name(receiver)));
+        }
+        let name_handle = self.obj_heap.alloc_string_instance(field_name.clone());
+        self.dispatch_magic(receiver, "__getattr__", &[name_handle])
+    }
+
+    /// Attribute write fallback — `obj.field = value` for instances that
+    /// don't use ObjectFields.
+    pub fn __setattr__(&mut self, receiver: ObjectHandle, field_name: &ShrString, value: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+        if !matches!(self.obj_heap.get(receiver), Object::Instance(_)) {
+            return Err(RuntimeErrorKind::UnexpectedType("object with __setattr__", self.value_type_name(receiver)));
+        }
+        let name_handle = self.obj_heap.alloc_string_instance(field_name.clone());
+        self.dispatch_magic(receiver, "__setattr__", &[name_handle, value])
+    }
+
     pub fn __int__(&mut self, handle: ObjectHandle) -> RuntimeResult<i64> {
         if !matches!(self.obj_heap.get(handle), Object::Instance(_)) {
             return Err(RuntimeErrorKind::UnexpectedType("object with __int__", self.value_type_name(handle)));
         }
         let result = self.dispatch_magic(handle, "__int__", &[]).map_err(|e| self.remap_int_error(e, handle))?;
-        Ok(*self.get_integer_instance(result)?)
+        Ok(*self.expect_type(self.obj_heap.get_integer_instance(result), result, "int")?)
     }
 
     pub fn __float__(&mut self, handle: ObjectHandle) -> RuntimeResult<f64> {
@@ -363,7 +385,7 @@ impl VirtualMachine {
             return Err(RuntimeErrorKind::UnexpectedType("object with __float__", self.value_type_name(handle)));
         }
         let result = self.dispatch_magic(handle, "__float__", &[]).map_err(|e| self.remap_float_error(e, handle))?;
-        Ok(*self.get_float_instance(result)?)
+        Ok(*self.expect_type(self.obj_heap.get_float_instance(result), result, "float")?)
     }
 
     // ================================================================================== //
@@ -391,7 +413,7 @@ impl VirtualMachine {
         // Instance types — dispatch to __hash__ class method.
         match self.dispatch_magic(handle, "__hash__", &[]) {
             Ok(result) => {
-                let h = self.get_integer_instance(result)?;
+                let h = self.expect_type(self.obj_heap.get_integer_instance(result), result, "int")?;
                 Ok(*h as u64)
             }
             Err(RuntimeErrorKind::NoImplementMethod(_, _)) => Ok(handle.0 as u64),

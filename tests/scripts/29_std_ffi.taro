@@ -35,11 +35,11 @@ var srand = ffi.bind(libc, "srand", "void", ["uint32"]);
 var v = srand(12345);
 print(v);                         // nil
 
-// === 7. struct_def and struct_new ===
+// === 7. StructDef and struct_new ===
 print("=== struct def/new ===");
-var Color = ffi.struct_def(["uint8", "uint8", "uint8", "uint8"]);
+var Color = ffi.StructDef(["uint8", "uint8", "uint8", "uint8"]);
 print(Color != nil);              // true
-var c = ffi.struct_new(Color, [255, 128, 64, 255]);
+var c = Color(255, 128, 64, 255);
 print(c != nil);                  // true
 
 // === 8. cleanup ===

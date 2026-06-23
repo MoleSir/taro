@@ -1,70 +1,146 @@
 import "std/ffi";
 
 var lib = ffi.dlopen("examples/libraylib.so.6.0.0");
-var Color = ffi.StructDef([["r", "uint8"], ["g", "uint8"], ["b", "uint8"], ["a", "uint8"]]);
-var Vector2 = ffi.StructDef([["x", "float"], ["y", "float"]]);
+
+// ==========================================
+// 1. 结构体定义
+// ==========================================
+var Color     = ffi.StructDef([["r", "uint8"], ["g", "uint8"], ["b", "uint8"], ["a", "uint8"]]);
+var Vector2   = ffi.StructDef([["x", "float"], ["y", "float"]]);
 var Rectangle = ffi.StructDef([["x", "float"], ["y", "float"], ["width", "float"], ["height", "float"]]);
 
+// ==========================================
+// 2. FFI 绑定 (原有 + 新增)
+// ==========================================
 var init_window          = ffi.bind(lib, "InitWindow", "void", ["int32", "int32", "cstring"]);
 var close_window         = ffi.bind(lib, "CloseWindow", "void", []);
 var window_should_close  = ffi.bind(lib, "WindowShouldClose", "bool", []);
 var set_target_fps       = ffi.bind(lib, "SetTargetFPS", "void", ["int32"]);
-var get_frame_time       = ffi.bind(lib, "GetFrameTime", "float", []);
 var begin_drawing        = ffi.bind(lib, "BeginDrawing", "void", []);
 var end_drawing          = ffi.bind(lib, "EndDrawing", "void", []);
 var clear_background     = ffi.bind(lib, "ClearBackground", "void", [Color]);
-var draw_pixel           = ffi.bind(lib, "DrawPixel", "void", ["int32", "int32", Color]);
-var draw_line            = ffi.bind(lib, "DrawLine", "void", ["int32", "int32", "int32", "int32", Color]);
+
 var draw_circle          = ffi.bind(lib, "DrawCircle", "void", ["int32", "int32", "float", Color]);
-var draw_rectangle       = ffi.bind(lib, "DrawRectangle", "void", ["int32", "int32", "int32", "int32", Color]);
 var draw_rectangle_rec   = ffi.bind(lib, "DrawRectangleRec", "void", [Rectangle, Color]);
 var draw_text            = ffi.bind(lib, "DrawText", "void", ["cstring", "int32", "int32", "int32", Color]);
-var measure_text         = ffi.bind(lib, "MeasureText", "int32", ["cstring", "int32"]);
+
+// 新增 FFI：随机数、帧率绘制、碰撞检测
 var is_key_pressed       = ffi.bind(lib, "IsKeyPressed", "bool", ["int32"]);
-var is_key_down          = ffi.bind(lib, "IsKeyDown", "bool", ["int32"]);
-var get_mouse_x          = ffi.bind(lib, "GetMouseX", "int32", []);
-var get_mouse_y          = ffi.bind(lib, "GetMouseY", "int32", []);
-var is_mouse_button_down = ffi.bind(lib, "IsMouseButtonDown", "bool", ["int32"]);
+var get_random_value     = ffi.bind(lib, "GetRandomValue", "int32", ["int32", "int32"]);
+var draw_fps             = ffi.bind(lib, "DrawFPS", "void", ["int32", "int32"]);
+var check_col_circle_rec = ffi.bind(lib, "CheckCollisionCircleRec", "bool", [Vector2, "float", Rectangle]);
 
-var KEY_RIGHT = 262;
-var KEY_LEFT  = 263;
-var KEY_DOWN  = 264;
-var KEY_UP    = 265;
-var MOUSE_BUTTON_LEFT = 0;
+// ==========================================
+// 3. 游戏常量与初始化
+// ==========================================
+var KEY_SPACE = 32;
 
-init_window(800, 600, "Taro FFI + Raylib Example!");
+var bg_color    = Color(113, 197, 207, 255); // 天蓝色
+var bird_color  = Color(253, 249, 0, 255);   // 黄色
+var pipe_color  = Color(0, 228, 48, 255);    // 绿色
+var text_color  = Color(20, 20, 20, 255);    // 深灰色
+
+var screen_w = 800;
+var screen_h = 600;
+
+init_window(screen_w, screen_h, "Taro FFI: Flappy Bird Clone");
 set_target_fps(60);
 
-var ball_x = 400;
-var ball_y = 300;
-var speed = 5;
+// ==========================================
+// 4. 游戏状态变量
+// ==========================================
+// 鸟的物理属性
+var bird_x = 200.0;
+var bird_y = 300.0;
+var bird_radius = 15.0;
+var bird_vel = 0.0;
+var gravity = 0.5;
+var jump_strength = -8.0;
 
-var bg_color    = Color(245, 245, 245, 255); // RAYWHITE
-var ball_color  = Color(230, 41, 55, 255);   // RED
-var text_color  = Color(80, 80, 80, 255);    // DARKGRAY
-var mouse_color = Color(0, 121, 241, 255);   // BLUE
+// 障碍物(水管)属性
+var pipe_w = 70.0;
+var pipe_x = 800.0;
+var gap_y = 300.0;      // 上下水管之间的缺口中心Y坐标
+var gap_size = 160.0;   // 缺口的大小
+var pipe_speed = 4.0;
 
-while !window_should_close() {    
-    if is_key_down(KEY_RIGHT) { ball_x = ball_x + speed; }
-    if is_key_down(KEY_LEFT)  { ball_x = ball_x - speed; }
-    if is_key_down(KEY_DOWN)  { ball_y = ball_y + speed; }
-    if is_key_down(KEY_UP)    { ball_y = ball_y - speed; }
+var game_over = false;
 
-    var mouse_x = get_mouse_x();
-    var mouse_y = get_mouse_y();
-
-    begin_drawing();
+// ==========================================
+// 5. 主循环
+// ==========================================
+while !window_should_close() {
     
+    // 提前计算水管的矩形区域 (供碰撞检测和渲染使用)
+    var top_pipe_h = gap_y - (gap_size / 2.0);
+    var top_rect = Rectangle(pipe_x, 0.0, pipe_w, top_pipe_h);
+
+    var bottom_pipe_y = gap_y + (gap_size / 2.0);
+    var bottom_pipe_h = screen_h - bottom_pipe_y;
+    var bottom_rect = Rectangle(pipe_x, bottom_pipe_y, pipe_w, bottom_pipe_h);
+
+    // --- 逻辑更新 ---
+    if !game_over {
+        // 跳跃输入
+        if is_key_pressed(KEY_SPACE) {
+            bird_vel = jump_strength;
+        }
+        
+        // 物理模拟
+        bird_vel = bird_vel + gravity;
+        bird_y = bird_y + bird_vel;
+
+        // 水管向左移动
+        pipe_x = pipe_x - pipe_speed;
+        
+        // 水管移出屏幕后重置，并随机生成新的缺口位置
+        if pipe_x < (0.0 - pipe_w) {
+            pipe_x = screen_w + 0.0;
+            gap_y = get_random_value(150, 450) + 0.0; 
+        }
+
+        // --- 碰撞检测逻辑 ---
+        var bird_center = Vector2(bird_x, bird_y);
+        
+        // 1. 检测鸟是否撞到上下水管 (向 C 库传递我们实例化的 Vector2 和 Rectangle)
+        if check_col_circle_rec(bird_center, bird_radius, top_rect) { game_over = true; }
+        if check_col_circle_rec(bird_center, bird_radius, bottom_rect) { game_over = true; }
+        
+        // 2. 检测鸟是否落地或飞出天空
+        if bird_y > screen_h { game_over = true; }
+        if bird_y < 0.0 { game_over = true; }
+        
+    } else {
+        // 游戏结束状态：按空格键重新开始
+        if is_key_pressed(KEY_SPACE) {
+            bird_y = 300.0;
+            bird_vel = 0.0;
+            pipe_x = 800.0;
+            game_over = false;
+        }
+    }
+
+    // --- 渲染逻辑 ---
+    begin_drawing();
     clear_background(bg_color);
 
-    draw_text("Use ARROW KEYS to move the red ball.", 10, 10, 20, text_color);
-    draw_text("Click mouse to draw a blue circle.", 10, 40, 20, text_color);
+    // 绘制水管
+    draw_rectangle_rec(top_rect, pipe_color);
+    draw_rectangle_rec(bottom_rect, pipe_color);
 
-    draw_circle(ball_x, ball_y, 25.0, ball_color);
+    // 绘制鸟
+    draw_circle(int(bird_x), int(bird_y), bird_radius, bird_color);
 
-    if is_mouse_button_down(MOUSE_BUTTON_LEFT) {
-        draw_rectangle(mouse_x - 15, mouse_y - 15, 30, 30, mouse_color);
+    // 绘制 UI 和文字
+    if game_over {
+        draw_text("GAME OVER!", 230, 200, 50, text_color);
+        draw_text("Press SPACE to Restart", 210, 280, 30, text_color);
+    } else {
+        draw_text("Press SPACE to Jump", 10, 10, 20, text_color);
     }
+
+    // 在右上角绘制 FPS
+    draw_fps(700, 10);
 
     end_drawing();
 }
