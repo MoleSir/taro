@@ -5,9 +5,9 @@ var lib = ffi.dlopen("examples/libraylib.so.6.0.0");
 // ==========================================
 // 1. 结构体定义
 // ==========================================
-var Color     = ffi.StructDef([["r", "uint8"], ["g", "uint8"], ["b", "uint8"], ["a", "uint8"]]);
-var Vector2   = ffi.StructDef([["x", "float"], ["y", "float"]]);
-var Rectangle = ffi.StructDef([["x", "float"], ["y", "float"], ["width", "float"], ["height", "float"]]);
+var Color     = ffi.define_struct([["r", "uint8"], ["g", "uint8"], ["b", "uint8"], ["a", "uint8"]]);
+var Vector2   = ffi.define_struct([["x", "float"], ["y", "float"]]);
+var Rectangle = ffi.define_struct([["x", "float"], ["y", "float"], ["width", "float"], ["height", "float"]]);
 
 // ==========================================
 // 2. FFI 绑定 (原有 + 新增)

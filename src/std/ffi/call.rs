@@ -3,8 +3,9 @@
 use std::ffi::c_void;
 
 use crate::ObjectHandle;
-use crate::vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine};
+use crate::vm::{RuntimeResult, VirtualMachine};
 
+use super::error::FfiError;
 use super::types::{CType, CValue};
 
 // ===========================================================================
@@ -37,25 +38,21 @@ pub(super) fn ffi_call_impl(
     // Parse return type.
     let ret_type = CType::from_str(ret_type_str)?;
 
-    // Parse argument types (handles both strings and struct defs).
+    // Parse argument types (handles both strings and CType objects).
     let arg_types: Vec<CType> = arg_type_handles.iter().map(|&h| CType::from_handle(vm, h)).collect::<RuntimeResult<_>>()?;
 
     if arg_handles.len() != arg_types.len() {
-        return Err(RuntimeErrorKind::FfiError(format!(
-            "argument count mismatch: {} value(s) but {} type(s)",
-            arg_handles.len(),
-            arg_types.len()
-        )));
+        return Err(FfiError::CallArgCountMismatch { values: arg_handles.len(), types: arg_types.len() }.into());
     }
 
-    // Build CIF (ad-hoc call — no caching, same as before).
+    // Build CIF (ad-hoc call — no caching).
     let ffi_arg_types: Vec<libffi::middle::Type> = arg_types.iter().map(|ct| ct.to_ffi_type()).collect();
     let cif = libffi::middle::Cif::new(ffi_arg_types, ret_type.to_ffi_type());
 
     // Marshal arguments.
     let mut c_values: Vec<CValue> = Vec::with_capacity(arg_handles.len());
     for (i, (ct, &handle)) in arg_types.iter().zip(arg_handles).enumerate() {
-        let cv = ct.taro_to_cvalue(vm, handle).map_err(|e| RuntimeErrorKind::FfiError(format!("argument {i}: {e}")))?;
+        let cv = ct.taro_to_cvalue(vm, handle).map_err(|e| FfiError::MarshalArg { idx: i, reason: e.to_string() })?;
         c_values.push(cv);
     }
 
@@ -68,13 +65,14 @@ pub(super) fn ffi_call_impl(
 
 pub(super) fn ffi_call(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
     if args.len() < 3 {
-        return Err(RuntimeErrorKind::FfiError("ffi.call(func_ptr, ret_type, arg_types, args) — need at least 3 arguments".into()));
+        return Err(FfiError::CallTooFewArgs)?;
     }
 
     let func_ptr = vm.expect_type(vm.obj_heap.get_integer_instance(args[0]), args[0], "int").copied()?;
     let ret_type = vm.expect_type(vm.obj_heap.get_string_instance(args[1]), args[1], "string")?.as_str().to_string();
     let arg_types_list: Vec<ObjectHandle> = vm.expect_type(vm.obj_heap.get_list_instance(args[2]), args[2], "list")?.clone();
-    let arg_values: Vec<ObjectHandle> = if args.len() > 3 { vm.expect_type(vm.obj_heap.get_list_instance(args[3]), args[3], "list")?.clone() } else { vec![] };
+    let arg_values: Vec<ObjectHandle> =
+        if args.len() > 3 { vm.expect_type(vm.obj_heap.get_list_instance(args[3]), args[3], "list")?.clone() } else { vec![] };
 
     ffi_call_impl(vm, func_ptr, &ret_type, &arg_types_list, &arg_values)
 }

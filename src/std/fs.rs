@@ -185,7 +185,10 @@ impl FileInstance {
 
     fn close(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let found = vm.value_type_name(receiver);
-        vm.obj_heap.get_native_mut::<FileInstance>(receiver).ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "native", found })?.reader = None;
+        vm.obj_heap
+            .get_native_mut::<FileInstance>(receiver)
+            .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "native", found })?
+            .reader = None;
         Ok(ObjectHandle::NIL)
     }
 

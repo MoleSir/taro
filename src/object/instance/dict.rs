@@ -80,8 +80,11 @@ impl ObjectDict {
     native_a1!(__not__, entries: &HashMap<u64, Vec<(ObjectHandle, ObjectHandle)>>, { entries.values().all(|b| b.is_empty()) });
 
     pub fn __str__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let all_entries: Vec<(ObjectHandle, ObjectHandle)> =
-            vm.expect_type(vm.obj_heap.get_dict_instance(receiver), receiver, "dict")?.values().flat_map(|b| b.iter().copied()).collect();
+        let all_entries: Vec<(ObjectHandle, ObjectHandle)> = vm
+            .expect_type(vm.obj_heap.get_dict_instance(receiver), receiver, "dict")?
+            .values()
+            .flat_map(|b| b.iter().copied())
+            .collect();
 
         let mut result = String::from("{");
         let mut first = true;
@@ -179,13 +182,21 @@ impl ObjectDict {
 
     /// `dict.keys()` — return a list of all keys.
     pub fn keys(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let keys: Vec<ObjectHandle> = vm.expect_type(vm.obj_heap.get_dict_instance(receiver), receiver, "dict")?.values().flat_map(|b| b.iter().map(|&(k, _)| k)).collect();
+        let keys: Vec<ObjectHandle> = vm
+            .expect_type(vm.obj_heap.get_dict_instance(receiver), receiver, "dict")?
+            .values()
+            .flat_map(|b| b.iter().map(|&(k, _)| k))
+            .collect();
         Ok(vm.obj_heap.alloc_list_instance(keys))
     }
 
     /// `dict.values()` — return a list of all values.
     pub fn values(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let values: Vec<ObjectHandle> = vm.expect_type(vm.obj_heap.get_dict_instance(receiver), receiver, "dict")?.values().flat_map(|b| b.iter().map(|&(_, v)| v)).collect();
+        let values: Vec<ObjectHandle> = vm
+            .expect_type(vm.obj_heap.get_dict_instance(receiver), receiver, "dict")?
+            .values()
+            .flat_map(|b| b.iter().map(|&(_, v)| v))
+            .collect();
         Ok(vm.obj_heap.alloc_list_instance(values))
     }
 
@@ -226,7 +237,8 @@ impl ObjectDict {
             Some(idx) => {
                 let removed = bucket.remove(idx);
                 let found = vm.value_type_name(receiver);
-        let inst = vm.obj_heap.get_instance_mut(receiver).ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "instance", found })?;
+                let inst =
+                    vm.obj_heap.get_instance_mut(receiver).ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "instance", found })?;
                 if let Some(dict) = inst.data.as_any_mut().downcast_mut::<ObjectDict>() {
                     let entries = &mut dict.entries;
                     if bucket.is_empty() {
@@ -244,13 +256,20 @@ impl ObjectDict {
     // ---- iteration protocol ----
 
     pub fn __iter__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let keys: Vec<ObjectHandle> = vm.expect_type(vm.obj_heap.get_dict_instance(receiver), receiver, "dict")?.values().flat_map(|b| b.iter().map(|&(k, _)| k)).collect();
+        let keys: Vec<ObjectHandle> = vm
+            .expect_type(vm.obj_heap.get_dict_instance(receiver), receiver, "dict")?
+            .values()
+            .flat_map(|b| b.iter().map(|&(k, _)| k))
+            .collect();
         Ok(vm.obj_heap.alloc_instance(vm.obj_heap.dict_iter_class, ObjectDictIterator { keys, index: 0 }))
     }
 
     pub fn iter_next(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let found = vm.value_type_name(receiver);
-        let iter = vm.obj_heap.get_dict_iter_mut(receiver).ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "dict iterator", found })?;
+        let iter = vm
+            .obj_heap
+            .get_dict_iter_mut(receiver)
+            .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "dict iterator", found })?;
         if iter.index < iter.keys.len() {
             let key = iter.keys[iter.index];
             iter.index += 1;

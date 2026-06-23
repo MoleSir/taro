@@ -207,7 +207,10 @@ impl ObjectBytes {
         let value = data[idx];
         // NLL drops `data` reference here; mut borrow below is now exclusive.
         let found = vm.value_type_name(receiver);
-        let iter = vm.obj_heap.get_bytes_iter_mut(receiver).ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "bytes iterator", found })?;
+        let iter = vm
+            .obj_heap
+            .get_bytes_iter_mut(receiver)
+            .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "bytes iterator", found })?;
         iter.index = idx + 1;
         Ok(vm.obj_heap.alloc_integer_instance(value as i64))
     }

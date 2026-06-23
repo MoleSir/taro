@@ -288,7 +288,8 @@ impl VirtualMachine {
             Object::Instance(_) => {
                 match self.dispatch_magic(handle, "__str__", &[]) {
                     Ok(result) => self
-                        .obj_heap.get_string_instance(result)
+                        .obj_heap
+                        .get_string_instance(result)
                         .cloned()
                         .ok_or_else(|| RuntimeErrorKind::BadStrResult(self.value_type_name(result)).into()),
                     Err(RuntimeErrorKind::NoImplementMethod(_, _)) => {

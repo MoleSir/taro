@@ -55,7 +55,8 @@ fn choice(vm: &mut VirtualMachine, seq: ObjectHandle) -> RuntimeResult<ObjectHan
     // the mutable borrow on `vm.rng`.
     let len = {
         let list = vm
-            .obj_heap.get_list_instance(seq)
+            .obj_heap
+            .get_list_instance(seq)
             .ok_or_else(|| RuntimeErrorKind::BinaryOpTypeMismatch("choice", "list", vm.value_type_name(seq)))?;
         if list.is_empty() {
             return Err(RuntimeErrorKind::RandomError("choice: list is empty".into()));
@@ -70,7 +71,8 @@ fn shuffle(vm: &mut VirtualMachine, seq: ObjectHandle) -> RuntimeResult<ObjectHa
     // Pre-generate swap indices to avoid overlapping borrows.
     let n = {
         let list = vm
-            .obj_heap.get_list_instance(seq)
+            .obj_heap
+            .get_list_instance(seq)
             .ok_or_else(|| RuntimeErrorKind::BinaryOpTypeMismatch("shuffle", "list", vm.value_type_name(seq)))?;
         list.len()
     };

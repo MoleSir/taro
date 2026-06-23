@@ -145,12 +145,7 @@ impl VirtualMachine {
     /// descriptive error on mismatch.  Prefer plain `.expect("must …")` in
     /// internal dispatch code where the handle type is structurally guaranteed.
     #[inline]
-    pub fn expect_type<'a, T>(
-        &self,
-        opt: Option<&'a T>,
-        handle: ObjectHandle,
-        expected: &'static str,
-    ) -> RuntimeResult<&'a T> {
+    pub fn expect_type<'a, T>(&self, opt: Option<&'a T>, handle: ObjectHandle, expected: &'static str) -> RuntimeResult<&'a T> {
         opt.ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected, found: self.value_type_name(handle) }.into())
     }
 

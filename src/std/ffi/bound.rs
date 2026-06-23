@@ -7,10 +7,11 @@
 
 use std::ffi::c_void;
 
-use crate::vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine};
+use crate::vm::{RuntimeResult, VirtualMachine};
 use crate::{ObjectHandle, ShrString, impl_object_instance_data};
 
 use super::call::dispatch_call;
+use super::error::FfiError;
 use super::types::CType;
 
 struct CachedCif(libffi::middle::Cif);
@@ -38,7 +39,7 @@ impl_object_instance_data!(BoundFn, "BoundFn");
 impl BoundFn {
     pub(super) fn __call__(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
         if args.is_empty() {
-            return Err(RuntimeErrorKind::FfiError("bound function call: missing self".into()));
+            return Err(FfiError::BoundFnMissingSelf.into());
         }
 
         let self_handle = args[0];
@@ -47,27 +48,18 @@ impl BoundFn {
         // Snapshot everything from the BoundFn so we can release the
         // immutable borrow on vm.obj_heap before dispatch_call needs &mut vm.
         let (func_ptr, expected, arg_types, ret_type, cached_cif) = {
-            let bound = vm
-                .obj_heap
-                .get_native::<BoundFn>(self_handle)
-                .ok_or_else(|| RuntimeErrorKind::FfiError("bound function call: self is not a BoundFn".into()))?;
-            (
-                bound.func_ptr,
-                bound.arg_types.len(),
-                bound.arg_types.clone(),
-                bound.ret_type.clone(),
-                bound.cached_cif.0.clone(), // Cif::clone() is a shallow copy — cheap
-            )
+            let bound = vm.obj_heap.get_native::<BoundFn>(self_handle).ok_or(FfiError::BoundFnNotBoundFn)?;
+            (bound.func_ptr, bound.arg_types.len(), bound.arg_types.clone(), bound.ret_type.clone(), bound.cached_cif.0.clone())
         };
 
         if user_args.len() != expected {
-            return Err(RuntimeErrorKind::FfiError(format!("bound function expects {expected} argument(s), got {}", user_args.len())));
+            return Err(FfiError::BoundFnArgCount { expected, got: user_args.len() }.into());
         }
 
         // Marshal arguments using the cached type info.
         let mut c_values: Vec<super::types::CValue> = Vec::with_capacity(expected);
         for (i, (ct, &handle)) in arg_types.iter().zip(user_args).enumerate() {
-            let cv = ct.taro_to_cvalue(vm, handle).map_err(|e| RuntimeErrorKind::FfiError(format!("argument {i}: {e}")))?;
+            let cv = ct.taro_to_cvalue(vm, handle).map_err(|e| FfiError::MarshalArg { idx: i, reason: e.to_string() })?;
             c_values.push(cv);
         }
 
@@ -75,7 +67,7 @@ impl BoundFn {
     }
 
     pub(super) fn __new__(_vm: &mut VirtualMachine, _args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
-        Err(RuntimeErrorKind::FfiError("BoundFn cannot be constructed directly; use ffi.bind()".into()))
+        Err(FfiError::BoundFnDirectConstruction.into())
     }
 }
 
@@ -84,20 +76,21 @@ impl BoundFn {
 // ===========================================================================
 
 pub(super) fn bind(
-    vm: &mut VirtualMachine, library_handle: ObjectHandle, name: ObjectHandle, ret_type_handle: ObjectHandle, arg_types_list: ObjectHandle,
+    vm: &mut VirtualMachine,
+    library_handle: ObjectHandle,
+    name: ObjectHandle,
+    ret_type_handle: ObjectHandle,
+    arg_types_list: ObjectHandle,
 ) -> RuntimeResult<ObjectHandle> {
     // --- Resolve function pointer ---
     let name_str = vm.expect_type(vm.obj_heap.get_string_instance(name), name, "string")?;
-    let lib = vm
-        .obj_heap
-        .get_native::<super::library::LibraryHandle>(library_handle)
-        .ok_or_else(|| RuntimeErrorKind::FfiError("bind: not a library handle".into()))?;
+    let lib = vm.obj_heap.get_native::<super::library::LibraryHandle>(library_handle).ok_or(FfiError::BindNotLibrary)?;
 
     let func_ptr: *const c_void = unsafe {
         let symbol: libloading::Symbol<*const c_void> = lib
             .lib
             .get(name_str.as_str().as_bytes())
-            .map_err(|e| RuntimeErrorKind::FfiError(format!("bind('{}'): {e}", name_str)))?;
+            .map_err(|e| FfiError::BindSymbol { name: name_str.as_str().to_string(), error: e.to_string() })?;
         *symbol
     };
 
@@ -106,9 +99,7 @@ pub(super) fn bind(
     let ret_type = CType::from_str(&ret_type_str)?;
 
     // --- Parse argument types ---
-    let arg_type_handles = vm
-        .obj_heap.get_list_instance(arg_types_list)
-        .ok_or_else(|| RuntimeErrorKind::FfiError("bind: argument types must be a list".into()))?;
+    let arg_type_handles = vm.obj_heap.get_list_instance(arg_types_list).ok_or(FfiError::BindArgTypesNotList)?;
     let arg_types: Vec<CType> = arg_type_handles.iter().map(|&h| CType::from_handle(vm, h)).collect::<RuntimeResult<_>>()?;
 
     // --- Build CIF once ---
@@ -117,9 +108,6 @@ pub(super) fn bind(
 
     let bound = BoundFn { func_ptr, arg_types, ret_type, cached_cif: CachedCif(cif) };
 
-    let class = vm
-        .lookup_loaded_module_export("std/ffi", &ShrString::new_str("BoundFn"))
-        .ok_or_else(|| RuntimeErrorKind::FfiError("BoundFn class not found in ffi module".into()))?;
+    let class = vm.lookup_loaded_module_export("std/ffi", &ShrString::new_str("BoundFn")).ok_or(FfiError::BoundFnClassNotFound)?;
     Ok(vm.obj_heap.alloc_instance(class, bound))
 }
-

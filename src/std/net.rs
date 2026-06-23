@@ -151,7 +151,10 @@ impl Socket {
     /// `socket.close()` — close the socket.
     fn close(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let found = vm.value_type_name(receiver);
-        vm.obj_heap.get_native_mut::<Socket>(receiver).ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "native", found })?.stream = None;
+        vm.obj_heap
+            .get_native_mut::<Socket>(receiver)
+            .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "native", found })?
+            .stream = None;
         Ok(ObjectHandle::NIL)
     }
 
@@ -166,7 +169,10 @@ impl Socket {
         };
         let dur = Duration::from_secs_f64(secs);
         let found = vm.value_type_name(receiver);
-        let data = vm.obj_heap.get_native_mut::<Socket>(receiver).ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "native", found })?;
+        let data = vm
+            .obj_heap
+            .get_native_mut::<Socket>(receiver)
+            .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "native", found })?;
         if let Some(ref stream) = data.stream {
             stream.set_read_timeout(Some(dur)).map_err(|e| RuntimeErrorKind::NetError(format!("settimeout: {}", e)))?;
         }
@@ -250,7 +256,10 @@ impl Server {
     /// `server.close()` — close the listener.
     fn close(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let found = vm.value_type_name(receiver);
-        vm.obj_heap.get_native_mut::<Server>(receiver).ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "native", found })?.listener = None;
+        vm.obj_heap
+            .get_native_mut::<Server>(receiver)
+            .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "native", found })?
+            .listener = None;
         Ok(ObjectHandle::NIL)
     }
 

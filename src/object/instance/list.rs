@@ -120,7 +120,8 @@ impl ObjectList {
     ) -> RuntimeResult<ObjectHandle> {
         let idx_val = *vm.expect_type(vm.obj_heap.get_integer_instance(idx_handle), idx_handle, "int")?;
         let found = vm.value_type_name(receiver);
-        let items = vm.obj_heap.get_list_instance_mut(receiver).ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "list", found })?;
+        let items =
+            vm.obj_heap.get_list_instance_mut(receiver).ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "list", found })?;
         let len = items.len();
         let idx = if idx_val < 0 { len as i64 + idx_val } else { idx_val };
         if idx < 0 || idx as usize >= len {
@@ -157,7 +158,8 @@ impl ObjectList {
     /// `list.append(value)` — add an item to the end of the list.
     pub fn append(vm: &mut VirtualMachine, receiver: ObjectHandle, value: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let found = vm.value_type_name(receiver);
-        let items = vm.obj_heap.get_list_instance_mut(receiver).ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "list", found })?;
+        let items =
+            vm.obj_heap.get_list_instance_mut(receiver).ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "list", found })?;
         items.push(value);
         Ok(value)
     }
@@ -165,7 +167,8 @@ impl ObjectList {
     /// `list.pop()` — remove and return the last item.
     pub fn pop(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let found = vm.value_type_name(receiver);
-        let items = vm.obj_heap.get_list_instance_mut(receiver).ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "list", found })?;
+        let items =
+            vm.obj_heap.get_list_instance_mut(receiver).ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "list", found })?;
         items.pop().ok_or(RuntimeErrorKind::EmptyPop)
     }
 
@@ -173,7 +176,8 @@ impl ObjectList {
     pub fn extend(vm: &mut VirtualMachine, receiver: ObjectHandle, other: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let other_items = vm.expect_type(vm.obj_heap.get_list_instance(other), other, "list")?.clone();
         let found = vm.value_type_name(receiver);
-        let items = vm.obj_heap.get_list_instance_mut(receiver).ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "list", found })?;
+        let items =
+            vm.obj_heap.get_list_instance_mut(receiver).ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "list", found })?;
         items.extend(other_items);
         Ok(ObjectHandle::NIL)
     }
@@ -198,7 +202,10 @@ impl ObjectList {
         // NLL drops `items` reference here; the &mut self borrow below is
         // now exclusive, allowing the index update.
         let found = vm.value_type_name(receiver);
-        let iter = vm.obj_heap.get_list_iter_mut(receiver).ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "list iterator", found })?;
+        let iter = vm
+            .obj_heap
+            .get_list_iter_mut(receiver)
+            .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "list iterator", found })?;
         iter.index = idx + 1;
         Ok(value)
     }

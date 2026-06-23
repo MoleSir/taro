@@ -574,7 +574,10 @@ impl ObjectString {
             }
         };
         let found = vm.value_type_name(receiver);
-        let iter = vm.obj_heap.get_string_iter_mut(receiver).ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "string iterator", found })?;
+        let iter = vm
+            .obj_heap
+            .get_string_iter_mut(receiver)
+            .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "string iterator", found })?;
         iter.byte_index += char_len;
         Ok(vm.obj_heap.alloc_string_instance(char_str.into()))
     }

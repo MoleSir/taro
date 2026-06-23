@@ -1,0 +1,112 @@
+import "std/ffi";
+
+var lib = ffi.dlopen("examples/libraylib.so.6.0.0");
+
+// ==========================================
+// 1. 结构体定义 (使用 ctypes 风格的 CType 对象)
+// ==========================================
+var Color = ffi.define_struct([["r", ffi.c_uint8], ["g", ffi.c_uint8], ["b", ffi.c_uint8], ["a", ffi.c_uint8]]);
+
+// 定义 3D 向量
+var Vector3 = ffi.define_struct([["x", ffi.c_float], ["y", ffi.c_float], ["z", ffi.c_float]]);
+
+// 定义 3D 摄像机 (嵌套了三个 Vector3 结构体！)
+var Camera3D = ffi.define_struct([
+    ["position", Vector3],
+    ["target", Vector3],
+    ["up", Vector3],
+    ["fovy", ffi.c_float],
+    ["projection", ffi.c_int32]
+]);
+
+// ==========================================
+// 2. FFI 绑定
+// ==========================================
+var init_window         = ffi.bind(lib, "InitWindow", "void", ["int32", "int32", "cstring"]);
+var close_window        = ffi.bind(lib, "CloseWindow", "void", []);
+var window_should_close = ffi.bind(lib, "WindowShouldClose", "bool", []);
+var set_target_fps      = ffi.bind(lib, "SetTargetFPS", "void", ["int32"]);
+var begin_drawing       = ffi.bind(lib, "BeginDrawing", "void", []);
+var end_drawing         = ffi.bind(lib, "EndDrawing", "void", []);
+var clear_background    = ffi.bind(lib, "ClearBackground", "void", [Color]);
+var draw_text           = ffi.bind(lib, "DrawText", "void", ["cstring", "int32", "int32", "int32", Color]);
+var draw_fps            = ffi.bind(lib, "DrawFPS", "void", ["int32", "int32"]);
+
+// 3D 专属绑定
+var begin_mode_3d   = ffi.bind(lib, "BeginMode3D", "void", [Camera3D]);
+var end_mode_3d     = ffi.bind(lib, "EndMode3D", "void", []);
+var draw_cube       = ffi.bind(lib, "DrawCube", "void", [Vector3, "float", "float", "float", Color]);
+var draw_cube_wires = ffi.bind(lib, "DrawCubeWires", "void", [Vector3, "float", "float", "float", Color]);
+var draw_grid       = ffi.bind(lib, "DrawGrid", "void", ["int32", "float"]);
+
+// ==========================================
+// 3. 初始化与状态
+// ==========================================
+var screen_w = 800;
+var screen_h = 600;
+
+init_window(screen_w, screen_h, "Taro FFI: 3D Nested Structs Test!");
+set_target_fps(60);
+
+// 颜色定义
+var bg_color   = Color(245, 245, 245, 255); // RAYWHITE
+var cube_color = Color(230, 41, 55, 255);   // RED
+var wire_color = Color(130, 20, 30, 255);   // DARK RED
+var text_color = Color(80, 80, 80, 255);    // DARK GRAY
+
+// 初始化 3D 摄像机
+var camera = Camera3D(
+    Vector3(0.0, 10.0, 10.0),   // position: 摄像机位置 (位于右上方)
+    Vector3(0.0, 0.0, 0.0),     // target: 看向原点
+    Vector3(0.0, 1.0, 0.0),     // up: 上方向为 Y 轴正方向
+    45.0,                       // fovy: 视野角度
+    0                           // projection: 透视投影
+);
+
+// 悬浮方块的位置和运动状态
+var cube_pos = Vector3(0.0, 1.0, 0.0);
+var move_dir = 1; 
+var speed    = 0.05;
+
+// ==========================================
+// 4. 主循环
+// ==========================================
+while !window_should_close() {
+    
+    // 简单的 3D 逻辑：让方块在 X 轴上来回移动
+    cube_pos.x = cube_pos.x + (speed * move_dir);
+    if cube_pos.x > 3.0 {
+        move_dir = -1;
+    }
+    if cube_pos.x < -3.0 {
+        move_dir = 1;
+    }
+
+    // 渲染
+    begin_drawing();
+    clear_background(bg_color);
+
+    // 开启 3D 模式 (这里是终极考验：将 44 字节大小的 Camera3D 结构体按值传给 C！)
+    begin_mode_3d(camera);
+        
+        // 绘制一个 10x10 的网格地面
+        draw_grid(10, 1.0);
+
+        // 绘制 3D 方块实体 (长宽高皆为 2.0)
+        draw_cube(cube_pos, 2.0, 2.0, 2.0, cube_color);
+        
+        // 绘制 3D 方块的线框 (增加立体感)
+        draw_cube_wires(cube_pos, 2.0, 2.0, 2.0, wire_color);
+
+    end_mode_3d();
+
+    // 回到 2D 模式绘制 UI
+    draw_text("Welcome to Taro 3D Engine!", 10, 40, 20, text_color);
+    draw_text("If you see a moving 3D cube, your nested FFI structs work perfectly!", 10, 70, 15, text_color);
+    draw_fps(10, 10);
+
+    end_drawing();
+}
+
+close_window();
+ffi.dlclose(lib);

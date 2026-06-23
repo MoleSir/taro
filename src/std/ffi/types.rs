@@ -2,7 +2,7 @@
 //!
 //! `CType` is the single source of truth for all C type information:
 //! size, alignment, libffi type mapping, and value conversion.
-//! Parsed once at bind/struct_def time, cheaply cloned thereafter.
+//! Parsed once at bind/define_struct time, cheaply cloned thereafter.
 //!
 //! # Macro strategy
 //!
@@ -12,10 +12,16 @@
 //! `write_to_buffer`, `call_ffi`) have enough per-category variation that
 //! keeping them explicit is clearer than forcing them into a table.
 
+use std::alloc::Layout;
+use std::collections::HashMap;
 use std::ffi::{CString, c_char, c_void};
 
-use crate::vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine};
+use crate::object::{ObjectHeap, ObjectInstanceData};
+use crate::vm::{RuntimeResult, VirtualMachine};
 use crate::{ObjectHandle, ShrString, ToShrString};
+use std::any::Any;
+
+use super::error::FfiError;
 
 // ===========================================================================
 // Macro: generate from_str + size_align + to_ffi_type
@@ -32,10 +38,7 @@ macro_rules! impl_scalar_methods {
             match s {
                 $($name => Ok(CType::$variant),)*
                 "void" => Ok(CType::Void),
-                _ => Err(RuntimeErrorKind::FfiError(format!(
-                    "unknown C type '{s}'. Supported: void int8 int16 int32 int64 \
-                     uint8 uint16 uint32 uint64 float double pointer cstring bool"
-                ))),
+                _ => Err(FfiError::UnknownCType(s.into()).into()),
             }
         }
 
@@ -43,10 +46,8 @@ macro_rules! impl_scalar_methods {
         pub(super) fn size_align(&self) -> RuntimeResult<(usize, usize)> {
             match self {
                 $(CType::$variant => Ok(($size, $align)),)*
-                CType::Void => Err(RuntimeErrorKind::FfiError("void has no size".into())),
-                CType::Struct(_) => Err(RuntimeErrorKind::FfiError(
-                    "nested structs not supported".into(),
-                )),
+                CType::Void => Err(FfiError::VoidNoSize.into()),
+                CType::Struct(layout) => Ok((layout.size, layout.alignment)),
             }
         }
 
@@ -55,8 +56,9 @@ macro_rules! impl_scalar_methods {
             match self {
                 $(CType::$variant => libffi::middle::Type::$ffi_ctor(),)*
                 CType::Void => libffi::middle::Type::void(),
-                CType::Struct(fields) => {
-                    let tys: Vec<libffi::middle::Type> = fields
+                CType::Struct(layout) => {
+                    let tys: Vec<libffi::middle::Type> = layout
+                        .field_types
                         .iter()
                         .map(|ct| ct.to_ffi_type())
                         .collect();
@@ -68,10 +70,57 @@ macro_rules! impl_scalar_methods {
 }
 
 // ===========================================================================
+// StructLayout — C struct layout metadata
+// ===========================================================================
+
+/// Pre-computed layout information for a C struct type.
+///
+/// Created by [`struct_layout_from_descriptors`] when the user calls
+/// `ffi.define_struct(...)`, then embedded in a `CType::Struct` variant
+/// stored on a `CType` instance.
+#[derive(Debug, Clone)]
+pub(super) struct StructLayout {
+    /// Field types in layout order.
+    pub(super) field_types: Vec<CType>,
+    /// Field names in layout order.
+    pub(super) field_names: Vec<String>,
+    /// Byte offset of each field from the start of the struct.
+    pub(super) offsets: Vec<usize>,
+    /// Total size of the struct (including tail padding).
+    pub(super) size: usize,
+    /// Alignment of the struct.
+    pub(super) alignment: usize,
+}
+
+/// Compute the `StructLayout` from field `(name, CType)` descriptors.
+pub(super) fn struct_layout_from_descriptors(descriptors: &[(String, CType)]) -> RuntimeResult<StructLayout> {
+    let mut field_types = Vec::with_capacity(descriptors.len());
+    let mut field_names = Vec::with_capacity(descriptors.len());
+    let mut offsets = Vec::with_capacity(descriptors.len());
+
+    let mut layout = Layout::from_size_align(0, 1).map_err(|_| FfiError::Layout("invalid initial alignment".into()))?;
+
+    for (name, ct) in descriptors {
+        let (size, align) = ct.size_align()?;
+        let field_layout = Layout::from_size_align(size, align)
+            .map_err(|_| FfiError::Layout(format!("invalid layout for field '{name}' (size={size}, align={align})")))?;
+        let (new_layout, offset) =
+            layout.extend(field_layout).map_err(|_| FfiError::Layout("struct exceeds maximum supported size".into()))?;
+        layout = new_layout;
+        offsets.push(offset);
+        field_types.push(ct.clone());
+        field_names.push(name.clone());
+    }
+
+    let total_layout = layout.pad_to_align();
+    Ok(StructLayout { field_types, field_names, offsets, size: total_layout.size(), alignment: total_layout.align() })
+}
+
+// ===========================================================================
 // CType — unified C type descriptor
 // ===========================================================================
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub(super) enum CType {
     I8,
     I16,
@@ -87,7 +136,27 @@ pub(super) enum CType {
     Pointer,
     CString,
     Void,
-    Struct(Vec<CType>),
+    Struct(StructLayout),
+}
+
+// ===========================================================================
+// ObjectInstanceData impl — CType is stored directly on the heap
+// ===========================================================================
+
+impl ObjectInstanceData for CType {
+    fn mark_references(&self, _heap: &mut ObjectHeap) {
+        // CType contains no ObjectHandles — scalar variants are zero-size,
+        // StructLayout owns only String/Vec/CType, all non-GC types.
+    }
+    fn type_name(&self) -> &'static str {
+        "CType"
+    }
+    fn as_any_ref(&self) -> &dyn Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn Any {
+        self
+    }
 }
 
 impl CType {
@@ -108,17 +177,19 @@ impl CType {
     }
 
     // ------------------------------------------------------------------
-    // from_handle — detect type string or StructDef object
+    // from_handle — resolve a type handle to a CType
     // ------------------------------------------------------------------
 
     pub(super) fn from_handle(vm: &VirtualMachine, handle: ObjectHandle) -> RuntimeResult<Self> {
-        if let Some(def) = vm.obj_heap.get_native::<super::structs::StructDef>(handle) {
-            Ok(CType::Struct(def.field_types.clone()))
-        } else if let Some(s) = vm.obj_heap.get_string_instance(handle) {
-            CType::from_str(s.as_str())
-        } else {
-            Err(RuntimeErrorKind::FfiError(format!("expected type string or struct def, got {}", vm.value_type_name(handle))))
+        // CType instances (both scalar singletons and struct types)
+        if let Some(ct) = vm.obj_heap.get_native::<CType>(handle) {
+            return Ok(ct.clone());
         }
+        // Backward-compatible: type name strings
+        if let Some(s) = vm.obj_heap.get_string_instance(handle) {
+            return CType::from_str(s.as_str());
+        }
+        Err(FfiError::ExpectedType(vm.value_type_name(handle).into()).into())
     }
 
     // ------------------------------------------------------------------
@@ -149,7 +220,7 @@ impl CType {
             }
             CType::CString => {
                 let s = vm.expect_type(vm.obj_heap.get_string_instance(handle), handle, "string")?;
-                let cs = CString::new(s.as_str()).map_err(|e| RuntimeErrorKind::FfiError(format!("CString error: {e}")))?;
+                let cs = CString::new(s.as_str()).map_err(|e| FfiError::CString(e.to_string()))?;
                 let ptr: *const c_char = cs.as_ptr();
                 Ok(CValue::CString { _cstring: cs, ptr })
             }
@@ -157,30 +228,18 @@ impl CType {
                 let v = vm.expect_type(vm.obj_heap.get_bool_instance(handle), handle, "bool").copied()?;
                 Ok(CValue::Bool(if v { 1u8 } else { 0u8 }))
             }
-            CType::Void => Err(RuntimeErrorKind::FfiError("cannot marshal void as argument".into())),
-            CType::Struct(_) => {
+            CType::Void => Err(FfiError::VoidAsArgument.into()),
+            CType::Struct(layout) => {
                 // Rebuild raw byte buffer from the Struct instance's named fields.
-                let struct_data = vm
-                    .obj_heap
-                    .get_native::<super::structs::Struct>(handle)
-                    .ok_or_else(|| RuntimeErrorKind::FfiError("expected struct instance".into()))?;
+                let struct_data = vm.obj_heap.get_native::<super::structs::Struct>(handle).ok_or(FfiError::ExpectedStruct)?;
 
-                let def = vm
-                    .obj_heap
-                    .get_native::<super::structs::StructDef>(struct_data.struct_def)
-                    .ok_or_else(|| RuntimeErrorKind::FfiError("struct def not found".into()))?;
-
-                let mut data = vec![0u8; def.size];
-                for (i, (name, ctype)) in def.field_names.iter().zip(&def.field_types).enumerate() {
+                let mut data = vec![0u8; layout.size];
+                for (i, (name, fct)) in layout.field_names.iter().zip(&layout.field_types).enumerate() {
                     let field_key = ShrString::new_string(name.as_str());
-                    let value_handle = struct_data
-                        .fields
-                        .get(&field_key)
-                        .copied()
-                        .ok_or_else(|| RuntimeErrorKind::FfiError(format!("struct field '{name}' not found")))?;
-                    ctype
-                        .write_to_buffer(vm, value_handle, &mut data[def.offsets[i]..])
-                        .map_err(|e| RuntimeErrorKind::FfiError(format!("struct field '{name}': {e}")))?;
+                    let value_handle =
+                        struct_data.fields.get(&field_key).copied().ok_or_else(|| FfiError::StructFieldNotFound(name.clone()))?;
+                    fct.write_to_buffer(vm, value_handle, &mut data[layout.offsets[i]..])
+                        .map_err(|e| FfiError::StructFieldError { name: name.clone(), error: e.to_string() })?;
                 }
                 Ok(CValue::Struct { data })
             }
@@ -223,8 +282,30 @@ impl CType {
                 }
                 Ok(())
             }
-            CType::Void => Err(RuntimeErrorKind::FfiError("void is not a valid struct field type".into())),
-            CType::Struct(_) => Err(RuntimeErrorKind::FfiError("nested struct definitions are not supported".into())),
+            CType::Void => Err(FfiError::VoidAsField.into()),
+            CType::Struct(_) => {
+                // Recursively serialize a nested struct instance into the buffer.
+                let struct_data = vm.obj_heap.get_native::<super::structs::Struct>(handle).ok_or(FfiError::ExpectedNestedStruct)?;
+
+                // Get the nested struct's CType from its back-link to extract the layout.
+                let ctype = vm
+                    .obj_heap
+                    .get_native::<CType>(struct_data.ctype)
+                    .ok_or(FfiError::Layout("struct type not found for nested field".into()))?;
+
+                let layout = match ctype {
+                    CType::Struct(layout) => layout,
+                    _ => return Err(FfiError::NestedNotStruct.into()),
+                };
+
+                for (i, (name, fct)) in layout.field_names.iter().zip(&layout.field_types).enumerate() {
+                    let field_key = ShrString::new_string(name.as_str());
+                    let value_handle =
+                        struct_data.fields.get(&field_key).copied().ok_or_else(|| FfiError::StructFieldNotFound(name.clone()))?;
+                    fct.write_to_buffer(vm, value_handle, &mut buf[layout.offsets[i]..])?;
+                }
+                Ok(())
+            }
         }
     }
 
@@ -302,7 +383,50 @@ impl CType {
                     Ok(vm.obj_heap.alloc_string_instance(s))
                 }
             }
-            CType::Struct(_) => Err(RuntimeErrorKind::FfiError("struct return type not supported".into())),
+            CType::Struct(_) => Err(FfiError::StructReturnUnsupported.into()),
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // __call__ — create a Struct instance (struct) or convert a value
+    // ------------------------------------------------------------------
+
+    pub(super) fn __call__(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
+        if args.is_empty() {
+            return Err(FfiError::CTypeCallMissingSelf.into());
+        }
+
+        let self_handle = args[0];
+        let field_values = &args[1..];
+
+        let ctype = vm.obj_heap.get_native::<CType>(self_handle).ok_or(FfiError::CTypeCallNotCType)?;
+
+        match ctype {
+            CType::Struct(layout) => {
+                // Struct construction — same logic as the old StructDef.__call__.
+                if field_values.len() != layout.field_types.len() {
+                    return Err(FfiError::StructArgCount { expected: layout.field_types.len(), got: field_values.len() }.into());
+                }
+
+                let mut fields = HashMap::with_capacity(layout.field_names.len());
+                for (i, name) in layout.field_names.iter().enumerate() {
+                    fields.insert(ShrString::new_string(name.as_str()), field_values[i]);
+                }
+
+                let instance_data = super::structs::Struct { ctype: self_handle, fields };
+
+                let class = vm.lookup_module_export(self_handle, &ShrString::new_str("Struct")).ok_or(FfiError::StructClassNotFound)?;
+                Ok(vm.obj_heap.alloc_instance(class, instance_data))
+            }
+            _ => {
+                // Scalar CType — accept exactly 1 argument, validate it can be
+                // converted, and return it unchanged (like ctypes: c_int(42)).
+                if field_values.len() != 1 {
+                    return Err(FfiError::ScalarArgCount(field_values.len()).into());
+                }
+                ctype.taro_to_cvalue(vm, field_values[0])?;
+                Ok(field_values[0])
+            }
         }
     }
 }
@@ -337,8 +461,7 @@ pub(super) enum CValue {
 }
 
 impl CValue {
-    /// Convert to a libffi `Arg`.  Generated via macro for all scalar variants;
-    /// struct variants handled explicitly.
+    /// Convert to a libffi `Arg`.
     pub(super) fn as_arg(&self) -> libffi::middle::Arg {
         match self {
             CValue::I8(v) => libffi::middle::arg(v),
@@ -387,6 +510,6 @@ pub(super) fn as_f64(vm: &VirtualMachine, handle: ObjectHandle) -> RuntimeResult
     } else if let Some(v) = vm.obj_heap.get_float_instance(handle) {
         Ok(*v)
     } else {
-        Err(RuntimeErrorKind::FfiError(format!("expected number, got {}", vm.value_type_name(handle))))
+        Err(FfiError::ExpectedNumber(vm.value_type_name(handle).into()).into())
     }
 }

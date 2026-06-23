@@ -67,16 +67,16 @@ fn ffi_call_void_return() {
 }
 
 #[test]
-fn ffi_struct_def_and_new() {
+fn ffi_define_struct_and_new() {
     let mut vm = VirtualMachine::new();
     let source = r#"
         import "std/ffi";
-        var Color = ffi.StructDef(["uint8", "uint8", "uint8", "uint8"]);
+        var Color = ffi.define_struct(["uint8", "uint8", "uint8", "uint8"]);
         var c = Color(255, 0, 0, 255);
         print(Color);
         print(c);
     "#;
-    vm.interpret(source).expect("ffi_struct_def_and_new should succeed");
+    vm.interpret(source).expect("ffi_define_struct_and_new should succeed");
 }
 
 #[test]
@@ -85,7 +85,7 @@ fn ffi_struct_named_fields() {
     // Named-pair format: list of [name, type] pairs.
     let source = r#"
         import "std/ffi";
-        var Color = ffi.StructDef([["r", "uint8"], ["g", "uint8"], ["b", "uint8"], ["a", "uint8"]]);
+        var Color = ffi.define_struct([["r", "uint8"], ["g", "uint8"], ["b", "uint8"], ["a", "uint8"]]);
         var c = Color(255, 0, 128, 255);
         print(c.r);
         print(c.g);
@@ -100,7 +100,7 @@ fn ffi_struct_field_mutation() {
     let mut vm = VirtualMachine::new();
     let source = r#"
         import "std/ffi";
-        var Vec2 = ffi.StructDef([["x", "float"], ["y", "float"]]);
+        var Vec2 = ffi.define_struct([["x", "float"], ["y", "float"]]);
         var v = Vec2(1.0, 2.0);
         // v.x = 10.0;
         // v.y = 20.0;
@@ -113,10 +113,10 @@ fn ffi_struct_field_mutation() {
 #[test]
 fn ffi_struct_call_syntax() {
     let mut vm = VirtualMachine::new();
-    // StructDef.__call__ creates the instance.
+    // CType.__call__ creates the struct instance.
     let source = r#"
         import "std/ffi";
-        var Point = ffi.StructDef(["int32", "int32"]);
+        var Point = ffi.define_struct(["int32", "int32"]);
         var p = Point(100, 200);
         print(p);
     "#;
@@ -208,7 +208,7 @@ fn ffi_bind_with_struct() {
         r##"
         import "std/ffi";
         var lib = ffi.dlopen("{lib_path}");
-        var Seed = ffi.StructDef([["val", "uint32"]]);
+        var Seed = ffi.define_struct([["val", "uint32"]]);
         var s = Seed(42);
         var srand = ffi.bind(lib, "srand", "void", [Seed]);
         var r = srand(s);
@@ -216,4 +216,162 @@ fn ffi_bind_with_struct() {
         "##
     );
     vm.interpret(&source).expect("ffi_bind_with_struct should succeed");
+}
+
+#[test]
+fn ffi_ctype_singletons_exist() {
+    let mut vm = VirtualMachine::new();
+    let source = r#"
+        import "std/ffi";
+        // Verify all CType singletons are accessible.
+        var t;
+        t = ffi.c_int8;    print(t);
+        t = ffi.c_int16;   print(t);
+        t = ffi.c_int32;   print(t);
+        t = ffi.c_int64;   print(t);
+        t = ffi.c_uint8;   print(t);
+        t = ffi.c_uint16;  print(t);
+        t = ffi.c_uint32;  print(t);
+        t = ffi.c_uint64;  print(t);
+        t = ffi.c_float;   print(t);
+        t = ffi.c_double;  print(t);
+        t = ffi.c_bool;    print(t);
+        t = ffi.c_pointer; print(t);
+        t = ffi.c_cstring; print(t);
+    "#;
+    vm.interpret(source).expect("ffi_ctype_singletons_exist should succeed");
+}
+
+#[test]
+fn ffi_struct_with_ctype_objects() {
+    let mut vm = VirtualMachine::new();
+    // Use CType objects (c_float, c_int) instead of strings as field types.
+    let source = r#"
+        import "std/ffi";
+        var Vec3 = ffi.define_struct([["x", ffi.c_float], ["y", ffi.c_float], ["z", ffi.c_float]]);
+        var v = Vec3(1.0, 2.0, 3.0);
+        print(v.x);
+        print(v.y);
+        print(v.z);
+    "#;
+    vm.interpret(source).expect("ffi_struct_with_ctype_objects should succeed");
+}
+
+#[test]
+fn ffi_nested_define_struct() {
+    let mut vm = VirtualMachine::new();
+    // define_struct containing another define_struct (nested).
+    let source = r#"
+        import "std/ffi";
+        var Vector3 = ffi.define_struct([["x", "float"], ["y", "float"], ["z", "float"]]);
+        var Camera3D = ffi.define_struct([
+            ["position", Vector3],
+            ["target", Vector3],
+            ["up", Vector3],
+            ["fovy", "float"],
+            ["projection", "int32"]
+        ]);
+        var cam = Camera3D(
+            Vector3(0.0, 10.0, 10.0),
+            Vector3(0.0, 0.0, 0.0),
+            Vector3(0.0, 1.0, 0.0),
+            45.0,
+            0
+        );
+        print(cam.position.x);  // 0.0
+        print(cam.position.y);  // 10.0
+        print(cam.fovy);        // 45.0
+    "#;
+    vm.interpret(source).expect("ffi_nested_define_struct should succeed");
+}
+
+#[test]
+fn ffi_nested_struct_with_ctype_objects() {
+    let mut vm = VirtualMachine::new();
+    // Nested structs using CType objects for scalar fields.
+    let source = r#"
+        import "std/ffi";
+        var Vector3 = ffi.define_struct([["x", ffi.c_float], ["y", ffi.c_float], ["z", ffi.c_float]]);
+        var Camera3D = ffi.define_struct([
+            ["position", Vector3],
+            ["target", Vector3],
+            ["up", Vector3],
+            ["fovy", ffi.c_float],
+            ["projection", ffi.c_int32]
+        ]);
+        var cam = Camera3D(
+            Vector3(0.0, 10.0, 10.0),
+            Vector3(0.0, 0.0, 0.0),
+            Vector3(0.0, 1.0, 0.0),
+            45.0,
+            0
+        );
+        print(cam.position.x);
+        print(cam.target.y);
+        print(cam.up.z);
+    "#;
+    vm.interpret(source).expect("ffi_nested_struct_with_ctype_objects should succeed");
+}
+
+#[test]
+fn ffi_nested_struct_passed_to_bind() {
+    // Test that a nested struct (Camera3D-like) can be passed to an FFI call.
+    let lib_path = if cfg!(target_os = "linux") {
+        "libc.so.6"
+    } else if cfg!(target_os = "macos") {
+        "libSystem.dylib"
+    } else {
+        return;
+    };
+
+    let mut vm = VirtualMachine::new();
+    // We can't easily test Camera3D with libc, but we can create a two-level
+    // nested struct and pass it to a function that takes a pointer.
+    // Here we just verify the marshal path doesn't panic by passing a simple
+    // struct to srand (which takes uint32 — our struct has one field).
+    let source = format!(
+        r##"
+        import "std/ffi";
+        var lib = ffi.dlopen("{lib_path}");
+
+        // Inner struct: a single int32
+        var Inner = ffi.define_struct([["val", ffi.c_uint32]]);
+
+        // Outer struct wraps the inner one
+        var Outer = ffi.define_struct([["inner", Inner]]);
+
+        var s = Outer(Inner(42));
+
+        // Bind srand with the Outer struct type — this exercises the
+        // recursive marshal path (nested struct → buffer).
+        var srand = ffi.bind(lib, "srand", "void", [Outer]);
+        var r = srand(s);
+        print(r);
+        "##
+    );
+    vm.interpret(&source).expect("ffi_nested_struct_passed_to_bind should succeed");
+}
+
+#[test]
+fn ffi_ctype_in_bind_arg_types() {
+    let lib_path = if cfg!(target_os = "linux") {
+        "libm.so.6"
+    } else if cfg!(target_os = "macos") {
+        "libSystem.dylib"
+    } else {
+        return;
+    };
+
+    let mut vm = VirtualMachine::new();
+    // Use CType objects in bind argument type list.
+    let source = format!(
+        r##"
+        import "std/ffi";
+        var lib = ffi.dlopen("{lib_path}");
+        var cos = ffi.bind(lib, "cos", "double", [ffi.c_double]);
+        var r = cos(0.0);
+        print(r);
+        "##
+    );
+    vm.interpret(&source).expect("ffi_ctype_in_bind_arg_types should succeed");
 }
