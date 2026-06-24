@@ -1176,17 +1176,17 @@ pub fn test_call_magic_in_expression() {
 }
 
 // ===========================================================================
-// value_type_name — friendly type names in error messages
+// type_of — friendly type names in error messages
 // ===========================================================================
 
 #[test]
-pub fn test_value_type_name_nil() {
+pub fn test_type_of_nil() {
     let vm = VirtualMachine::new();
-    assert_eq!(vm.value_type_name(ObjectHandle::NIL), "nil");
+    assert_eq!(vm.obj_heap.type_of(ObjectHandle::NIL), "nil");
 }
 
 #[test]
-pub fn test_value_type_name_instance_fields() {
+pub fn test_type_of_instance_fields() {
     let mut vm = VirtualMachine::new();
     vm.interpret("class Foo {} var f = Foo();").unwrap();
     // The instance 'f' should report as "instance" (Fields variant).
@@ -1197,20 +1197,20 @@ pub fn test_value_type_name_instance_fields() {
 }
 
 #[test]
-pub fn test_value_type_name_builtin_types() {
+pub fn test_type_of_builtin_types() {
     let mut vm = VirtualMachine::new();
     // Integer handle
     let int_handle = vm.obj_heap.alloc_integer_instance(42);
-    assert_eq!(vm.value_type_name(int_handle), "integer");
+    assert_eq!(vm.obj_heap.type_of(int_handle), "int");
     // Float handle
     let float_handle = vm.obj_heap.alloc_float_instance(3.14);
-    assert_eq!(vm.value_type_name(float_handle), "float");
+    assert_eq!(vm.obj_heap.type_of(float_handle), "float");
     // Bool handle
-    assert_eq!(vm.value_type_name(vm.obj_heap.true_instance), "boolean");
-    assert_eq!(vm.value_type_name(vm.obj_heap.false_instance), "boolean");
+    assert_eq!(vm.obj_heap.type_of(vm.obj_heap.true_instance), "bool");
+    assert_eq!(vm.obj_heap.type_of(vm.obj_heap.false_instance), "bool");
     // String handle
     let str_handle = vm.obj_heap.alloc_string_instance("hello".into());
-    assert_eq!(vm.value_type_name(str_handle), "string");
+    assert_eq!(vm.obj_heap.type_of(str_handle), "string");
 }
 
 // ===========================================================================

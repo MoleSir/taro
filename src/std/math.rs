@@ -182,6 +182,6 @@ fn as_f64(vm: &VirtualMachine, handle: ObjectHandle, fn_name: &'static str) -> R
     } else if let Some(v) = vm.obj_heap.get_float_instance(handle) {
         Ok(*v)
     } else {
-        Err(RuntimeErrorKind::BinaryOpTypeMismatch(fn_name, "float", vm.value_type_name(handle)))
+        Err(RuntimeErrorKind::BinaryOpTypeMismatch(fn_name, "float", vm.obj_heap.type_of(handle)))
     }
 }

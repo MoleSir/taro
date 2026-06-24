@@ -50,7 +50,7 @@ impl CDynLib {
         }
         let class = args[0];
         let path = args[1];
-        let path_str = vm.expect_type(vm.obj_heap.get_string_instance(path), path, "string")?;
+        let path_str = vm.obj_heap.expect_string(path)?;
         let lib = unsafe { libloading::Library::new(path_str.as_str()) }.map_err(|e| FfiError::DlOpen(e.to_string()))?;
         let lib_handle = Self { lib };
         let obj = vm.obj_heap.alloc_instance(class, lib_handle);
@@ -58,7 +58,7 @@ impl CDynLib {
     }
 
     pub(super) fn symbol(vm: &mut VirtualMachine, library: ObjectHandle, name: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let name_str = vm.expect_type(vm.obj_heap.get_string_instance(name), name, "string")?;
+        let name_str = vm.obj_heap.expect_string(name)?;
         let lib = vm.obj_heap.get_instance_data::<Self>(library).ok_or(FfiError::DlSymNotLibrary)?;
         let symbol = lib.symbol_impl(name_str.as_str())?;
         let symbol_class = vm.lookup_module_export(library, &"CSymbol".to_shrstring()).expect("must symbol");
@@ -72,7 +72,7 @@ impl CDynLib {
         ret_type: ObjectHandle,
         param_types: ObjectHandle,
     ) -> RuntimeResult<ObjectHandle> {
-        let name_str = vm.expect_type(vm.obj_heap.get_string_instance(name), name, "string")?;
+        let name_str = vm.obj_heap.expect_string(name)?;
         let lib = vm.obj_heap.get_instance_data::<Self>(library).ok_or(FfiError::BindNotLibrary)?;
         let symbol = lib.symbol_impl(name_str.as_str())?;
 

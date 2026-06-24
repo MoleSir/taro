@@ -14,10 +14,10 @@ impl VirtualMachine {
         method_name: &'static str,
         args: &[ObjectHandle],
     ) -> RuntimeResult<ObjectHandle> {
-        let class_handle = self.expect_type(self.obj_heap.get_instance(receiver), receiver, "instance")?.class;
+        let class_handle = self.obj_heap.expect_instance(receiver)?.class;
 
         let method = {
-            let class = self.expect_type(self.obj_heap.get_class(class_handle), class_handle, "class")?;
+            let class = self.obj_heap.expect_class(class_handle)?;
             class
                 .methods
                 .get(method_name)
@@ -49,9 +49,9 @@ impl VirtualMachine {
     /// `arg_count` is the number of explicit arguments (the N in `callee(a1..aN)`),
     /// so the stack has `arg_count + 1` items belonging to this call.
     pub fn __call__(&mut self, callee: ObjectHandle, arg_count: usize) -> RuntimeResult<()> {
-        let instance = self.obj_heap.get_instance(callee).ok_or_else(|| RuntimeErrorKind::CanNotCall(self.value_type_name(callee)))?;
+        let instance = self.obj_heap.get_instance(callee).ok_or_else(|| RuntimeErrorKind::CanNotCall(self.obj_heap.type_of(callee)))?;
         let method = {
-            let class = self.expect_type(self.obj_heap.get_class(instance.class), instance.class, "class")?;
+            let class = self.obj_heap.expect_class(instance.class)?;
             class
                 .methods
                 .get("__call__")
@@ -74,7 +74,7 @@ impl VirtualMachine {
 
     pub fn __neg__(&mut self, value: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         if !matches!(self.obj_heap.get(value), Object::Instance(_)) {
-            return Err(RuntimeErrorKind::UnaryOpTypeMismatch("neg", self.value_type_name(value)));
+            return Err(RuntimeErrorKind::UnaryOpTypeMismatch("neg", self.obj_heap.type_of(value)));
         }
         self.dispatch_magic(value, "__neg__", &[]).map_err(|e| self.remap_unary_error(e, "neg", value))
     }
@@ -106,60 +106,60 @@ impl VirtualMachine {
 
     pub fn __add__(&mut self, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         if !matches!(self.obj_heap.get(lhs), Object::Instance(_)) {
-            return Err(RuntimeErrorKind::BinaryOpTypeMismatch("add", self.value_type_name(lhs), self.value_type_name(rhs)));
+            return Err(RuntimeErrorKind::BinaryOpTypeMismatch("add", self.obj_heap.type_of(lhs), self.obj_heap.type_of(rhs)));
         }
         if !matches!(self.obj_heap.get(rhs), Object::Instance(_)) {
-            return Err(RuntimeErrorKind::BinaryOpTypeMismatch("add", self.value_type_name(lhs), self.value_type_name(rhs)));
+            return Err(RuntimeErrorKind::BinaryOpTypeMismatch("add", self.obj_heap.type_of(lhs), self.obj_heap.type_of(rhs)));
         }
         self.dispatch_magic(lhs, "__add__", &[rhs]).map_err(|e| self.remap_binary_error(e, "add", lhs, rhs))
     }
 
     pub fn __sub__(&mut self, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         if !matches!(self.obj_heap.get(lhs), Object::Instance(_)) {
-            return Err(RuntimeErrorKind::BinaryOpTypeMismatch("sub", self.value_type_name(lhs), self.value_type_name(rhs)));
+            return Err(RuntimeErrorKind::BinaryOpTypeMismatch("sub", self.obj_heap.type_of(lhs), self.obj_heap.type_of(rhs)));
         }
         if !matches!(self.obj_heap.get(rhs), Object::Instance(_)) {
-            return Err(RuntimeErrorKind::BinaryOpTypeMismatch("sub", self.value_type_name(lhs), self.value_type_name(rhs)));
+            return Err(RuntimeErrorKind::BinaryOpTypeMismatch("sub", self.obj_heap.type_of(lhs), self.obj_heap.type_of(rhs)));
         }
         self.dispatch_magic(lhs, "__sub__", &[rhs]).map_err(|e| self.remap_binary_error(e, "sub", lhs, rhs))
     }
 
     pub fn __mul__(&mut self, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         if !matches!(self.obj_heap.get(lhs), Object::Instance(_)) {
-            return Err(RuntimeErrorKind::BinaryOpTypeMismatch("mul", self.value_type_name(lhs), self.value_type_name(rhs)));
+            return Err(RuntimeErrorKind::BinaryOpTypeMismatch("mul", self.obj_heap.type_of(lhs), self.obj_heap.type_of(rhs)));
         }
         if !matches!(self.obj_heap.get(rhs), Object::Instance(_)) {
-            return Err(RuntimeErrorKind::BinaryOpTypeMismatch("mul", self.value_type_name(lhs), self.value_type_name(rhs)));
+            return Err(RuntimeErrorKind::BinaryOpTypeMismatch("mul", self.obj_heap.type_of(lhs), self.obj_heap.type_of(rhs)));
         }
         self.dispatch_magic(lhs, "__mul__", &[rhs]).map_err(|e| self.remap_binary_error(e, "mul", lhs, rhs))
     }
 
     pub fn __div__(&mut self, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         if !matches!(self.obj_heap.get(lhs), Object::Instance(_)) {
-            return Err(RuntimeErrorKind::BinaryOpTypeMismatch("div", self.value_type_name(lhs), self.value_type_name(rhs)));
+            return Err(RuntimeErrorKind::BinaryOpTypeMismatch("div", self.obj_heap.type_of(lhs), self.obj_heap.type_of(rhs)));
         }
         if !matches!(self.obj_heap.get(rhs), Object::Instance(_)) {
-            return Err(RuntimeErrorKind::BinaryOpTypeMismatch("div", self.value_type_name(lhs), self.value_type_name(rhs)));
+            return Err(RuntimeErrorKind::BinaryOpTypeMismatch("div", self.obj_heap.type_of(lhs), self.obj_heap.type_of(rhs)));
         }
         self.dispatch_magic(lhs, "__div__", &[rhs]).map_err(|e| self.remap_binary_error(e, "div", lhs, rhs))
     }
 
     pub fn __mod__(&mut self, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         if !matches!(self.obj_heap.get(lhs), Object::Instance(_)) {
-            return Err(RuntimeErrorKind::BinaryOpTypeMismatch("mod", self.value_type_name(lhs), self.value_type_name(rhs)));
+            return Err(RuntimeErrorKind::BinaryOpTypeMismatch("mod", self.obj_heap.type_of(lhs), self.obj_heap.type_of(rhs)));
         }
         if !matches!(self.obj_heap.get(rhs), Object::Instance(_)) {
-            return Err(RuntimeErrorKind::BinaryOpTypeMismatch("mod", self.value_type_name(lhs), self.value_type_name(rhs)));
+            return Err(RuntimeErrorKind::BinaryOpTypeMismatch("mod", self.obj_heap.type_of(lhs), self.obj_heap.type_of(rhs)));
         }
         self.dispatch_magic(lhs, "__mod__", &[rhs]).map_err(|e| self.remap_binary_error(e, "mod", lhs, rhs))
     }
 
     pub fn __floordiv__(&mut self, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         if !matches!(self.obj_heap.get(lhs), Object::Instance(_)) {
-            return Err(RuntimeErrorKind::BinaryOpTypeMismatch("floordiv", self.value_type_name(lhs), self.value_type_name(rhs)));
+            return Err(RuntimeErrorKind::BinaryOpTypeMismatch("floordiv", self.obj_heap.type_of(lhs), self.obj_heap.type_of(rhs)));
         }
         if !matches!(self.obj_heap.get(rhs), Object::Instance(_)) {
-            return Err(RuntimeErrorKind::BinaryOpTypeMismatch("floordiv", self.value_type_name(lhs), self.value_type_name(rhs)));
+            return Err(RuntimeErrorKind::BinaryOpTypeMismatch("floordiv", self.obj_heap.type_of(lhs), self.obj_heap.type_of(rhs)));
         }
         self.dispatch_magic(lhs, "__floordiv__", &[rhs]).map_err(|e| self.remap_binary_error(e, "floordiv", lhs, rhs))
     }
@@ -217,20 +217,20 @@ impl VirtualMachine {
 
     pub fn __gt__(&mut self, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         if !matches!(self.obj_heap.get(lhs), Object::Instance(_)) {
-            return Err(RuntimeErrorKind::BinaryOpTypeMismatch("gt", self.value_type_name(lhs), self.value_type_name(rhs)));
+            return Err(RuntimeErrorKind::BinaryOpTypeMismatch("gt", self.obj_heap.type_of(lhs), self.obj_heap.type_of(rhs)));
         }
         if !matches!(self.obj_heap.get(rhs), Object::Instance(_)) {
-            return Err(RuntimeErrorKind::BinaryOpTypeMismatch("gt", self.value_type_name(lhs), self.value_type_name(rhs)));
+            return Err(RuntimeErrorKind::BinaryOpTypeMismatch("gt", self.obj_heap.type_of(lhs), self.obj_heap.type_of(rhs)));
         }
         self.dispatch_magic(lhs, "__gt__", &[rhs]).map_err(|e| self.remap_binary_error(e, "gt", lhs, rhs))
     }
 
     pub fn __ge__(&mut self, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         if !matches!(self.obj_heap.get(lhs), Object::Instance(_)) {
-            return Err(RuntimeErrorKind::BinaryOpTypeMismatch("ge", self.value_type_name(lhs), self.value_type_name(rhs)));
+            return Err(RuntimeErrorKind::BinaryOpTypeMismatch("ge", self.obj_heap.type_of(lhs), self.obj_heap.type_of(rhs)));
         }
         if !matches!(self.obj_heap.get(rhs), Object::Instance(_)) {
-            return Err(RuntimeErrorKind::BinaryOpTypeMismatch("ge", self.value_type_name(lhs), self.value_type_name(rhs)));
+            return Err(RuntimeErrorKind::BinaryOpTypeMismatch("ge", self.obj_heap.type_of(lhs), self.obj_heap.type_of(rhs)));
         }
         match self.dispatch_magic(lhs, "__ge__", &[rhs]) {
             Ok(result) => Ok(result),
@@ -245,20 +245,20 @@ impl VirtualMachine {
 
     pub fn __lt__(&mut self, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         if !matches!(self.obj_heap.get(lhs), Object::Instance(_)) {
-            return Err(RuntimeErrorKind::BinaryOpTypeMismatch("lt", self.value_type_name(lhs), self.value_type_name(rhs)));
+            return Err(RuntimeErrorKind::BinaryOpTypeMismatch("lt", self.obj_heap.type_of(lhs), self.obj_heap.type_of(rhs)));
         }
         if !matches!(self.obj_heap.get(rhs), Object::Instance(_)) {
-            return Err(RuntimeErrorKind::BinaryOpTypeMismatch("lt", self.value_type_name(lhs), self.value_type_name(rhs)));
+            return Err(RuntimeErrorKind::BinaryOpTypeMismatch("lt", self.obj_heap.type_of(lhs), self.obj_heap.type_of(rhs)));
         }
         self.dispatch_magic(lhs, "__lt__", &[rhs]).map_err(|e| self.remap_binary_error(e, "lt", lhs, rhs))
     }
 
     pub fn __le__(&mut self, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         if !matches!(self.obj_heap.get(lhs), Object::Instance(_)) {
-            return Err(RuntimeErrorKind::BinaryOpTypeMismatch("le", self.value_type_name(lhs), self.value_type_name(rhs)));
+            return Err(RuntimeErrorKind::BinaryOpTypeMismatch("le", self.obj_heap.type_of(lhs), self.obj_heap.type_of(rhs)));
         }
         if !matches!(self.obj_heap.get(rhs), Object::Instance(_)) {
-            return Err(RuntimeErrorKind::BinaryOpTypeMismatch("le", self.value_type_name(lhs), self.value_type_name(rhs)));
+            return Err(RuntimeErrorKind::BinaryOpTypeMismatch("le", self.obj_heap.type_of(lhs), self.obj_heap.type_of(rhs)));
         }
         match self.dispatch_magic(lhs, "__le__", &[rhs]) {
             Ok(result) => Ok(result),
@@ -291,11 +291,11 @@ impl VirtualMachine {
                         .obj_heap
                         .get_string_instance(result)
                         .cloned()
-                        .ok_or_else(|| RuntimeErrorKind::BadStrResult(self.value_type_name(result)).into()),
+                        .ok_or_else(|| RuntimeErrorKind::BadStrResult(self.obj_heap.type_of(result)).into()),
                     Err(RuntimeErrorKind::NoImplementMethod(_, _)) => {
                         // Default representation for instances without __str__.
-                        let class_handle = self.expect_type(self.obj_heap.get_instance(handle), handle, "instance")?.class;
-                        let class = self.expect_type(self.obj_heap.get_class(class_handle), class_handle, "class")?;
+                        let class_handle = self.obj_heap.expect_instance(handle)?.class;
+                        let class = self.obj_heap.expect_class(class_handle)?;
                         Ok(format_shr!("<instance of {}>", class.name))
                     }
                     Err(other) => Err(other),
@@ -321,7 +321,7 @@ impl VirtualMachine {
         let object = self.obj_heap.get(handle);
         match object {
             Object::Instance(_) => match self.dispatch_magic(handle, "__bool__", &[]) {
-                Ok(result) => Ok(*self.expect_type(self.obj_heap.get_bool_instance(result), result, "bool")?),
+                Ok(result) => Ok(*self.obj_heap.expect_bool(result)?),
                 Err(RuntimeErrorKind::NoImplementMethod(_, _)) => Ok(true),
                 Err(other) => Err(other),
             },
@@ -331,22 +331,22 @@ impl VirtualMachine {
 
     pub fn __len__(&mut self, handle: ObjectHandle) -> RuntimeResult<i64> {
         if !matches!(self.obj_heap.get(handle), Object::Instance(_)) {
-            return Err(RuntimeErrorKind::UnexpectedType("object with __len__", self.value_type_name(handle)));
+            return Err(RuntimeErrorKind::UnexpectedType("object with __len__", self.obj_heap.type_of(handle)));
         }
         let result = self.dispatch_magic(handle, "__len__", &[]).map_err(|e| self.remap_len_error(e, handle))?;
-        Ok(*self.expect_type(self.obj_heap.get_integer_instance(result), result, "int")?)
+        Ok(*self.obj_heap.expect_integer(result)?)
     }
 
     pub fn __getitem__(&mut self, collection: ObjectHandle, index: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         if !matches!(self.obj_heap.get(collection), Object::Instance(_)) {
-            return Err(RuntimeErrorKind::UnexpectedType("object with __getitem__", self.value_type_name(collection)));
+            return Err(RuntimeErrorKind::UnexpectedType("object with __getitem__", self.obj_heap.type_of(collection)));
         }
         self.dispatch_magic(collection, "__getitem__", &[index])
     }
 
     pub fn __setitem__(&mut self, collection: ObjectHandle, index: ObjectHandle, value: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         if !matches!(self.obj_heap.get(collection), Object::Instance(_)) {
-            return Err(RuntimeErrorKind::UnexpectedType("object with __setitem__", self.value_type_name(collection)));
+            return Err(RuntimeErrorKind::UnexpectedType("object with __setitem__", self.obj_heap.type_of(collection)));
         }
         self.dispatch_magic(collection, "__setitem__", &[index, value])
     }
@@ -357,7 +357,7 @@ impl VirtualMachine {
     /// instance field nor a regular method.
     pub fn __getattr__(&mut self, receiver: ObjectHandle, field_name: &ShrString) -> RuntimeResult<ObjectHandle> {
         if !matches!(self.obj_heap.get(receiver), Object::Instance(_)) {
-            return Err(RuntimeErrorKind::UnexpectedType("object with __getattr__", self.value_type_name(receiver)));
+            return Err(RuntimeErrorKind::UnexpectedType("object with __getattr__", self.obj_heap.type_of(receiver)));
         }
         let name_handle = self.obj_heap.alloc_string_instance(field_name.clone());
         self.dispatch_magic(receiver, "__getattr__", &[name_handle])
@@ -367,7 +367,7 @@ impl VirtualMachine {
     /// don't use ObjectFields.
     pub fn __setattr__(&mut self, receiver: ObjectHandle, field_name: &ShrString, value: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         if !matches!(self.obj_heap.get(receiver), Object::Instance(_)) {
-            return Err(RuntimeErrorKind::UnexpectedType("object with __setattr__", self.value_type_name(receiver)));
+            return Err(RuntimeErrorKind::UnexpectedType("object with __setattr__", self.obj_heap.type_of(receiver)));
         }
         let name_handle = self.obj_heap.alloc_string_instance(field_name.clone());
         self.dispatch_magic(receiver, "__setattr__", &[name_handle, value])
@@ -375,18 +375,18 @@ impl VirtualMachine {
 
     pub fn __int__(&mut self, handle: ObjectHandle) -> RuntimeResult<i64> {
         if !matches!(self.obj_heap.get(handle), Object::Instance(_)) {
-            return Err(RuntimeErrorKind::UnexpectedType("object with __int__", self.value_type_name(handle)));
+            return Err(RuntimeErrorKind::UnexpectedType("object with __int__", self.obj_heap.type_of(handle)));
         }
         let result = self.dispatch_magic(handle, "__int__", &[]).map_err(|e| self.remap_int_error(e, handle))?;
-        Ok(*self.expect_type(self.obj_heap.get_integer_instance(result), result, "int")?)
+        Ok(*self.obj_heap.expect_integer(result)?)
     }
 
     pub fn __float__(&mut self, handle: ObjectHandle) -> RuntimeResult<f64> {
         if !matches!(self.obj_heap.get(handle), Object::Instance(_)) {
-            return Err(RuntimeErrorKind::UnexpectedType("object with __float__", self.value_type_name(handle)));
+            return Err(RuntimeErrorKind::UnexpectedType("object with __float__", self.obj_heap.type_of(handle)));
         }
         let result = self.dispatch_magic(handle, "__float__", &[]).map_err(|e| self.remap_float_error(e, handle))?;
-        Ok(*self.expect_type(self.obj_heap.get_float_instance(result), result, "float")?)
+        Ok(*self.obj_heap.expect_float(result)?)
     }
 
     // ================================================================================== //
@@ -414,7 +414,7 @@ impl VirtualMachine {
         // Instance types — dispatch to __hash__ class method.
         match self.dispatch_magic(handle, "__hash__", &[]) {
             Ok(result) => {
-                let h = self.expect_type(self.obj_heap.get_integer_instance(result), result, "int")?;
+                let h = self.obj_heap.expect_integer(result)?;
                 Ok(*h as u64)
             }
             Err(RuntimeErrorKind::NoImplementMethod(_, _)) => Ok(handle.0 as u64),
@@ -429,7 +429,7 @@ impl VirtualMachine {
     fn remap_unary_error(&self, err: RuntimeErrorKind, op: &'static str, value: ObjectHandle) -> RuntimeErrorKind {
         match err {
             RuntimeErrorKind::NoImplementMethod(_, _) | RuntimeErrorKind::UnexpectedType(_, _) => {
-                RuntimeErrorKind::UnaryOpTypeMismatch(op, self.value_type_name(value))
+                RuntimeErrorKind::UnaryOpTypeMismatch(op, self.obj_heap.type_of(value))
             }
             other => other,
         }
@@ -438,7 +438,7 @@ impl VirtualMachine {
     fn remap_binary_error(&self, err: RuntimeErrorKind, op: &'static str, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeErrorKind {
         match err {
             RuntimeErrorKind::NoImplementMethod(_, _) | RuntimeErrorKind::UnexpectedType(_, _) => {
-                RuntimeErrorKind::BinaryOpTypeMismatch(op, self.value_type_name(lhs), self.value_type_name(rhs))
+                RuntimeErrorKind::BinaryOpTypeMismatch(op, self.obj_heap.type_of(lhs), self.obj_heap.type_of(rhs))
             }
             other => other,
         }
@@ -446,7 +446,9 @@ impl VirtualMachine {
 
     fn remap_len_error(&self, err: RuntimeErrorKind, handle: ObjectHandle) -> RuntimeErrorKind {
         match err {
-            RuntimeErrorKind::UnexpectedType(_, _) => RuntimeErrorKind::UnexpectedType("object with __len__", self.value_type_name(handle)),
+            RuntimeErrorKind::UnexpectedType(_, _) => {
+                RuntimeErrorKind::UnexpectedType("object with __len__", self.obj_heap.type_of(handle))
+            }
             // NoImplementMethod already says which class is missing __len__ — keep it.
             other => other,
         }
@@ -454,7 +456,9 @@ impl VirtualMachine {
 
     fn remap_int_error(&self, err: RuntimeErrorKind, handle: ObjectHandle) -> RuntimeErrorKind {
         match err {
-            RuntimeErrorKind::UnexpectedType(_, _) => RuntimeErrorKind::UnexpectedType("object with __int__", self.value_type_name(handle)),
+            RuntimeErrorKind::UnexpectedType(_, _) => {
+                RuntimeErrorKind::UnexpectedType("object with __int__", self.obj_heap.type_of(handle))
+            }
             // NoImplementMethod already says which class is missing __int__ — keep it.
             other => other,
         }
@@ -463,34 +467,10 @@ impl VirtualMachine {
     fn remap_float_error(&self, err: RuntimeErrorKind, handle: ObjectHandle) -> RuntimeErrorKind {
         match err {
             RuntimeErrorKind::UnexpectedType(_, _) => {
-                RuntimeErrorKind::UnexpectedType("object with __float__", self.value_type_name(handle))
+                RuntimeErrorKind::UnexpectedType("object with __float__", self.obj_heap.type_of(handle))
             }
             // NoImplementMethod already says which class is missing __float__ — keep it.
             other => other,
-        }
-    }
-
-    // ================================================================================== //
-    //           value_type_name
-    // ================================================================================== //
-
-    /// Return a human-readable type name for error messages.
-    pub fn value_type_name(&self, handle: ObjectHandle) -> &'static str {
-        if handle.is_nil() {
-            return "nil";
-        }
-        if handle.is_iter_end() {
-            return "IterEnd";
-        }
-        let object = self.obj_heap.get(handle);
-        match object {
-            Object::Instance(inst) => inst.data.type_name(),
-            Object::BoundMethod(_) => "bound method",
-            Object::NativeFn(_) => "native function",
-            Object::Class(_) => "class",
-            Object::Closure(_) => "closure",
-            Object::Function(_) => "function",
-            Object::Upvalue(_) => "upvalue",
         }
     }
 
@@ -501,7 +481,7 @@ impl VirtualMachine {
     /// Call `__iter__` on `iterable`, returning an iterator object.
     pub fn __iter__(&mut self, iterable: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         if !matches!(self.obj_heap.get(iterable), Object::Instance(_)) {
-            return Err(RuntimeErrorKind::UnexpectedType("iterable", self.value_type_name(iterable)));
+            return Err(RuntimeErrorKind::UnexpectedType("iterable", self.obj_heap.type_of(iterable)));
         }
         self.dispatch_magic(iterable, "__iter__", &[])
     }
@@ -510,7 +490,7 @@ impl VirtualMachine {
     /// `ObjectHandle::ITER_END` when exhausted.
     pub fn __next__(&mut self, iterator: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         if !matches!(self.obj_heap.get(iterator), Object::Instance(_)) {
-            return Err(RuntimeErrorKind::UnexpectedType("iterator", self.value_type_name(iterator)));
+            return Err(RuntimeErrorKind::UnexpectedType("iterator", self.obj_heap.type_of(iterator)));
         }
         self.dispatch_magic(iterator, "__next__", &[])
     }

@@ -96,12 +96,12 @@ impl Socket {
 
         let addr = if let Some(&port_handle) = args.get(2) {
             // Two-arg form: connect("host", port)
-            let host = vm.expect_type(vm.obj_heap.get_string_instance(args[1]), args[1], "string")?.as_str().to_string();
-            let port = *vm.expect_type(vm.obj_heap.get_integer_instance(port_handle), port_handle, "int")?;
+            let host = vm.obj_heap.expect_string(args[1])?.as_str().to_string();
+            let port = *vm.obj_heap.expect_integer(port_handle)?;
             format!("{}:{}", host, port)
         } else {
             // One-arg form: connect("host:port")
-            vm.expect_type(vm.obj_heap.get_string_instance(args[1]), args[1], "string")?.as_str().to_string()
+            vm.obj_heap.expect_string(args[1])?.as_str().to_string()
         };
 
         let stream = TcpStream::connect(&addr).map_err(|e| RuntimeErrorKind::NetError(format!("cannot connect to '{}': {}", addr, e)))?;
@@ -114,8 +114,8 @@ impl Socket {
 
     /// `socket.send(data)` — send a string.
     fn send(vm: &mut VirtualMachine, receiver: ObjectHandle, data: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let text = vm.expect_type(vm.obj_heap.get_string_instance(data), data, "string")?.clone();
-        let found = vm.value_type_name(receiver);
+        let text = vm.obj_heap.expect_string(data)?.clone();
+        let found = vm.obj_heap.type_of(receiver);
         let stream = vm
             .obj_heap
             .get_instance_data_mut::<Socket>(receiver)
@@ -129,11 +129,11 @@ impl Socket {
 
     /// `socket.recv(bufsize)` — receive up to `bufsize` bytes, return as string.
     fn recv(vm: &mut VirtualMachine, receiver: ObjectHandle, bufsize: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let n = *vm.expect_type(vm.obj_heap.get_integer_instance(bufsize), bufsize, "int")?;
+        let n = *vm.obj_heap.expect_integer(bufsize)?;
         if n <= 0 || n > 65536 {
             return Err(RuntimeErrorKind::NetError(format!("recv: bufsize must be 1..65536, got {}", n)));
         }
-        let found = vm.value_type_name(receiver);
+        let found = vm.obj_heap.type_of(receiver);
         let stream = vm
             .obj_heap
             .get_instance_data_mut::<Socket>(receiver)
@@ -150,7 +150,7 @@ impl Socket {
 
     /// `socket.close()` — close the socket.
     fn close(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let found = vm.value_type_name(receiver);
+        let found = vm.obj_heap.type_of(receiver);
         vm.obj_heap
             .get_instance_data_mut::<Socket>(receiver)
             .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "native", found })?
@@ -165,10 +165,10 @@ impl Socket {
         } else if let Some(v) = vm.obj_heap.get_integer_instance(seconds) {
             *v as f64
         } else {
-            return Err(RuntimeErrorKind::UnexpectedType("number", vm.value_type_name(seconds)));
+            return Err(RuntimeErrorKind::UnexpectedType("number", vm.obj_heap.type_of(seconds)));
         };
         let dur = Duration::from_secs_f64(secs);
-        let found = vm.value_type_name(receiver);
+        let found = vm.obj_heap.type_of(receiver);
         let data = vm
             .obj_heap
             .get_instance_data_mut::<Socket>(receiver)
@@ -207,15 +207,15 @@ impl Server {
 
         let addr = if explicit == 2 {
             // Two-arg form: bind(host, port)
-            let host = vm.expect_type(vm.obj_heap.get_string_instance(args[1]), args[1], "string")?.as_str().to_string();
-            let port = *vm.expect_type(vm.obj_heap.get_integer_instance(args[2]), args[2], "int")?;
+            let host = vm.obj_heap.expect_string(args[1])?.as_str().to_string();
+            let port = *vm.obj_heap.expect_integer(args[2])?;
             format!("{}:{}", host, port)
         } else if let Some(port) = vm.obj_heap.get_integer_instance(args[1]) {
             // One-arg: bind(port) → bind 0.0.0.0:port
             format!("0.0.0.0:{}", port)
         } else {
             // One-arg: bind("host:port")
-            vm.expect_type(vm.obj_heap.get_string_instance(args[1]), args[1], "string")?.as_str().to_string()
+            vm.obj_heap.expect_string(args[1])?.as_str().to_string()
         };
 
         let listener = TcpListener::bind(&addr).map_err(|e| RuntimeErrorKind::NetError(format!("cannot bind '{}': {}", addr, e)))?;
@@ -234,7 +234,7 @@ impl Server {
 
     /// `server.accept()` — accept a connection, return a Socket instance.
     fn accept(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let found = vm.value_type_name(receiver);
+        let found = vm.obj_heap.type_of(receiver);
         let listener = vm
             .obj_heap
             .get_instance_data_mut::<Server>(receiver)
@@ -255,7 +255,7 @@ impl Server {
 
     /// `server.close()` — close the listener.
     fn close(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let found = vm.value_type_name(receiver);
+        let found = vm.obj_heap.type_of(receiver);
         vm.obj_heap
             .get_instance_data_mut::<Server>(receiver)
             .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "native", found })?

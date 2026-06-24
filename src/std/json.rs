@@ -63,7 +63,7 @@ fn encode_value(vm: &VirtualMachine, handle: ObjectHandle, out: &mut String) -> 
     let inst = match vm.obj_heap.get_instance(handle) {
         Some(inst) => inst,
         None => {
-            return Err(encode_error(vm.value_type_name(handle)));
+            return Err(encode_error(vm.obj_heap.type_of(handle)));
         }
     };
 
@@ -133,7 +133,7 @@ fn encode_value(vm: &VirtualMachine, handle: ObjectHandle, out: &mut String) -> 
         }
         out.push(']');
     } else {
-        return Err(encode_error(vm.value_type_name(handle)));
+        return Err(encode_error(vm.obj_heap.type_of(handle)));
     }
 
     Ok(())
@@ -178,7 +178,7 @@ fn encode_json_string(s: &str, out: &mut String) {
 ///   array  → List
 ///   object → Dict (string keys)
 fn decode(vm: &mut VirtualMachine, text: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-    let s = vm.expect_type(vm.obj_heap.get_string_instance(text), text, "string")?;
+    let s = vm.obj_heap.expect_string(text)?;
 
     let value: serde_json::Value =
         serde_json::from_str(s.as_str()).map_err(|e| RuntimeErrorKind::JosnError(format!("json.decode: {e}")))?;

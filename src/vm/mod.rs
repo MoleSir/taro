@@ -139,16 +139,6 @@ impl VirtualMachine {
         self.frames.clear();
     }
 
-    // -- type-safe heap access helper ----------------------------------------
-
-    /// Convert an optional typed heap lookup into a [`RuntimeResult`] with a
-    /// descriptive error on mismatch.  Prefer plain `.expect("must …")` in
-    /// internal dispatch code where the handle type is structurally guaranteed.
-    #[inline]
-    pub fn expect_type<'a, T>(&self, opt: Option<&'a T>, handle: ObjectHandle, expected: &'static str) -> RuntimeResult<&'a T> {
-        opt.ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected, found: self.value_type_name(handle) }.into())
-    }
-
     /// Capture a stack slot as an upvalue.
     pub(crate) fn capture_upvalue(&mut self, slot: usize) -> RuntimeResult<ObjectHandle> {
         let mut prev: Option<ObjectHandle> = None;

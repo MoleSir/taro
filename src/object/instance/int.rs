@@ -15,19 +15,19 @@ pub struct ObjectInt {
     pub value: i64,
 }
 
-impl_object_instance_data!(ObjectInt, "integer");
+impl_object_instance_data!(ObjectInt, "int");
 
 macro_rules! int_binary_arith {
     ($name:ident, $int_op:expr, $float_op:expr, $op_name:literal) => {
         pub fn $name(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-            let lhs_val = *vm.expect_type(vm.obj_heap.get_integer_instance(lhs), lhs, "int")?;
+            let lhs_val = *vm.obj_heap.expect_integer(lhs)?;
             if let Some(rhs) = vm.obj_heap.get_integer_instance(rhs) {
                 return Ok(vm.obj_heap.alloc_integer_instance($int_op(lhs_val, *rhs)));
             }
             if let Some(rhs) = vm.obj_heap.get_float_instance(rhs) {
                 return Ok(vm.obj_heap.alloc_float_instance($float_op(lhs_val as f64, *rhs)));
             }
-            Err(RuntimeErrorKind::BinaryOpTypeMismatch($op_name, "integer", vm.value_type_name(rhs)))
+            Err(RuntimeErrorKind::BinaryOpTypeMismatch($op_name, "int", vm.obj_heap.type_of(rhs)))
         }
     };
 }
@@ -35,13 +35,13 @@ macro_rules! int_binary_arith {
 macro_rules! int_cmp_op {
     ($name:ident, $int_cmp:expr, $float_cmp:expr, $op_name:literal) => {
         pub fn $name(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-            let lhs_val = *vm.expect_type(vm.obj_heap.get_integer_instance(lhs), lhs, "int")?;
+            let lhs_val = *vm.obj_heap.expect_integer(lhs)?;
             let result = if let Some(rhs) = vm.obj_heap.get_integer_instance(rhs) {
                 $int_cmp(lhs_val, *rhs)
             } else if let Some(rhs) = vm.obj_heap.get_float_instance(rhs) {
                 $float_cmp(lhs_val as f64, *rhs)
             } else {
-                return Err(RuntimeErrorKind::BinaryOpTypeMismatch($op_name, "integer", vm.value_type_name(rhs)));
+                return Err(RuntimeErrorKind::BinaryOpTypeMismatch($op_name, "int", vm.obj_heap.type_of(rhs)));
             };
             Ok(vm.obj_heap.alloc_bool_instance(result))
         }
@@ -65,7 +65,7 @@ impl ObjectInt {
     int_cmp_op!(__le__, |a, b| a <= b, |a, b| a <= b, "le");
 
     pub fn __div__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let lhs_val = *vm.expect_type(vm.obj_heap.get_integer_instance(lhs), lhs, "int")?;
+        let lhs_val = *vm.obj_heap.expect_integer(lhs)?;
         if let Some(rhs) = vm.obj_heap.get_integer_instance(rhs) {
             if *rhs == 0 {
                 return Err(RuntimeErrorKind::DivideByZero);
@@ -78,11 +78,11 @@ impl ObjectInt {
             }
             return Ok(vm.obj_heap.alloc_float_instance(lhs_val as f64 / *rhs));
         }
-        Err(RuntimeErrorKind::BinaryOpTypeMismatch("div", "integer", vm.value_type_name(rhs)))
+        Err(RuntimeErrorKind::BinaryOpTypeMismatch("div", "int", vm.obj_heap.type_of(rhs)))
     }
 
     pub fn __floordiv__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let lhs_val = *vm.expect_type(vm.obj_heap.get_integer_instance(lhs), lhs, "int")?;
+        let lhs_val = *vm.obj_heap.expect_integer(lhs)?;
         if let Some(rhs) = vm.obj_heap.get_integer_instance(rhs) {
             if *rhs == 0 {
                 return Err(RuntimeErrorKind::DivideByZero);
@@ -95,11 +95,11 @@ impl ObjectInt {
             }
             return Ok(vm.obj_heap.alloc_float_instance((lhs_val as f64 / *rhs).floor()));
         }
-        Err(RuntimeErrorKind::BinaryOpTypeMismatch("floordiv", "integer", vm.value_type_name(rhs)))
+        Err(RuntimeErrorKind::BinaryOpTypeMismatch("floordiv", "int", vm.obj_heap.type_of(rhs)))
     }
 
     pub fn __mod__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let lhs_val = *vm.expect_type(vm.obj_heap.get_integer_instance(lhs), lhs, "int")?;
+        let lhs_val = *vm.obj_heap.expect_integer(lhs)?;
         if let Some(rhs) = vm.obj_heap.get_integer_instance(rhs) {
             if *rhs == 0 {
                 return Err(RuntimeErrorKind::DivideByZero);
@@ -112,31 +112,31 @@ impl ObjectInt {
             }
             return Ok(vm.obj_heap.alloc_float_instance((lhs_val as f64).rem_euclid(*rhs)));
         }
-        Err(RuntimeErrorKind::BinaryOpTypeMismatch("mod", "integer", vm.value_type_name(rhs)))
+        Err(RuntimeErrorKind::BinaryOpTypeMismatch("mod", "int", vm.obj_heap.type_of(rhs)))
     }
 
     pub fn __neg__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let val = *vm.expect_type(vm.obj_heap.get_integer_instance(receiver), receiver, "int")?;
+        let val = *vm.obj_heap.expect_integer(receiver)?;
         Ok(vm.obj_heap.alloc_integer_instance(val.wrapping_neg()))
     }
 
     pub fn __not__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let val = *vm.expect_type(vm.obj_heap.get_integer_instance(receiver), receiver, "int")?;
+        let val = *vm.obj_heap.expect_integer(receiver)?;
         Ok(vm.obj_heap.alloc_bool_instance(val == 0))
     }
 
     pub fn __str__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let val = *vm.expect_type(vm.obj_heap.get_integer_instance(receiver), receiver, "int")?;
+        let val = *vm.obj_heap.expect_integer(receiver)?;
         Ok(vm.obj_heap.alloc_string_instance(crate::format_shr!("{}", val)))
     }
 
     pub fn __bool__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let val = *vm.expect_type(vm.obj_heap.get_integer_instance(receiver), receiver, "int")?;
+        let val = *vm.obj_heap.expect_integer(receiver)?;
         Ok(vm.obj_heap.alloc_bool_instance(val != 0))
     }
 
     pub fn __hash__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let val = *vm.expect_type(vm.obj_heap.get_integer_instance(receiver), receiver, "int")?;
+        let val = *vm.obj_heap.expect_integer(receiver)?;
         Ok(vm.obj_heap.alloc_integer_instance(val))
     }
 
@@ -145,7 +145,7 @@ impl ObjectInt {
     }
 
     pub fn __float__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let val = *vm.expect_type(vm.obj_heap.get_integer_instance(receiver), receiver, "int")?;
+        let val = *vm.obj_heap.expect_integer(receiver)?;
         Ok(vm.obj_heap.alloc_float_instance(val as f64))
     }
 }

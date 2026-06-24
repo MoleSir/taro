@@ -7,6 +7,7 @@ use super::{
     ObjectStringIterator, ObjectUpvalue, register_bool_builtins, register_bytes_builtins, register_dict_builtins, register_float_builtins,
     register_int_builtins, register_list_builtins, register_set_builtins, register_string_builtins,
 };
+use crate::vm::{RuntimeErrorKind, RuntimeResult};
 use crate::{Chunk, ShrString};
 
 /// Static nil object — backing for `ObjectHandle::NIL`.
@@ -281,7 +282,7 @@ impl ObjectHeap {
 }
 
 macro_rules! impl_getters {
-    ($name:ident, $ty:ty) => {
+    ($name:ident, $ty:ty, $label:literal) => {
         paste::paste! {
             #[inline]
             pub fn [<get_ $name>](&self, handle: ObjectHandle) -> Option<&$ty> {
@@ -291,6 +292,16 @@ macro_rules! impl_getters {
             #[inline]
             pub fn [<get_ $name _mut>](&mut self, handle: ObjectHandle) -> Option<&mut $ty> {
                 self.get_mut(handle).[<as_ $name _mut>]()
+            }
+
+            #[doc = "Extract a reference to the `" $label "` value, returning a `TypeMismatch` error on type mismatch."]
+            pub fn [<expect_ $name>](&self, handle: ObjectHandle) -> RuntimeResult<&$ty> {
+                self.[<get_ $name>](handle).ok_or_else(|| {
+                    RuntimeErrorKind::TypeMismatch {
+                        expected: $label,
+                        found: self.type_of(handle),
+                    }
+                })
             }
         }
     };
@@ -321,13 +332,33 @@ impl ObjectHeap {
         self.objects[handle.0].as_mut().expect("Dangling handle accessed!")
     }
 
-    impl_getters!(function, ObjectFunction);
-    impl_getters!(native_fn, ObjectNativeFn);
-    impl_getters!(closure, ObjectClosure);
-    impl_getters!(upvalue, ObjectUpvalue);
-    impl_getters!(instance, ObjectInstance);
-    impl_getters!(class, ObjectClass);
-    impl_getters!(bound_method, ObjectBoundMethod);
+    /// Return a human-readable type name for error messages.
+    pub fn type_of(&self, handle: ObjectHandle) -> &'static str {
+        if handle.is_nil() {
+            return "nil";
+        }
+        if handle.is_iter_end() {
+            return "IterEnd";
+        }
+        let object = self.get(handle);
+        match object {
+            Object::Instance(inst) => inst.data.type_name(),
+            Object::BoundMethod(_) => "bound method",
+            Object::NativeFn(_) => "native function",
+            Object::Class(_) => "class",
+            Object::Closure(_) => "closure",
+            Object::Function(_) => "function",
+            Object::Upvalue(_) => "upvalue",
+        }
+    }
+
+    impl_getters!(function, ObjectFunction, "function");
+    impl_getters!(native_fn, ObjectNativeFn, "native function");
+    impl_getters!(closure, ObjectClosure, "closure");
+    impl_getters!(upvalue, ObjectUpvalue, "upvalue");
+    impl_getters!(instance, ObjectInstance, "instance");
+    impl_getters!(class, ObjectClass, "class");
+    impl_getters!(bound_method, ObjectBoundMethod, "bound method");
 }
 
 macro_rules! impl_instance_data_getter {
@@ -344,12 +375,27 @@ macro_rules! impl_instance_data_getter {
                 let inst = self.get_instance_mut(handle)?;
                 inst.data.as_any_mut().downcast_mut::<$wrapper>().map(|d| &mut d.$field)
             }
+
+            #[doc = "Extract the inner `" $label "` value, returning a `TypeMismatch` error if the handle is not a `" $label "`."]
+            pub fn [<expect_ $name>](&self, handle: ObjectHandle) -> RuntimeResult<&$inner> {
+                self.[<get_ $name _instance>](handle).ok_or_else(|| {
+                    RuntimeErrorKind::TypeMismatch { expected: $label, found: self.type_of(handle), }
+                })
+            }
+
+            #[doc = "Extract a mutable reference to the inner `" $label "` value, returning a `TypeMismatch` error if the handle is not a `" $label "`."]
+            pub fn [<expect_ $name _mut>](&mut self, handle: ObjectHandle) -> RuntimeResult<&mut $inner> {
+                let found = self.type_of(handle);
+                self.[<get_ $name _instance_mut>](handle).ok_or_else(|| {
+                    RuntimeErrorKind::TypeMismatch { expected: $label, found, }
+                })
+            }
         }
     };
 }
 
 impl ObjectHeap {
-    impl_instance_data_getter!(integer, ObjectInt, i64, value, "integer");
+    impl_instance_data_getter!(integer, ObjectInt, i64, value, "int");
     impl_instance_data_getter!(float, ObjectFloat, f64, value, "float");
     impl_instance_data_getter!(bool, ObjectBool, bool, value, "bool");
     impl_instance_data_getter!(string, ObjectString, ShrString, value, "string");
@@ -369,6 +415,23 @@ impl ObjectHeap {
     pub fn get_instance_data_mut<T: ObjectInstanceData>(&mut self, handle: ObjectHandle) -> Option<&mut T> {
         let inst = self.get_instance_mut(handle)?;
         inst.data.as_any_mut().downcast_mut::<T>()
+    }
+
+    /// Generic helper: extract instance data downcast to `T`, returning a `TypeMismatch` error on failure.
+    pub fn expect_instance_data<T: ObjectInstanceData>(&self, handle: ObjectHandle, expected: &'static str) -> RuntimeResult<&T> {
+        self.get_instance_data::<T>(handle)
+            .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected, found: self.type_of(handle) })
+    }
+
+    // Convenience: expect iterator types
+    pub fn expect_list_iter(&self, handle: ObjectHandle) -> RuntimeResult<&ObjectListIterator> {
+        self.expect_instance_data(handle, "list iterator")
+    }
+    pub fn expect_bytes_iter(&self, handle: ObjectHandle) -> RuntimeResult<&ObjectBytesIterator> {
+        self.expect_instance_data(handle, "bytes iterator")
+    }
+    pub fn expect_string_iter(&self, handle: ObjectHandle) -> RuntimeResult<&ObjectStringIterator> {
+        self.expect_instance_data(handle, "string iterator")
     }
 
     // Convenience aliases for iterator getters — delegates to the generic helper.

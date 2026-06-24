@@ -187,11 +187,10 @@ pub(super) fn call(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeRes
     if args.len() < 3 {
         return Err(FfiError::CallTooFewArgs)?;
     }
-    let symbol = vm.expect_type(vm.obj_heap.get_instance_data::<CSymbol>(args[0]), args[0], "CSymbol")?.clone();
+    let symbol = vm.obj_heap.expect_instance_data::<CSymbol>(args[0], "CSymbol")?.clone();
     let function = CFunction::from_handle(vm, symbol, args[1], args[2])?;
     let function_class = vm.lookup_module_export(args[0], &"CFunction".to_shrstring()).expect("must has cfunction");
     let function = vm.obj_heap.alloc_instance(function_class, function);
-    let arg_values: Vec<ObjectHandle> =
-        if args.len() > 3 { vm.expect_type(vm.obj_heap.get_list_instance(args[3]), args[3], "list")?.clone() } else { vec![] };
+    let arg_values: Vec<ObjectHandle> = if args.len() > 3 { vm.obj_heap.expect_list(args[3])?.clone() } else { vec![] };
     CFunction::__call__impl(vm, function, &arg_values)
 }

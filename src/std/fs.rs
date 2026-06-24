@@ -95,9 +95,9 @@ impl FileInstance {
         let path_handle = args[1];
         let mode_handle = args.get(2).copied();
 
-        let path = vm.expect_type(vm.obj_heap.get_string_instance(path_handle), path_handle, "string")?.as_str().to_string();
+        let path = vm.obj_heap.expect_string(path_handle)?.as_str().to_string();
         let mode = match mode_handle {
-            Some(h) => vm.expect_type(vm.obj_heap.get_string_instance(h), h, "string")?.as_str().to_string(),
+            Some(h) => vm.obj_heap.expect_string(h)?.as_str().to_string(),
             None => "r".to_string(),
         };
 
@@ -119,7 +119,7 @@ impl FileInstance {
     }
 
     fn read(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let found = vm.value_type_name(receiver);
+        let found = vm.obj_heap.type_of(receiver);
         let reader = vm
             .obj_heap
             .get_instance_data_mut::<FileInstance>(receiver)
@@ -133,7 +133,7 @@ impl FileInstance {
     }
 
     fn read_bytes(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let found = vm.value_type_name(receiver);
+        let found = vm.obj_heap.type_of(receiver);
         let reader = vm
             .obj_heap
             .get_instance_data_mut::<FileInstance>(receiver)
@@ -147,8 +147,8 @@ impl FileInstance {
     }
 
     fn write(vm: &mut VirtualMachine, receiver: ObjectHandle, text: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let text = vm.expect_type(vm.obj_heap.get_string_instance(text), text, "string")?.clone();
-        let found = vm.value_type_name(receiver);
+        let text = vm.obj_heap.expect_string(text)?.clone();
+        let found = vm.obj_heap.type_of(receiver);
         let reader = vm
             .obj_heap
             .get_instance_data_mut::<FileInstance>(receiver)
@@ -161,7 +161,7 @@ impl FileInstance {
     }
 
     fn readline(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let found = vm.value_type_name(receiver);
+        let found = vm.obj_heap.type_of(receiver);
         let reader = vm
             .obj_heap
             .get_instance_data_mut::<FileInstance>(receiver)
@@ -184,7 +184,7 @@ impl FileInstance {
     }
 
     fn close(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let found = vm.value_type_name(receiver);
+        let found = vm.obj_heap.type_of(receiver);
         vm.obj_heap
             .get_instance_data_mut::<FileInstance>(receiver)
             .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "native", found })?
@@ -193,8 +193,8 @@ impl FileInstance {
     }
 
     fn seek(vm: &mut VirtualMachine, receiver: ObjectHandle, pos: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let pos = *vm.expect_type(vm.obj_heap.get_integer_instance(pos), pos, "int")?;
-        let found = vm.value_type_name(receiver);
+        let pos = *vm.obj_heap.expect_integer(pos)?;
+        let found = vm.obj_heap.type_of(receiver);
         let reader = vm
             .obj_heap
             .get_instance_data_mut::<FileInstance>(receiver)
@@ -207,7 +207,7 @@ impl FileInstance {
     }
 
     fn tell(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let found = vm.value_type_name(receiver);
+        let found = vm.obj_heap.type_of(receiver);
         let reader = vm
             .obj_heap
             .get_instance_data_mut::<FileInstance>(receiver)
@@ -237,23 +237,23 @@ impl FileInstance {
 // =============================================================================
 
 fn exists(vm: &mut VirtualMachine, path: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-    let s = vm.expect_type(vm.obj_heap.get_string_instance(path), path, "string")?;
+    let s = vm.obj_heap.expect_string(path)?;
     let ok = std::path::Path::new(s.as_str()).exists();
     Ok(vm.obj_heap.alloc_bool_instance(ok))
 }
 
 fn is_file(vm: &mut VirtualMachine, path: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-    let s = vm.expect_type(vm.obj_heap.get_string_instance(path), path, "string")?;
+    let s = vm.obj_heap.expect_string(path)?;
     Ok(vm.obj_heap.alloc_bool_instance(std::path::Path::new(s.as_str()).is_file()))
 }
 
 fn is_dir(vm: &mut VirtualMachine, path: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-    let s = vm.expect_type(vm.obj_heap.get_string_instance(path), path, "string")?;
+    let s = vm.obj_heap.expect_string(path)?;
     Ok(vm.obj_heap.alloc_bool_instance(std::path::Path::new(s.as_str()).is_dir()))
 }
 
 fn remove(vm: &mut VirtualMachine, path: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-    let s = vm.expect_type(vm.obj_heap.get_string_instance(path), path, "string")?;
+    let s = vm.obj_heap.expect_string(path)?;
     let p = std::path::Path::new(s.as_str());
     if p.is_dir() { std::fs::remove_dir(p) } else { std::fs::remove_file(p) }
         .map_err(|e| RuntimeErrorKind::IoError(format!("cannot remove '{}': {}", s, e)))?;
@@ -261,34 +261,34 @@ fn remove(vm: &mut VirtualMachine, path: ObjectHandle) -> RuntimeResult<ObjectHa
 }
 
 fn rename(vm: &mut VirtualMachine, from: ObjectHandle, to: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-    let from_s = vm.expect_type(vm.obj_heap.get_string_instance(from), from, "string")?;
-    let to_s = vm.expect_type(vm.obj_heap.get_string_instance(to), to, "string")?;
+    let from_s = vm.obj_heap.expect_string(from)?;
+    let to_s = vm.obj_heap.expect_string(to)?;
     std::fs::rename(from_s.as_str(), to_s.as_str()).map_err(|e| RuntimeErrorKind::IoError(format!("cannot rename: {}", e)))?;
     Ok(ObjectHandle::NIL)
 }
 
 fn read(vm: &mut VirtualMachine, path: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-    let s = vm.expect_type(vm.obj_heap.get_string_instance(path), path, "string")?;
+    let s = vm.obj_heap.expect_string(path)?;
     let content = std::fs::read_to_string(s.as_str()).map_err(|e| RuntimeErrorKind::IoError(format!("cannot read '{}': {}", s, e)))?;
     Ok(vm.obj_heap.alloc_string_instance(ShrString::new_string(&content)))
 }
 
 fn read_bytes(vm: &mut VirtualMachine, path: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-    let s = vm.expect_type(vm.obj_heap.get_string_instance(path), path, "string")?;
+    let s = vm.obj_heap.expect_string(path)?;
     let content = std::fs::read(s.as_str()).map_err(|e| RuntimeErrorKind::IoError(format!("cannot read '{}': {}", s, e)))?;
     Ok(vm.obj_heap.alloc_bytes_instance(content))
 }
 
 fn write(vm: &mut VirtualMachine, path: ObjectHandle, text: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-    let path_s = vm.expect_type(vm.obj_heap.get_string_instance(path), path, "string")?;
-    let text_s = vm.expect_type(vm.obj_heap.get_string_instance(text), text, "string")?;
+    let path_s = vm.obj_heap.expect_string(path)?;
+    let text_s = vm.obj_heap.expect_string(text)?;
     std::fs::write(path_s.as_str(), text_s.as_bytes())
         .map_err(|e| RuntimeErrorKind::IoError(format!("cannot write '{}': {}", path_s, e)))?;
     Ok(ObjectHandle::NIL)
 }
 
 fn list_dir(vm: &mut VirtualMachine, path: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-    let s = vm.expect_type(vm.obj_heap.get_string_instance(path), path, "string")?;
+    let s = vm.obj_heap.expect_string(path)?;
     let dir = std::fs::read_dir(s.as_str()).map_err(|e| RuntimeErrorKind::IoError(format!("cannot list '{}': {}", s, e)))?;
     let mut entries = Vec::new();
     for entry in dir {
@@ -300,7 +300,7 @@ fn list_dir(vm: &mut VirtualMachine, path: ObjectHandle) -> RuntimeResult<Object
 }
 
 fn mkdir(vm: &mut VirtualMachine, path: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-    let s = vm.expect_type(vm.obj_heap.get_string_instance(path), path, "string")?;
+    let s = vm.obj_heap.expect_string(path)?;
     std::fs::create_dir_all(s.as_str()).map_err(|e| RuntimeErrorKind::IoError(format!("cannot mkdir '{}': {}", s, e)))?;
     Ok(ObjectHandle::NIL)
 }

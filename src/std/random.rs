@@ -57,7 +57,7 @@ fn choice(vm: &mut VirtualMachine, seq: ObjectHandle) -> RuntimeResult<ObjectHan
         let list = vm
             .obj_heap
             .get_list_instance(seq)
-            .ok_or_else(|| RuntimeErrorKind::BinaryOpTypeMismatch("choice", "list", vm.value_type_name(seq)))?;
+            .ok_or_else(|| RuntimeErrorKind::BinaryOpTypeMismatch("choice", "list", vm.obj_heap.type_of(seq)))?;
         if list.is_empty() {
             return Err(RuntimeErrorKind::RandomError("choice: list is empty".into()));
         }
@@ -73,7 +73,7 @@ fn shuffle(vm: &mut VirtualMachine, seq: ObjectHandle) -> RuntimeResult<ObjectHa
         let list = vm
             .obj_heap
             .get_list_instance(seq)
-            .ok_or_else(|| RuntimeErrorKind::BinaryOpTypeMismatch("shuffle", "list", vm.value_type_name(seq)))?;
+            .ok_or_else(|| RuntimeErrorKind::BinaryOpTypeMismatch("shuffle", "list", vm.obj_heap.type_of(seq)))?;
         list.len()
     };
     // Fisher-Yates shuffle: for each i, pick j in [i, n).
@@ -92,7 +92,7 @@ fn as_f64(vm: &VirtualMachine, handle: ObjectHandle, fn_name: &'static str) -> R
     } else if let Some(v) = vm.obj_heap.get_float_instance(handle) {
         Ok(*v)
     } else {
-        Err(RuntimeErrorKind::BinaryOpTypeMismatch(fn_name, "float", vm.value_type_name(handle)))
+        Err(RuntimeErrorKind::BinaryOpTypeMismatch(fn_name, "float", vm.obj_heap.type_of(handle)))
     }
 }
 
@@ -101,6 +101,6 @@ fn as_i64(vm: &VirtualMachine, handle: ObjectHandle, fn_name: &'static str) -> R
     if let Some(v) = vm.obj_heap.get_integer_instance(handle) {
         Ok(*v)
     } else {
-        Err(RuntimeErrorKind::BinaryOpTypeMismatch(fn_name, "i64", vm.value_type_name(handle)))
+        Err(RuntimeErrorKind::BinaryOpTypeMismatch(fn_name, "i64", vm.obj_heap.type_of(handle)))
     }
 }

@@ -236,55 +236,55 @@ pub trait FromObjectInstance<'a>: Sized {
 /// Borrowed string — zero-cost, no clone.
 impl<'a> FromObjectInstance<'a> for &'a ShrString {
     fn from_object_instance(vm: &'a VirtualMachine, handle: ObjectHandle) -> RuntimeResult<Self> {
-        vm.expect_type(vm.obj_heap.get_string_instance(handle), handle, "string")
+        vm.obj_heap.expect_string(handle)
     }
 }
 
 impl<'a> FromObjectInstance<'a> for &'a Vec<ObjectHandle> {
     fn from_object_instance(vm: &'a VirtualMachine, handle: ObjectHandle) -> RuntimeResult<Self> {
-        vm.expect_type(vm.obj_heap.get_list_instance(handle), handle, "list")
+        vm.obj_heap.expect_list(handle)
     }
 }
 
 impl<'a> FromObjectInstance<'a> for &'a std::collections::HashMap<u64, Vec<(ObjectHandle, ObjectHandle)>> {
     fn from_object_instance(vm: &'a VirtualMachine, handle: ObjectHandle) -> RuntimeResult<Self> {
-        vm.expect_type(vm.obj_heap.get_dict_instance(handle), handle, "dict")
+        vm.obj_heap.expect_dict(handle)
     }
 }
 
 impl<'a> FromObjectInstance<'a> for &'a std::collections::HashMap<u64, Vec<ObjectHandle>> {
     fn from_object_instance(vm: &'a VirtualMachine, handle: ObjectHandle) -> RuntimeResult<Self> {
-        vm.expect_type(vm.obj_heap.get_set_instance(handle), handle, "set")
+        vm.obj_heap.expect_set(handle)
     }
 }
 
 impl<'a> FromObjectInstance<'a> for &'a Vec<u8> {
     fn from_object_instance(vm: &'a VirtualMachine, handle: ObjectHandle) -> RuntimeResult<Self> {
-        vm.expect_type(vm.obj_heap.get_bytes_instance(handle), handle, "bytes")
+        vm.obj_heap.expect_bytes(handle)
     }
 }
 
 impl FromObjectInstance<'_> for ShrString {
     fn from_object_instance(vm: &VirtualMachine, handle: ObjectHandle) -> RuntimeResult<Self> {
-        vm.expect_type(vm.obj_heap.get_string_instance(handle), handle, "string").cloned()
+        vm.obj_heap.expect_string(handle).cloned()
     }
 }
 
 impl FromObjectInstance<'_> for i64 {
     fn from_object_instance(vm: &VirtualMachine, handle: ObjectHandle) -> RuntimeResult<Self> {
-        vm.expect_type(vm.obj_heap.get_integer_instance(handle), handle, "int").copied()
+        vm.obj_heap.expect_integer(handle).copied()
     }
 }
 
 impl FromObjectInstance<'_> for f64 {
     fn from_object_instance(vm: &VirtualMachine, handle: ObjectHandle) -> RuntimeResult<Self> {
-        vm.expect_type(vm.obj_heap.get_float_instance(handle), handle, "float").copied()
+        vm.obj_heap.expect_float(handle).copied()
     }
 }
 
 impl FromObjectInstance<'_> for bool {
     fn from_object_instance(vm: &VirtualMachine, handle: ObjectHandle) -> RuntimeResult<Self> {
-        vm.expect_type(vm.obj_heap.get_bool_instance(handle), handle, "bool").copied()
+        vm.obj_heap.expect_bool(handle).copied()
     }
 }
 

@@ -92,13 +92,13 @@ impl VirtualMachine {
 
     /// `abs(value)` — return the absolute value of a number.
     pub fn abs(&mut self, arg: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let bi = self.expect_type(self.obj_heap.get_instance(arg), arg, "instance")?;
+        let bi = self.obj_heap.expect_instance(arg)?;
         if let Some(v) = bi.data.as_any_ref().downcast_ref::<crate::object::ObjectInt>() {
             Ok(self.obj_heap.alloc_integer_instance(v.value.wrapping_abs()))
         } else if let Some(v) = bi.data.as_any_ref().downcast_ref::<crate::object::ObjectFloat>() {
             Ok(self.obj_heap.alloc_float_instance(v.value.abs()))
         } else {
-            Err(RuntimeErrorKind::UnexpectedType("number", self.value_type_name(arg)))
+            Err(RuntimeErrorKind::UnexpectedType("number", self.obj_heap.type_of(arg)))
         }
     }
 
@@ -215,7 +215,7 @@ impl VirtualMachine {
         } else if is_list {
             ObjectBytes::from_list(self, arg)
         } else {
-            Err(RuntimeErrorKind::UnexpectedType("string or list of ints", self.value_type_name(arg)))
+            Err(RuntimeErrorKind::UnexpectedType("string or list of ints", self.obj_heap.type_of(arg)))
         }
     }
 
@@ -231,7 +231,7 @@ impl VirtualMachine {
         match obj {
             Object::Instance(inst) => return Ok(inst.class),
             _ => {
-                let name = self.value_type_name(arg);
+                let name = self.obj_heap.type_of(arg);
                 Ok(self.obj_heap.alloc_string_instance(name.into()))
             }
         }

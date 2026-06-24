@@ -133,7 +133,7 @@ impl VirtualMachine {
                 }
             }
             Object::Instance(_) => self.__call__(callee, arg_count).map_err(|e| match e {
-                RuntimeErrorKind::NoImplementMethod(_, _) => RuntimeErrorKind::CanNotCall(self.value_type_name(callee)),
+                RuntimeErrorKind::NoImplementMethod(_, _) => RuntimeErrorKind::CanNotCall(self.obj_heap.type_of(callee)),
                 other => other,
             }),
             Object::BoundMethod(bound_method) => {
@@ -148,7 +148,7 @@ impl VirtualMachine {
                 }
             }
             Object::NativeFn(native_fn) => self.call_native_fn(native_fn.function, arg_count, true),
-            _ => Err(RuntimeErrorKind::CanNotCall(self.value_type_name(callee))),
+            _ => Err(RuntimeErrorKind::CanNotCall(self.obj_heap.type_of(callee))),
         }
     }
 
@@ -283,7 +283,7 @@ impl VirtualMachine {
                     Ok((vec![], 0, 0, vec![]))
                 }
             }
-            _ => Err(RuntimeErrorKind::CanNotCall(self.value_type_name(callee))),
+            _ => Err(RuntimeErrorKind::CanNotCall(self.obj_heap.type_of(callee))),
         }
     }
 

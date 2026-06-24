@@ -52,7 +52,7 @@ fn sleep(vm: &mut VirtualMachine, secs: ObjectHandle) -> RuntimeResult<ObjectHan
     } else if let Some(v) = vm.obj_heap.get_integer_instance(secs) {
         *v as f64
     } else {
-        return Err(RuntimeErrorKind::UnexpectedType("number", vm.value_type_name(secs)));
+        return Err(RuntimeErrorKind::UnexpectedType("number", vm.obj_heap.type_of(secs)));
     };
     if s < 0.0 {
         return Err(RuntimeErrorKind::TimeError("sleep: negative duration".into()));

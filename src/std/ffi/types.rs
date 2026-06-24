@@ -187,7 +187,7 @@ impl CType {
         if let Some(s) = vm.obj_heap.get_string_instance(handle) {
             return CType::from_str(s.as_str());
         }
-        Err(FfiError::ExpectedType(vm.value_type_name(handle).into()).into())
+        Err(FfiError::ExpectedType(vm.obj_heap.type_of(handle).into()).into())
     }
 
     pub(super) fn taro_to_cvalue(&self, vm: &VirtualMachine, handle: ObjectHandle) -> RuntimeResult<CValue> {
@@ -212,17 +212,17 @@ impl CType {
                 Ok(CValue::F64(v))
             }
             CType::Pointer => {
-                let v = vm.expect_type(vm.obj_heap.get_integer_instance(handle), handle, "int").copied()?;
+                let v = vm.obj_heap.expect_integer(handle).copied()?;
                 Ok(CValue::Pointer(v as *const c_void))
             }
             CType::CString => {
-                let s = vm.expect_type(vm.obj_heap.get_string_instance(handle), handle, "string")?;
+                let s = vm.obj_heap.expect_string(handle)?;
                 let cs = CString::new(s.as_str()).map_err(|e| FfiError::CString(e.to_string()))?;
                 let ptr: *const c_char = cs.as_ptr();
                 Ok(CValue::CString { _cstring: cs, ptr })
             }
             CType::Bool => {
-                let v = vm.expect_type(vm.obj_heap.get_bool_instance(handle), handle, "bool").copied()?;
+                let v = vm.obj_heap.expect_bool(handle).copied()?;
                 Ok(CValue::Bool(if v { 1u8 } else { 0u8 }))
             }
             CType::Void => Err(FfiError::VoidAsArgument.into()),
@@ -250,12 +250,12 @@ impl CType {
         }
         match self {
             CType::I8 | CType::U8 | CType::Bool => {
-                let v = vm.expect_type(vm.obj_heap.get_integer_instance(handle), handle, "int").copied()? as i8;
+                let v = vm.obj_heap.expect_integer(handle).copied()? as i8;
                 buf[0] = v.to_ne_bytes()[0];
                 Ok(())
             }
             CType::I16 | CType::U16 => {
-                let v = vm.expect_type(vm.obj_heap.get_integer_instance(handle), handle, "int").copied()? as i16;
+                let v = vm.obj_heap.expect_integer(handle).copied()? as i16;
                 buf[..2].copy_from_slice(&v.to_ne_bytes());
                 Ok(())
             }
@@ -264,7 +264,7 @@ impl CType {
                     let v = as_f64(vm, handle)? as f32;
                     buf[..4].copy_from_slice(&v.to_ne_bytes());
                 } else {
-                    let v = vm.expect_type(vm.obj_heap.get_integer_instance(handle), handle, "int").copied()? as i32;
+                    let v = vm.obj_heap.expect_integer(handle).copied()? as i32;
                     buf[..4].copy_from_slice(&v.to_ne_bytes());
                 }
                 Ok(())
@@ -274,7 +274,7 @@ impl CType {
                     let v = as_f64(vm, handle)?;
                     buf[..8].copy_from_slice(&v.to_ne_bytes());
                 } else {
-                    let v = vm.expect_type(vm.obj_heap.get_integer_instance(handle), handle, "int").copied()?;
+                    let v = vm.obj_heap.expect_integer(handle).copied()?;
                     buf[..8].copy_from_slice(&v.to_ne_bytes());
                 }
                 Ok(())
@@ -439,56 +439,56 @@ impl CType {
                 if field_values.len() != 1 {
                     return Err(FfiError::ScalarArgCount(field_values.len()).into());
                 }
-                let v = vm.expect_type(vm.obj_heap.get_integer_instance(field_values[0]), field_values[0], "int").copied()?;
+                let v = vm.obj_heap.expect_integer(field_values[0]).copied()?;
                 Ok(alloc_scalar!(CI8, v as i8))
             }
             CType::U8 => {
                 if field_values.len() != 1 {
                     return Err(FfiError::ScalarArgCount(field_values.len()).into());
                 }
-                let v = vm.expect_type(vm.obj_heap.get_integer_instance(field_values[0]), field_values[0], "int").copied()?;
+                let v = vm.obj_heap.expect_integer(field_values[0]).copied()?;
                 Ok(alloc_scalar!(CUint8, v as u8))
             }
             CType::I16 => {
                 if field_values.len() != 1 {
                     return Err(FfiError::ScalarArgCount(field_values.len()).into());
                 }
-                let v = vm.expect_type(vm.obj_heap.get_integer_instance(field_values[0]), field_values[0], "int").copied()?;
+                let v = vm.obj_heap.expect_integer(field_values[0]).copied()?;
                 Ok(alloc_scalar!(CI16, v as i16))
             }
             CType::U16 => {
                 if field_values.len() != 1 {
                     return Err(FfiError::ScalarArgCount(field_values.len()).into());
                 }
-                let v = vm.expect_type(vm.obj_heap.get_integer_instance(field_values[0]), field_values[0], "int").copied()?;
+                let v = vm.obj_heap.expect_integer(field_values[0]).copied()?;
                 Ok(alloc_scalar!(CUint16, v as u16))
             }
             CType::I32 => {
                 if field_values.len() != 1 {
                     return Err(FfiError::ScalarArgCount(field_values.len()).into());
                 }
-                let v = vm.expect_type(vm.obj_heap.get_integer_instance(field_values[0]), field_values[0], "int").copied()?;
+                let v = vm.obj_heap.expect_integer(field_values[0]).copied()?;
                 Ok(alloc_scalar!(CI32, v as i32))
             }
             CType::U32 => {
                 if field_values.len() != 1 {
                     return Err(FfiError::ScalarArgCount(field_values.len()).into());
                 }
-                let v = vm.expect_type(vm.obj_heap.get_integer_instance(field_values[0]), field_values[0], "int").copied()?;
+                let v = vm.obj_heap.expect_integer(field_values[0]).copied()?;
                 Ok(alloc_scalar!(CUint32, v as u32))
             }
             CType::I64 => {
                 if field_values.len() != 1 {
                     return Err(FfiError::ScalarArgCount(field_values.len()).into());
                 }
-                let v = vm.expect_type(vm.obj_heap.get_integer_instance(field_values[0]), field_values[0], "int").copied()?;
+                let v = vm.obj_heap.expect_integer(field_values[0]).copied()?;
                 Ok(alloc_scalar!(CI64, v))
             }
             CType::U64 => {
                 if field_values.len() != 1 {
                     return Err(FfiError::ScalarArgCount(field_values.len()).into());
                 }
-                let v = vm.expect_type(vm.obj_heap.get_integer_instance(field_values[0]), field_values[0], "int").copied()?;
+                let v = vm.obj_heap.expect_integer(field_values[0]).copied()?;
                 Ok(alloc_scalar!(CUint64, v as u64))
             }
             CType::F32 => {
@@ -509,14 +509,14 @@ impl CType {
                 if field_values.len() != 1 {
                     return Err(FfiError::ScalarArgCount(field_values.len()).into());
                 }
-                let v = vm.expect_type(vm.obj_heap.get_bool_instance(field_values[0]), field_values[0], "bool").copied()?;
+                let v = vm.obj_heap.expect_bool(field_values[0]).copied()?;
                 Ok(alloc_scalar!(CBool, if v { 1u8 } else { 0u8 }))
             }
             CType::Pointer => {
                 if field_values.len() != 1 {
                     return Err(FfiError::ScalarArgCount(field_values.len()).into());
                 }
-                let v = vm.expect_type(vm.obj_heap.get_integer_instance(field_values[0]), field_values[0], "int").copied()?;
+                let v = vm.obj_heap.expect_integer(field_values[0]).copied()?;
                 Ok(alloc_scalar!(CPointer, v as usize))
             }
             CType::CString => {
@@ -644,7 +644,7 @@ macro_rules! define_scalar_wrappers {
                 return Err(FfiError::GetAttrArgCount.into());
             }
             let name = vm
-                .expect_type(vm.obj_heap.get_string_instance(args[1]), args[1], "string")?
+                .obj_heap.expect_string(args[1])?
                 .as_str()
                 .to_string();
             if name != "value" {
@@ -668,7 +668,7 @@ macro_rules! define_scalar_wrappers {
                 return Err(FfiError::SetAttrArgCount.into());
             }
             let name = vm
-                .expect_type(vm.obj_heap.get_string_instance(args[1]), args[1], "string")?
+                .obj_heap.expect_string(args[1])?
                 .as_str()
                 .to_string();
             if name != "value" {
@@ -782,7 +782,7 @@ macro_rules! define_scalar_wrappers {
     // Taro ObjectHandle → scalar value (for .value setter)
     (@from_taro $vm:ident $handle:ident int $ty:ty) => {{
         let v = $vm
-            .expect_type($vm.obj_heap.get_integer_instance($handle), $handle, "int")
+            .obj_heap.expect_integer($handle)
             .copied()?;
         Ok::<$ty, RuntimeErrorKind>(v as $ty)
     }};
@@ -792,13 +792,13 @@ macro_rules! define_scalar_wrappers {
     }};
     (@from_taro $vm:ident $handle:ident bool $ty:ty) => {{
         let v = $vm
-            .expect_type($vm.obj_heap.get_bool_instance($handle), $handle, "bool")
+            .obj_heap.expect_bool($handle)
             .copied()?;
         Ok::<$ty, RuntimeErrorKind>((if v { 1u8 } else { 0u8 }) as $ty)
     }};
     (@from_taro $vm:ident $handle:ident pointer $ty:ty) => {{
         let v = $vm
-            .expect_type($vm.obj_heap.get_integer_instance($handle), $handle, "int")
+            .obj_heap.expect_integer($handle)
             .copied()?;
         Ok::<$ty, RuntimeErrorKind>(v as $ty)
     }};
@@ -861,7 +861,7 @@ impl CStruct {
             return Err(FfiError::GetAttrArgCount.into());
         }
         let self_handle = args[0];
-        let field_name = vm.expect_type(vm.obj_heap.get_string_instance(args[1]), args[1], "string")?.as_str().to_string();
+        let field_name = vm.obj_heap.expect_string(args[1])?.as_str().to_string();
 
         let data = vm.obj_heap.get_instance_data::<CStruct>(self_handle).ok_or(FfiError::GetAttrNotStruct)?;
 
@@ -884,7 +884,7 @@ impl CStruct {
             return Err(FfiError::SetAttrArgCount.into());
         }
         let self_handle = args[0];
-        let field_name = vm.expect_type(vm.obj_heap.get_string_instance(args[1]), args[1], "string")?.as_str().to_string();
+        let field_name = vm.obj_heap.expect_string(args[1])?.as_str().to_string();
         let value = args[2];
 
         let data = vm.obj_heap.get_instance_data_mut::<CStruct>(self_handle).ok_or(FfiError::SetAttrNotStruct)?;
@@ -955,7 +955,7 @@ fn int_to_cvalue<F>(vm: &VirtualMachine, handle: ObjectHandle, f: F) -> RuntimeR
 where
     F: FnOnce(i64) -> CValue,
 {
-    let v = vm.expect_type(vm.obj_heap.get_integer_instance(handle), handle, "int").copied()?;
+    let v = vm.obj_heap.expect_integer(handle).copied()?;
     Ok(f(v))
 }
 
@@ -966,6 +966,6 @@ pub(super) fn as_f64(vm: &VirtualMachine, handle: ObjectHandle) -> RuntimeResult
     } else if let Some(v) = vm.obj_heap.get_float_instance(handle) {
         Ok(*v)
     } else {
-        Err(FfiError::ExpectedNumber(vm.value_type_name(handle).into()).into())
+        Err(FfiError::ExpectedNumber(vm.obj_heap.type_of(handle).into()).into())
     }
 }

@@ -20,14 +20,14 @@ impl_object_instance_data!(ObjectFloat, "float");
 macro_rules! float_binary_arith {
     ($name:ident, $float_op:expr, $op_name:literal) => {
         pub fn $name(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-            let lhs_val = *vm.expect_type(vm.obj_heap.get_float_instance(lhs), lhs, "float")?;
+            let lhs_val = *vm.obj_heap.expect_float(lhs)?;
             if let Some(rhs) = vm.obj_heap.get_float_instance(rhs) {
                 return Ok(vm.obj_heap.alloc_float_instance($float_op(lhs_val, *rhs)));
             }
             if let Some(rhs) = vm.obj_heap.get_integer_instance(rhs) {
                 return Ok(vm.obj_heap.alloc_float_instance($float_op(lhs_val, *rhs as f64)));
             }
-            Err(RuntimeErrorKind::BinaryOpTypeMismatch($op_name, "float", vm.value_type_name(rhs)))
+            Err(RuntimeErrorKind::BinaryOpTypeMismatch($op_name, "float", vm.obj_heap.type_of(rhs)))
         }
     };
 }
@@ -35,13 +35,13 @@ macro_rules! float_binary_arith {
 macro_rules! float_cmp_op {
     ($name:ident, $float_cmp:expr, $op_name:literal) => {
         pub fn $name(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-            let lhs_val = *vm.expect_type(vm.obj_heap.get_float_instance(lhs), lhs, "float")?;
+            let lhs_val = *vm.obj_heap.expect_float(lhs)?;
             let result = if let Some(rhs) = vm.obj_heap.get_float_instance(rhs) {
                 $float_cmp(lhs_val, *rhs)
             } else if let Some(rhs) = vm.obj_heap.get_integer_instance(rhs) {
                 $float_cmp(lhs_val, *rhs as f64)
             } else {
-                return Err(RuntimeErrorKind::BinaryOpTypeMismatch($op_name, "float", vm.value_type_name(rhs)));
+                return Err(RuntimeErrorKind::BinaryOpTypeMismatch($op_name, "float", vm.obj_heap.type_of(rhs)));
             };
             Ok(vm.obj_heap.alloc_bool_instance(result))
         }
@@ -61,7 +61,7 @@ impl ObjectFloat {
     float_cmp_op!(__le__, |a, b| a <= b, "le");
 
     pub fn __div__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let lhs_val = *vm.expect_type(vm.obj_heap.get_float_instance(lhs), lhs, "float")?;
+        let lhs_val = *vm.obj_heap.expect_float(lhs)?;
         if let Some(rhs) = vm.obj_heap.get_float_instance(rhs) {
             if *rhs == 0.0 {
                 return Err(RuntimeErrorKind::DivideByZero);
@@ -74,11 +74,11 @@ impl ObjectFloat {
             }
             return Ok(vm.obj_heap.alloc_float_instance(lhs_val / *rhs as f64));
         }
-        Err(RuntimeErrorKind::BinaryOpTypeMismatch("div", "float", vm.value_type_name(rhs)))
+        Err(RuntimeErrorKind::BinaryOpTypeMismatch("div", "float", vm.obj_heap.type_of(rhs)))
     }
 
     pub fn __floordiv__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let lhs_val = *vm.expect_type(vm.obj_heap.get_float_instance(lhs), lhs, "float")?;
+        let lhs_val = *vm.obj_heap.expect_float(lhs)?;
         if let Some(rhs) = vm.obj_heap.get_float_instance(rhs) {
             if *rhs == 0.0 {
                 return Err(RuntimeErrorKind::DivideByZero);
@@ -91,11 +91,11 @@ impl ObjectFloat {
             }
             return Ok(vm.obj_heap.alloc_float_instance((lhs_val / *rhs as f64).floor()));
         }
-        Err(RuntimeErrorKind::BinaryOpTypeMismatch("floordiv", "float", vm.value_type_name(rhs)))
+        Err(RuntimeErrorKind::BinaryOpTypeMismatch("floordiv", "float", vm.obj_heap.type_of(rhs)))
     }
 
     pub fn __mod__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let lhs_val = *vm.expect_type(vm.obj_heap.get_float_instance(lhs), lhs, "float")?;
+        let lhs_val = *vm.obj_heap.expect_float(lhs)?;
         if let Some(rhs) = vm.obj_heap.get_float_instance(rhs) {
             if *rhs == 0.0 {
                 return Err(RuntimeErrorKind::DivideByZero);
@@ -108,37 +108,37 @@ impl ObjectFloat {
             }
             return Ok(vm.obj_heap.alloc_float_instance(lhs_val.rem_euclid(*rhs as f64)));
         }
-        Err(RuntimeErrorKind::BinaryOpTypeMismatch("mod", "float", vm.value_type_name(rhs)))
+        Err(RuntimeErrorKind::BinaryOpTypeMismatch("mod", "float", vm.obj_heap.type_of(rhs)))
     }
 
     pub fn __neg__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let val = *vm.expect_type(vm.obj_heap.get_float_instance(receiver), receiver, "float")?;
+        let val = *vm.obj_heap.expect_float(receiver)?;
         Ok(vm.obj_heap.alloc_float_instance(-val))
     }
 
     pub fn __not__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let val = *vm.expect_type(vm.obj_heap.get_float_instance(receiver), receiver, "float")?;
+        let val = *vm.obj_heap.expect_float(receiver)?;
         Ok(vm.obj_heap.alloc_bool_instance(val == 0.0))
     }
 
     pub fn __str__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let val = *vm.expect_type(vm.obj_heap.get_float_instance(receiver), receiver, "float")?;
+        let val = *vm.obj_heap.expect_float(receiver)?;
         Ok(vm.obj_heap.alloc_string_instance(crate::format_shr!("{}", val)))
     }
 
     pub fn __bool__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let val = *vm.expect_type(vm.obj_heap.get_float_instance(receiver), receiver, "float")?;
+        let val = *vm.obj_heap.expect_float(receiver)?;
         Ok(vm.obj_heap.alloc_bool_instance(val != 0.0))
     }
 
     pub fn __hash__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let val = *vm.expect_type(vm.obj_heap.get_float_instance(receiver), receiver, "float")?;
+        let val = *vm.obj_heap.expect_float(receiver)?;
         let hash = val.to_bits() as i64;
         Ok(vm.obj_heap.alloc_integer_instance(hash))
     }
 
     pub fn __int__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let val = *vm.expect_type(vm.obj_heap.get_float_instance(receiver), receiver, "float")?;
+        let val = *vm.obj_heap.expect_float(receiver)?;
         Ok(vm.obj_heap.alloc_integer_instance(val as i64))
     }
 

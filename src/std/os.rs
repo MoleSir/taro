@@ -65,7 +65,7 @@ fn args(vm: &mut VirtualMachine) -> RuntimeResult<ObjectHandle> {
 /// `os.getenv(name)` — return the value of environment variable `name`,
 /// or nil if it is not set.
 fn getenv(vm: &mut VirtualMachine, name: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-    let key = vm.expect_type(vm.obj_heap.get_string_instance(name), name, "string")?;
+    let key = vm.obj_heap.expect_string(name)?;
     match std::env::var(key.as_str()) {
         Ok(val) => Ok(vm.obj_heap.alloc_string_instance(ShrString::new_string(&val))),
         Err(_) => Ok(ObjectHandle::NIL),
@@ -74,8 +74,8 @@ fn getenv(vm: &mut VirtualMachine, name: ObjectHandle) -> RuntimeResult<ObjectHa
 
 /// `os.setenv(key, value)` — set an environment variable.
 fn setenv(vm: &mut VirtualMachine, key: ObjectHandle, value: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-    let k = vm.expect_type(vm.obj_heap.get_string_instance(key), key, "string")?;
-    let v = vm.expect_type(vm.obj_heap.get_string_instance(value), value, "string")?;
+    let k = vm.obj_heap.expect_string(key)?;
+    let v = vm.obj_heap.expect_string(value)?;
     // SAFETY: single-threaded VM — no concurrent env access.
     unsafe { std::env::set_var(k.as_str(), v.as_str()) };
     Ok(ObjectHandle::NIL)
@@ -100,7 +100,7 @@ fn cwd(vm: &mut VirtualMachine) -> RuntimeResult<ObjectHandle> {
 
 /// `os.chdir(path)` — change the current working directory.
 fn chdir(vm: &mut VirtualMachine, path: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-    let s = vm.expect_type(vm.obj_heap.get_string_instance(path), path, "string")?;
+    let s = vm.obj_heap.expect_string(path)?;
     std::env::set_current_dir(s.as_str()).map_err(|e| RuntimeErrorKind::OsError(format!("cannot chdir to '{}': {}", s, e)))?;
     Ok(ObjectHandle::NIL)
 }
@@ -117,7 +117,7 @@ fn tmpdir(vm: &mut VirtualMachine) -> RuntimeResult<ObjectHandle> {
 
 /// `os.system(command)` — run a shell command and return its exit code.
 fn system(vm: &mut VirtualMachine, cmd: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-    let s = vm.expect_type(vm.obj_heap.get_string_instance(cmd), cmd, "string")?;
+    let s = vm.obj_heap.expect_string(cmd)?;
 
     let status = if cfg!(target_os = "windows") {
         Command::new("cmd").args(["/C", s.as_str()]).status()
