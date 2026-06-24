@@ -248,7 +248,7 @@ impl Server {
         // Look up the Socket class via the module back-reference on the Server
         // class, so we don't need a dedicated socket_class field on ObjectHeap.
         let socket_class = vm
-            .lookup_module_export(receiver, &ShrString::new_str("Socket"))
+            .lookup_module_export(receiver, "Socket")
             .ok_or_else(|| RuntimeErrorKind::NetError("Socket class not found in net module".into()))?;
         Ok(vm.obj_heap.alloc_instance(socket_class, Socket { stream: Some(stream), peer_addr: peer_str }))
     }

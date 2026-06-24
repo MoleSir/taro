@@ -41,7 +41,7 @@ impl VirtualMachine {
         }
 
         // mark loaded modules (keeps module-owned classes alive via back-references)
-        for &handle in self.loaded_modules.values() {
+        for &handle in self.modules.loaded.values() {
             self.obj_heap.mark_object(handle);
         }
 

@@ -11,7 +11,7 @@ pub use error::*;
 #[cfg(test)]
 mod tests;
 use crate::{ObjectHandle, ShrString};
-use std::collections::HashMap;
+use std::{collections::HashMap, path::PathBuf};
 
 pub struct VirtualMachine {
     pub obj_heap: crate::ObjectHeap,
@@ -23,9 +23,9 @@ pub struct VirtualMachine {
     /// Handles that should always be treated as GC roots (used during import
     /// to keep the importing script's state alive while a module executes).
     pub(crate) extra_gc_roots: Vec<ObjectHandle>,
-    /// Serves as a GC root so module-owned classes stay alive, and lets
-    /// module-level native functions look up sibling classes via the module.
-    pub(crate) loaded_modules: HashMap<ShrString, ObjectHandle>,
+    /// Module system — owns the loaded-module cache, file search paths, and
+    /// native-module registry.
+    pub(crate) modules: module::Modules,
 }
 
 /// A single function-call frame.  `slots_start` is the index into
@@ -46,10 +46,30 @@ impl VirtualMachine {
             open_upvalues: vec![],
             gc_threshold: 1024 * 1024,
             extra_gc_roots: vec![],
-            loaded_modules: HashMap::new(),
+            modules: module::Modules::default(),
         };
         vm.register_builtins();
         vm
+    }
+
+    /// Build the default module search path list.
+    /// Always includes `"."` first, then any directories from the
+    /// `TARO_PATH` environment variable (colon-separated).
+    pub(crate) fn default_search_paths() -> Vec<PathBuf> {
+        // `src/` is included so that `cargo run` / `cargo test` from the
+        // project root can resolve `import "std/argparse"` (→
+        // src/std/argparse.taro) without setting TARO_PATH.  For an installed
+        // binary, set TARO_PATH to the installation's lib directory.
+        let mut paths = vec![PathBuf::from("."), PathBuf::from("src")];
+        if let Ok(taro_path) = std::env::var("TARO_PATH") {
+            for dir in taro_path.split(':') {
+                let dir = dir.trim();
+                if !dir.is_empty() {
+                    paths.push(PathBuf::from(dir));
+                }
+            }
+        }
+        paths
     }
 
     /// Return a reference to the top-most (currently executing) call frame.

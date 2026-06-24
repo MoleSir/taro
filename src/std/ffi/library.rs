@@ -1,7 +1,7 @@
 use super::error::FfiError;
 use super::function::CFunction;
 use crate::vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine};
-use crate::{ObjectHandle, ToShrString, impl_object_instance_data};
+use crate::{ObjectHandle, impl_object_instance_data};
 use std::ffi::c_void;
 
 #[derive(Clone)]
@@ -61,7 +61,7 @@ impl CDynLib {
         let name_str = vm.obj_heap.expect_string(name)?;
         let lib = vm.obj_heap.get_instance_data::<Self>(library).ok_or(FfiError::DlSymNotLibrary)?;
         let symbol = lib.symbol_impl(name_str.as_str())?;
-        let symbol_class = vm.lookup_module_export(library, &"CSymbol".to_shrstring()).expect("must symbol");
+        let symbol_class = vm.lookup_module_export(library, "CSymbol").expect("must symbol");
         Ok(vm.obj_heap.alloc_instance(symbol_class, symbol))
     }
 
@@ -77,7 +77,7 @@ impl CDynLib {
         let symbol = lib.symbol_impl(name_str.as_str())?;
 
         let function = CFunction::from_handle(vm, symbol, ret_type, param_types)?;
-        let function_class = vm.lookup_module_export(library, &"CFunction".to_shrstring()).expect("must function");
+        let function_class = vm.lookup_module_export(library, "CFunction").expect("must function");
 
         Ok(vm.obj_heap.alloc_instance(function_class, function))
     }

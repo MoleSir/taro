@@ -1,4 +1,5 @@
 use super::VirtualMachine;
+use super::module::ModuleKey;
 use crate::{Chunk, Instruction, ObjectHandle, ObjectHeap};
 
 /// Build a chunk and run it: creates VM first, then calls `build` with VM's heap.
@@ -1592,7 +1593,7 @@ pub fn test_import_file_not_exists_error() {
     let mut vm = VirtualMachine::new();
     let err = vm.interpret("import \"nonexistent_file_xyz.taro\";").unwrap_err();
     assert!(err.to_string().contains("import error"), "got: {err}");
-    assert!(err.to_string().contains("cannot read"), "got: {err}");
+    assert!(err.to_string().contains("module not found"), "got: {err}");
 }
 
 #[test]
@@ -1618,6 +1619,77 @@ pub fn test_import_nested() {
     // This script imports math and uses it — the import system should handle
     // nested import (import inside a module).
     vm.interpret(&format!("import \"{math_path}\"; var m = math; print(m.add(100, 200));")).unwrap();
+}
+
+/// File module importing another file module — exercises nested
+/// `with_module_scope` and verifies `extra_gc_roots` stacking.
+#[test]
+pub fn test_import_nested_file_modules() {
+    let inner_path = tmp_file_path("nested_inner.taro");
+    let outer_path = tmp_file_path("nested_outer.taro");
+
+    // Inner module exports a function.
+    std::fs::write(&inner_path, "fun double(x) { return x * 2; }\n").unwrap();
+
+    // Outer module imports inner and wraps the export.
+    std::fs::write(
+        &outer_path,
+        &format!("import \"{inner_path}\" as inner;\nfun quadruple(x) {{ return inner.double(inner.double(x)); }}\n"),
+    )
+    .unwrap();
+
+    let mut vm = VirtualMachine::new();
+    vm.interpret(&format!(
+        "import \"{outer_path}\" as outer; print(outer.quadruple(5));"
+    ))
+    .unwrap();
+
+    std::fs::remove_file(&inner_path).ok();
+    std::fs::remove_file(&outer_path).ok();
+}
+
+#[test]
+pub fn test_import_module_caching() {
+    // Verify that importing the same module twice returns the cached module
+    // (i.e. the module is executed at most once, matching Python's semantics).
+    let mut vm = VirtualMachine::new();
+    let path = tmp_file_path("cache_test.taro");
+
+    // Write a module that defines a variable.
+    std::fs::write(&path, "var x = 42;\n").unwrap();
+
+    // First import — module is compiled and executed.
+    vm.interpret(&format!("import \"{path}\";")).unwrap();
+
+    // The module name is derived from the file stem.
+    let module_name = std::path::Path::new(&path).file_stem().unwrap().to_str().unwrap();
+    // Cache key is the canonical absolute path.
+    let canonical = std::fs::canonicalize(&path).unwrap();
+    let module_handle = vm.modules.loaded.get(&ModuleKey::File(canonical.clone())).copied().unwrap();
+
+    // After first import, x == 42.
+    let fields = vm.obj_heap.get_fields_instance(module_handle).unwrap();
+    let x_handle = fields.get(&crate::ShrString::new_str("x")).copied().unwrap();
+    assert_eq!(*vm.obj_heap.expect_integer(x_handle).unwrap(), 42);
+
+    // Modify the module's field via script.
+    vm.interpret(&format!("{module_name}.x = 100;")).unwrap();
+
+    // Verify the modification took effect on the module object.
+    let fields = vm.obj_heap.get_fields_instance(module_handle).unwrap();
+    let x_handle = fields.get(&crate::ShrString::new_str("x")).copied().unwrap();
+    assert_eq!(*vm.obj_heap.expect_integer(x_handle).unwrap(), 100);
+
+    // Second import — should return the cached module (x still == 100, not 42).
+    vm.interpret(&format!("import \"{path}\";")).unwrap();
+
+    // The global should still point to the same cached module with x == 100.
+    let fields = vm.obj_heap.get_fields_instance(module_handle).unwrap();
+    let x_handle = fields.get(&crate::ShrString::new_str("x")).copied().unwrap();
+    assert_eq!(*vm.obj_heap.expect_integer(x_handle).unwrap(), 100,
+        "second import should return the cached module with x == 100, not a fresh module with x == 42");
+
+    std::fs::remove_file(&path).ok();
 }
 
 // ===========================================================================

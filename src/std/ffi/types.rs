@@ -232,9 +232,11 @@ impl CType {
 
                 let mut data = vec![0u8; layout.size];
                 for (i, (name, fct)) in layout.field_names.iter().zip(&layout.field_types).enumerate() {
-                    let field_key = ShrString::new_string(name.as_str());
-                    let value_handle =
-                        struct_data.fields.get(&field_key).copied().ok_or_else(|| FfiError::StructFieldNotFound(name.clone()))?;
+                    let value_handle = struct_data
+                        .fields
+                        .get(name.as_str())
+                        .copied()
+                        .ok_or_else(|| FfiError::StructFieldNotFound(name.clone()))?;
                     fct.write_to_buffer(vm, value_handle, &mut data[layout.offsets[i]..])
                         .map_err(|e| FfiError::StructFieldError { name: name.clone(), error: e.to_string() })?;
                 }
@@ -296,9 +298,11 @@ impl CType {
                 };
 
                 for (i, (name, fct)) in layout.field_names.iter().zip(&layout.field_types).enumerate() {
-                    let field_key = ShrString::new_string(name.as_str());
-                    let value_handle =
-                        struct_data.fields.get(&field_key).copied().ok_or_else(|| FfiError::StructFieldNotFound(name.clone()))?;
+                    let value_handle = struct_data
+                        .fields
+                        .get(name.as_str())
+                        .copied()
+                        .ok_or_else(|| FfiError::StructFieldNotFound(name.clone()))?;
                     fct.write_to_buffer(vm, value_handle, &mut buf[layout.offsets[i]..])?;
                 }
                 Ok(())
@@ -311,7 +315,7 @@ impl CType {
         macro_rules! alloc_scalar_from_buf {
             ($wrapper:ident, $value:expr) => {{
                 let class = vm
-                    .lookup_loaded_module_export("std/ffi", &ShrString::new_str(stringify!($wrapper)))
+                    .lookup_loaded_module_export("std/ffi", stringify!($wrapper))
                     .ok_or_else(|| FfiError::ScalarClassNotFound(stringify!($wrapper).into()))?;
                 vm.obj_heap.alloc_instance(class, $wrapper { value: $value })
             }};
@@ -376,7 +380,7 @@ impl CType {
                 // Allocate a temporary CType instance on the heap as the
                 // ctype back-link for the nested result struct.
                 let ctype_class =
-                    vm.lookup_loaded_module_export("std/ffi", &ShrString::new_str("CType")).ok_or(FfiError::CTypeClassNotFound)?;
+                    vm.lookup_loaded_module_export("std/ffi", "CType").ok_or(FfiError::CTypeClassNotFound)?;
                 let inner_ctype_handle = vm.obj_heap.alloc_instance(ctype_class, self.clone());
 
                 let mut fields = HashMap::with_capacity(inner_layout.field_names.len());
@@ -386,7 +390,7 @@ impl CType {
                 }
 
                 let struct_class =
-                    vm.lookup_module_export(inner_ctype_handle, &ShrString::new_str("CStruct")).ok_or(FfiError::StructClassNotFound)?;
+                    vm.lookup_module_export(inner_ctype_handle, "CStruct").ok_or(FfiError::StructClassNotFound)?;
                 let instance = CStruct { ctype: inner_ctype_handle, fields };
                 Ok(vm.obj_heap.alloc_instance(struct_class, instance))
             }
@@ -412,7 +416,7 @@ impl CType {
         macro_rules! alloc_scalar {
             ($wrapper:ident, $value:expr) => {{
                 let class = vm
-                    .lookup_module_export(self_handle, &ShrString::new_str(stringify!($wrapper)))
+                    .lookup_module_export(self_handle, stringify!($wrapper))
                     .ok_or_else(|| FfiError::ScalarClassNotFound(stringify!($wrapper).into()))?;
                 vm.obj_heap.alloc_instance(class, $wrapper { value: $value })
             }};
@@ -432,7 +436,7 @@ impl CType {
 
                 let instance_data = CStruct { ctype: self_handle, fields };
 
-                let class = vm.lookup_module_export(self_handle, &ShrString::new_str("CStruct")).ok_or(FfiError::StructClassNotFound)?;
+                let class = vm.lookup_module_export(self_handle, "CStruct").ok_or(FfiError::StructClassNotFound)?;
                 Ok(vm.obj_heap.alloc_instance(class, instance_data))
             }
             CType::I8 => {
@@ -865,8 +869,7 @@ impl CStruct {
 
         let data = vm.obj_heap.get_instance_data::<CStruct>(self_handle).ok_or(FfiError::GetAttrNotStruct)?;
 
-        let key = ShrString::new_string(field_name.as_str());
-        let field_handle = match data.fields.get(&key) {
+        let field_handle = match data.fields.get(field_name.as_str()) {
             Some(&h) => h,
             None => return Err(FfiError::StructNoField(field_name).into()),
         };
@@ -907,7 +910,7 @@ pub(super) fn define_struct(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> R
     let layout = struct_layout_from_descriptors(&descriptors)?;
     let ctype_instance = CType::Struct(layout);
 
-    let class = vm.lookup_loaded_module_export("std/ffi", &ShrString::new_str("CType")).ok_or(FfiError::CTypeClassNotFound)?;
+    let class = vm.lookup_loaded_module_export("std/ffi", "CType").ok_or(FfiError::CTypeClassNotFound)?;
     Ok(vm.obj_heap.alloc_instance(class, ctype_instance))
 }
 

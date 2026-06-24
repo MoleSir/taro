@@ -171,7 +171,7 @@ impl CFunction {
                 }
 
                 let struct_class =
-                    vm.lookup_module_export(struct_type_handle, &ShrString::new_str("CStruct")).ok_or(FfiError::StructClassNotFound)?;
+                    vm.lookup_module_export(struct_type_handle, "CStruct").ok_or(FfiError::StructClassNotFound)?;
                 let instance = CStruct { ctype: struct_type_handle, fields };
                 Ok(vm.obj_heap.alloc_instance(struct_class, instance))
             }
@@ -189,7 +189,7 @@ pub(super) fn call(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeRes
     }
     let symbol = vm.obj_heap.expect_instance_data::<CSymbol>(args[0], "CSymbol")?.clone();
     let function = CFunction::from_handle(vm, symbol, args[1], args[2])?;
-    let function_class = vm.lookup_module_export(args[0], &"CFunction".to_shrstring()).expect("must has cfunction");
+    let function_class = vm.lookup_module_export(args[0], "CFunction").expect("must has cfunction");
     let function = vm.obj_heap.alloc_instance(function_class, function);
     let arg_values: Vec<ObjectHandle> = if args.len() > 3 { vm.obj_heap.expect_list(args[3])?.clone() } else { vec![] };
     CFunction::__call__impl(vm, function, &arg_values)

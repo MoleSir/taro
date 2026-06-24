@@ -9,7 +9,7 @@
 - [ ] str formart
 - [x] ffi
 - [ ] module class in vm 
-- [ ] cache imported module
+- [x] cache imported module
 - [x] gc in import 
 - [x] more str method
 - [x] bytes
