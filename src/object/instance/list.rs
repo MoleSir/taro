@@ -2,9 +2,18 @@ use std::any::Any;
 
 use super::{ObjectHeap, ObjectInstanceData};
 use crate::{
-    NativeFunction, ObjectHandle, native_a1,
+    NativeFunction, ObjectHandle,
     vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine},
 };
+
+macro_rules! list_a1 {
+    ($name:ident, $items:ident, $alloc:ident, $val:expr) => {
+        pub fn $name(vm: &mut VirtualMachine, $items: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+            let $items = vm.obj_heap.expect_list($items)?;
+            Ok(vm.obj_heap.$alloc($val))
+        }
+    };
+}
 
 // ========================================================================== //
 //  ObjectListIterator (iterator state)
@@ -68,7 +77,7 @@ impl ObjectList {
         Self { items }
     }
 
-    native_a1!(__not__, items: &Vec<ObjectHandle>, { items.is_empty() });
+    list_a1!(__not__, items, alloc_bool_instance, items.is_empty());
 
     pub fn __add__(vm: &mut VirtualMachine, lhs: ObjectHandle, rhs: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let lhs_items = vm.obj_heap.expect_list(lhs)?.clone();
@@ -93,9 +102,9 @@ impl ObjectList {
         Ok(vm.obj_heap.alloc_string_instance(result.into()))
     }
 
-    native_a1!(__bool__, items: &Vec<ObjectHandle>, { !items.is_empty() });
+    list_a1!(__bool__, items, alloc_bool_instance, !items.is_empty());
 
-    native_a1!(__len__, items: &Vec<ObjectHandle>, { items.len() as i64 });
+    list_a1!(__len__, items, alloc_integer_instance, items.len() as i64);
 
     pub fn len(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         Self::__len__(vm, receiver)

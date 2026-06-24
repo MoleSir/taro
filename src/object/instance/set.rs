@@ -3,9 +3,18 @@ use std::collections::HashMap;
 
 use super::{ObjectHeap, ObjectInstanceData};
 use crate::{
-    NativeFunction, ObjectHandle, native_a1,
+    NativeFunction, ObjectHandle,
     vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine},
 };
+
+macro_rules! set_a1 {
+    ($name:ident, $entries:ident, $alloc:ident, $val:expr) => {
+        pub fn $name(vm: &mut VirtualMachine, $entries: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+            let $entries = vm.obj_heap.expect_set($entries)?;
+            Ok(vm.obj_heap.$alloc($val))
+        }
+    };
+}
 
 // ========================================================================== //
 //  ObjectSetIterator (iterator state)
@@ -185,11 +194,11 @@ impl ObjectSet {
         Ok(vm.obj_heap.alloc_string_instance(result.into()))
     }
 
-    native_a1!(__bool__, entries: &HashMap<u64, Vec<ObjectHandle>>, { entries.values().any(|b| !b.is_empty()) });
+    set_a1!(__bool__, entries, alloc_bool_instance, entries.values().any(|b| !b.is_empty()));
 
-    native_a1!(__not__, entries: &HashMap<u64, Vec<ObjectHandle>>, { entries.values().all(|b| b.is_empty()) });
+    set_a1!(__not__, entries, alloc_bool_instance, entries.values().all(|b| b.is_empty()));
 
-    native_a1!(__len__, entries: &HashMap<u64, Vec<ObjectHandle>>, { entries.values().map(|b| b.len()).sum::<usize>() as i64 });
+    set_a1!(__len__, entries, alloc_integer_instance, entries.values().map(|b| b.len()).sum::<usize>() as i64);
 
     // ---- iteration protocol ----
 

@@ -1,8 +1,38 @@
 use super::{ObjectHeap, ObjectInstanceData};
 use crate::{
-    NativeFunction, ObjectHandle, ShrString, impl_object_instance_data, native_a1, native_a2, native_a3,
+    NativeFunction, ObjectHandle, ShrString, impl_object_instance_data,
     vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine},
 };
+
+macro_rules! string_a1 {
+    ($name:ident, $s:ident, $alloc:ident, $val:expr) => {
+        pub fn $name(vm: &mut VirtualMachine, $s: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+            let $s = vm.obj_heap.expect_string($s)?;
+            Ok(vm.obj_heap.$alloc($val))
+        }
+    };
+}
+
+macro_rules! string_a2 {
+    ($name:ident, $s:ident, $arg:ident, $alloc:ident, $val:expr) => {
+        pub fn $name(vm: &mut VirtualMachine, $s: ObjectHandle, $arg: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+            let $s = vm.obj_heap.expect_string($s)?;
+            let $arg = vm.obj_heap.expect_string($arg)?.clone();
+            Ok(vm.obj_heap.$alloc($val))
+        }
+    };
+}
+
+macro_rules! string_a3 {
+    ($name:ident, $s:ident, $arg1:ident, $arg2:ident, $alloc:ident, $val:expr) => {
+        pub fn $name(vm: &mut VirtualMachine, $s: ObjectHandle, $arg1: ObjectHandle, $arg2: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+            let $s = vm.obj_heap.expect_string($s)?;
+            let $arg1 = vm.obj_heap.expect_string($arg1)?.clone();
+            let $arg2 = vm.obj_heap.expect_string($arg2)?.clone();
+            Ok(vm.obj_heap.$alloc($val))
+        }
+    };
+}
 
 // ========================================================================== //
 //  ObjectStringIterator (iterator state)
@@ -104,7 +134,7 @@ impl ObjectString {
         Ok(receiver)
     }
 
-    native_a1!(__bool__, s: &ShrString, { !s.is_empty() });
+    string_a1!(__bool__, s, alloc_bool_instance, !s.is_empty());
 
     pub fn __hash__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let s = vm.obj_heap.expect_string(receiver)?;
@@ -126,17 +156,17 @@ impl ObjectString {
         Ok(vm.obj_heap.alloc_float_instance(val))
     }
 
-    native_a1!(__len__, s: &ShrString, { char_count(s.as_str()) as i64 });
+    string_a1!(__len__, s, alloc_integer_instance, char_count(s.as_str()) as i64);
 
     pub fn len(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         Self::__len__(vm, receiver)
     }
 
-    native_a1!(byte_len, s: &ShrString, { s.len() as i64 });
+    string_a1!(byte_len, s, alloc_integer_instance, s.len() as i64);
 
-    native_a1!(upper, s: &ShrString, { s.to_uppercase() });
+    string_a1!(upper, s, alloc_string_instance, s.to_uppercase().into());
 
-    native_a1!(lower, s: &ShrString, { s.to_lowercase() });
+    string_a1!(lower, s, alloc_string_instance, s.to_lowercase().into());
 
     /// `string.capitalize()` — first character uppercase, rest lowercase.
     pub fn capitalize(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
@@ -152,7 +182,7 @@ impl ObjectString {
         }
     }
 
-    native_a1!(casefold, s: &ShrString, { s.to_lowercase() });
+    string_a1!(casefold, s, alloc_string_instance, s.to_lowercase().into());
 
     /// `string.swapcase()` — swap the case of each character.
     pub fn swapcase(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
@@ -209,10 +239,10 @@ impl ObjectString {
         Ok(vm.obj_heap.alloc_string_instance(s.trim_end().to_string().into()))
     }
 
-    native_a2!(starts_with, s: &ShrString, prefix: ShrString, { s.starts_with(prefix.as_str()) });
-    native_a2!(ends_with, s: &ShrString, suffix: ShrString, { s.ends_with(suffix.as_str()) });
-    native_a2!(contains, s: &ShrString, sub: ShrString, { s.contains(sub.as_str()) });
-    native_a3!(replace, s: &ShrString, old: ShrString, new: ShrString, { s.replace(old.as_str(), new.as_str()) });
+    string_a2!(starts_with, s, prefix, alloc_bool_instance, s.starts_with(prefix.as_str()));
+    string_a2!(ends_with, s, suffix, alloc_bool_instance, s.ends_with(suffix.as_str()));
+    string_a2!(contains, s, sub, alloc_bool_instance, s.contains(sub.as_str()));
+    string_a3!(replace, s, old, new, alloc_string_instance, s.replace(old.as_str(), new.as_str()).into());
 
     /// `string.split(delim)` — split the string by `delim` and return a list.
     pub fn split(vm: &mut VirtualMachine, receiver: ObjectHandle, delim_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
@@ -327,23 +357,23 @@ impl ObjectString {
         Ok(vm.obj_heap.alloc_string_instance(result.to_string().into()))
     }
 
-    native_a2!(find, s: &ShrString, sub: ShrString, {
+    string_a2!(find, s, sub, alloc_integer_instance, {
         match s.find(sub.as_str()) {
             Some(byte_idx) => byte_to_char_index(s.as_str(), byte_idx) as i64,
             None => -1,
         }
     });
 
-    native_a2!(rfind, s: &ShrString, sub: ShrString, {
+    string_a2!(rfind, s, sub, alloc_integer_instance, {
         match s.rfind(sub.as_str()) {
             Some(byte_idx) => byte_to_char_index(s.as_str(), byte_idx) as i64,
             None => -1,
         }
     });
 
-    native_a2!(count, s: &ShrString, sub: ShrString, { s.matches(sub.as_str()).count() as i64 });
+    string_a2!(count, s, sub, alloc_integer_instance, s.matches(sub.as_str()).count() as i64);
 
-    native_a1!(is_empty, s: &ShrString, { s.is_empty() });
+    string_a1!(is_empty, s, alloc_bool_instance, s.is_empty());
 
     /// `string.repeat(n)` — repeat the string `n` times.
     pub fn repeat(vm: &mut VirtualMachine, receiver: ObjectHandle, n_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
@@ -356,9 +386,13 @@ impl ObjectString {
         Ok(vm.obj_heap.alloc_string_instance(result.into()))
     }
 
-    native_a2!(removeprefix, s: &ShrString, prefix: ShrString, { s.strip_prefix(prefix.as_str()).unwrap_or(s.as_str()).to_string() });
+    string_a2!(removeprefix, s, prefix, alloc_string_instance, {
+        s.strip_prefix(prefix.as_str()).unwrap_or(s.as_str()).to_string().into()
+    });
 
-    native_a2!(removesuffix, s: &ShrString, suffix: ShrString, { s.strip_suffix(suffix.as_str()).unwrap_or(s.as_str()).to_string() });
+    string_a2!(removesuffix, s, suffix, alloc_string_instance, {
+        s.strip_suffix(suffix.as_str()).unwrap_or(s.as_str()).to_string().into()
+    });
 
     /// `string.center(width, fillchar)` — center the string in a field of `width`
     /// characters, padding with `fillchar` (must be a single character).
@@ -462,13 +496,13 @@ impl ObjectString {
 
     // ---- character-class predicates (a1) ----
 
-    native_a1!(is_alnum, s: &ShrString, { !s.is_empty() && s.chars().all(|c| c.is_alphanumeric()) });
-    native_a1!(is_alpha, s: &ShrString, { !s.is_empty() && s.chars().all(|c| c.is_alphabetic()) });
-    native_a1!(is_ascii, s: &ShrString, { s.is_ascii() });
-    native_a1!(is_decimal, s: &ShrString, { !s.is_empty() && s.chars().all(|c| c.is_ascii_digit()) });
-    native_a1!(is_digit, s: &ShrString, { !s.is_empty() && s.chars().all(|c| c.is_ascii_digit()) });
-    native_a1!(is_numeric, s: &ShrString, { !s.is_empty() && s.chars().all(|c| c.is_numeric()) });
-    native_a1!(is_whitespace, s: &ShrString, { !s.is_empty() && s.chars().all(|c| c.is_whitespace()) });
+    string_a1!(is_alnum, s, alloc_bool_instance, !s.is_empty() && s.chars().all(|c| c.is_alphanumeric()));
+    string_a1!(is_alpha, s, alloc_bool_instance, !s.is_empty() && s.chars().all(|c| c.is_alphabetic()));
+    string_a1!(is_ascii, s, alloc_bool_instance, s.is_ascii());
+    string_a1!(is_decimal, s, alloc_bool_instance, !s.is_empty() && s.chars().all(|c| c.is_ascii_digit()));
+    string_a1!(is_digit, s, alloc_bool_instance, !s.is_empty() && s.chars().all(|c| c.is_ascii_digit()));
+    string_a1!(is_numeric, s, alloc_bool_instance, !s.is_empty() && s.chars().all(|c| c.is_numeric()));
+    string_a1!(is_whitespace, s, alloc_bool_instance, !s.is_empty() && s.chars().all(|c| c.is_whitespace()));
 
     /// `string.is_lower()` — at least one cased character exists and all cased
     /// characters are lowercase.

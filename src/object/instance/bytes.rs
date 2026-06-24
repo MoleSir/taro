@@ -4,9 +4,18 @@ use std::hash::{Hash, Hasher};
 
 use super::{ObjectHeap, ObjectInstanceData};
 use crate::{
-    NativeFunction, ObjectHandle, impl_object_instance_data, native_a1,
+    NativeFunction, ObjectHandle, impl_object_instance_data,
     vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine},
 };
+
+macro_rules! bytes_a1 {
+    ($name:ident, $data:ident, $alloc:ident, $val:expr) => {
+        pub fn $name(vm: &mut VirtualMachine, $data: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+            let $data = vm.obj_heap.expect_bytes($data)?;
+            Ok(vm.obj_heap.$alloc($val))
+        }
+    };
+}
 
 // ========================================================================== //
 //  ObjectBytesIterator (iterator state)
@@ -74,7 +83,7 @@ impl ObjectBytes {
 
     // ---- magic methods ----
 
-    native_a1!(__not__, data: &Vec<u8>, { data.is_empty() });
+    bytes_a1!(__not__, data, alloc_bool_instance, data.is_empty());
 
     pub fn __str__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let data = vm.obj_heap.expect_bytes(receiver)?.clone();
@@ -100,9 +109,9 @@ impl ObjectBytes {
         Ok(vm.obj_heap.alloc_string_instance(result.into()))
     }
 
-    native_a1!(__bool__, data: &Vec<u8>, { !data.is_empty() });
+    bytes_a1!(__bool__, data, alloc_bool_instance, !data.is_empty());
 
-    native_a1!(__len__, data: &Vec<u8>, { data.len() as i64 });
+    bytes_a1!(__len__, data, alloc_integer_instance, data.len() as i64);
 
     /// Alias for `__len__`.
     pub fn len(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
