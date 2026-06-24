@@ -418,7 +418,7 @@ impl<'a> Parser<'a> {
             self.emit(Instruction::GetLocal(0));
             self.emit(Instruction::Return);
         } else if is_module {
-            // Build an exports dict from the module's top-level locals.
+            // Build a module object directly from the module's top-level locals.
             // The Return instruction that follows will close upvalues for any
             // locals captured by nested functions / class methods.
             let num_locals = self.cur_unit().locals.len();
@@ -433,7 +433,7 @@ impl<'a> Parser<'a> {
                 self.emit(Instruction::GetLocal(i));
                 export_count += 1;
             }
-            self.emit(Instruction::BuildDict(export_count));
+            self.emit(Instruction::BuildModule(export_count));
             self.emit(Instruction::Return);
         } else {
             self.emit(Instruction::Nil);

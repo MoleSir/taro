@@ -159,33 +159,17 @@ impl VirtualMachine {
         let function = crate::compile::compile_module(source, &mut self.obj_heap)
             .map_err(|e| RuntimeErrorKind::ImportError(format!("compile error in '{display_name}': {e:?}")))?;
 
-        // 2. Execute in an isolated scope and capture the module's exports.
-        let (result, exports_dict) = self.with_module_scope(|vm| {
+        // 2. Execute in an isolated scope.  The module's `BuildModule`
+        //    instruction leaves the finished module object on the stack.
+        let (result, module) = self.with_module_scope(|vm| {
             let result = vm.interpret_function(function);
-            let exports_dict = vm.pop_stack().unwrap_or(ObjectHandle::NIL);
-            (result, exports_dict)
+            let module = vm.pop_stack().unwrap_or(ObjectHandle::NIL);
+            (result, module)
         });
 
-        // 4. Propagate execution errors.
+        // 3. Propagate execution errors.
         result.map_err(|e| RuntimeErrorKind::ImportError(format!("error in module '{display_name}': {e}")))?;
 
-        // 5. Convert the dict into a HashMap of field name → handle.
-        let exports: HashMap<ShrString, ObjectHandle> = if let Some(entries) = self.obj_heap.get_dict_instance(exports_dict) {
-            entries
-                .values()
-                .flat_map(|bucket| {
-                    bucket.iter().map(|&(k, v)| {
-                        let key = self.obj_heap.get_string_instance(k).cloned().unwrap_or_else(|| ShrString::new_str("?"));
-                        (key, v)
-                    })
-                })
-                .collect()
-        } else {
-            HashMap::new()
-        };
-
-        // 6. Create module object with exported names as fields.
-        let module = self.obj_heap.alloc_fields_instance(self.obj_heap.module_class, exports);
         Ok(module)
     }
 }
@@ -206,7 +190,8 @@ impl VirtualMachine {
     /// Execute `f` in an isolated module scope.
     ///
     /// The VM's current execution state (frames, stack, globals, upvalues) is
-    /// saved, a fresh global scope with only builtins is set up, `f` is called,
+    /// saved, an empty global scope is set up (builtins are always available
+    /// via the persistent `self.builtins` fallback), `f` is called,
     /// and then the original state is restored unconditionally.
     ///
     /// GC is allowed to run during module execution; the saved importing state
@@ -234,7 +219,6 @@ impl VirtualMachine {
         self.extra_gc_roots.extend_from_slice(&saved.open_upvalues);
 
         // ── execute ──────────────────────────────────────────────────────
-        self.register_builtins();
         let result = f(self);
 
         // ── restore ──────────────────────────────────────────────────────

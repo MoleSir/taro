@@ -220,6 +220,11 @@ impl Chunk {
                 self.write_op(ByteCode::BuildSet);
                 self.write_u16(count as u16);
             }
+            Instruction::BuildModule(count) => {
+                assert!(count < u16::MAX as usize, "Too much elements.");
+                self.write_op(ByteCode::BuildModule);
+                self.write_u16(count as u16);
+            }
             Instruction::IndexGet => {
                 self.write_op(ByteCode::IndexGet);
             }
@@ -385,6 +390,10 @@ impl Chunk {
             ByteCode::BuildSet => {
                 let count = self.read_u16(ip)?;
                 Ok(Instruction::BuildSet(count as usize))
+            }
+            ByteCode::BuildModule => {
+                let count = self.read_u16(ip)?;
+                Ok(Instruction::BuildModule(count as usize))
             }
             ByteCode::IndexGet => Ok(Instruction::IndexGet),
             ByteCode::IndexSet => Ok(Instruction::IndexSet),

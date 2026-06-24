@@ -18,13 +18,10 @@ pub struct VirtualMachine {
     pub(crate) frames: Vec<CallFrame>,
     pub(crate) stack: Vec<ObjectHandle>,
     pub(crate) globals: HashMap<ShrString, ObjectHandle>,
+    pub(crate) builtins: HashMap<ShrString, ObjectHandle>,
     pub(crate) open_upvalues: Vec<ObjectHandle>,
     pub(crate) gc_threshold: usize,
-    /// Handles that should always be treated as GC roots (used during import
-    /// to keep the importing script's state alive while a module executes).
     pub(crate) extra_gc_roots: Vec<ObjectHandle>,
-    /// Module system — owns the loaded-module cache, file search paths, and
-    /// native-module registry.
     pub(crate) modules: module::Modules,
 }
 
@@ -43,12 +40,13 @@ impl VirtualMachine {
             frames: vec![],
             stack: vec![],
             globals: HashMap::new(),
+            builtins: HashMap::new(),
             open_upvalues: vec![],
             gc_threshold: 1024 * 1024,
             extra_gc_roots: vec![],
             modules: module::Modules::default(),
         };
-        vm.register_builtins();
+        vm.init_builtins();
         vm
     }
 
@@ -56,10 +54,6 @@ impl VirtualMachine {
     /// Always includes `"."` first, then any directories from the
     /// `TARO_PATH` environment variable (colon-separated).
     pub(crate) fn default_search_paths() -> Vec<PathBuf> {
-        // `src/` is included so that `cargo run` / `cargo test` from the
-        // project root can resolve `import "std/argparse"` (→
-        // src/std/argparse.taro) without setting TARO_PATH.  For an installed
-        // binary, set TARO_PATH to the installation's lib directory.
         let mut paths = vec![PathBuf::from("."), PathBuf::from("src")];
         if let Ok(taro_path) = std::env::var("TARO_PATH") {
             for dir in taro_path.split(':') {

@@ -1,5 +1,5 @@
 use super::{RuntimeErrorKind, RuntimeResult, VirtualMachine};
-use crate::{Instruction, Method, Object, ObjectFields, ObjectHandle};
+use crate::{Instruction, Method, Object, ObjectFields, ObjectHandle, ShrString};
 use std::collections::HashMap;
 
 macro_rules! binary_op {
@@ -41,8 +41,12 @@ impl VirtualMachine {
                 self.globals.insert(name, value);
             }
             Instruction::GetGlobal(name) => {
-                let value =
-                    self.globals.get(&name).copied().ok_or_else(|| RuntimeErrorKind::VariableNotFound(name.as_str().to_string()))?;
+                let value = self
+                    .globals
+                    .get(&name)
+                    .or_else(|| self.builtins.get(&name))
+                    .copied()
+                    .ok_or_else(|| RuntimeErrorKind::VariableNotFound(name.as_str().to_string()))?;
                 self.push_stack(value);
             }
             Instruction::SetGlobal(name) => {
@@ -373,6 +377,21 @@ impl VirtualMachine {
                 }
                 let dict = self.obj_heap.alloc_dict_instance(map);
                 self.push_stack(dict);
+            }
+            Instruction::BuildModule(count) => {
+                let mut fields = HashMap::with_capacity(count);
+                for _ in 0..count {
+                    let val = self.pop_stack()?;
+                    let key = self.pop_stack()?;
+                    let name = self
+                        .obj_heap
+                        .get_string_instance(key)
+                        .cloned()
+                        .unwrap_or_else(|| ShrString::new_str("?"));
+                    fields.insert(name, val);
+                }
+                let module = self.obj_heap.alloc_fields_instance(self.obj_heap.module_class, fields);
+                self.push_stack(module);
             }
             Instruction::BuildSet(count) => {
                 let mut map: HashMap<u64, Vec<ObjectHandle>> = HashMap::new();

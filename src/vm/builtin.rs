@@ -4,8 +4,8 @@ use crate::{Object, ObjectBytes, ObjectHandle, ObjectSet};
 use std::collections::HashMap;
 
 impl VirtualMachine {
-    pub fn register_builtins(&mut self) {
-        // ---- define builtin classes as globals ----
+    pub fn init_builtins(&mut self) {
+        // ---- define builtin classes ----
         self.register_builtin_class("Int", self.obj_heap.int_class);
         self.register_builtin_class("Float", self.obj_heap.float_class);
         self.register_builtin_class("String", self.obj_heap.string_class);
@@ -16,30 +16,30 @@ impl VirtualMachine {
         self.register_builtin_class("Bool", self.obj_heap.bool_class);
 
         // ---- global native functions ----
-        self.register_native_fn("print", NativeFunction::var(VirtualMachine::print));
-        self.register_native_fn("len", NativeFunction::a1(VirtualMachine::len));
-        self.register_native_fn("type", NativeFunction::a1(VirtualMachine::typeof_val));
-        self.register_native_fn("input", NativeFunction::var(VirtualMachine::input));
-        self.register_native_fn("abs", NativeFunction::a1(VirtualMachine::abs));
-        self.register_native_fn("min", NativeFunction::var(VirtualMachine::min));
-        self.register_native_fn("max", NativeFunction::var(VirtualMachine::max));
-        self.register_native_fn("clock", NativeFunction::a0(VirtualMachine::clock));
-        self.register_native_fn("exit", NativeFunction::a1(VirtualMachine::exit));
+        self.register_builtin_fn("print", NativeFunction::var(VirtualMachine::print));
+        self.register_builtin_fn("len", NativeFunction::a1(VirtualMachine::len));
+        self.register_builtin_fn("type", NativeFunction::a1(VirtualMachine::typeof_val));
+        self.register_builtin_fn("input", NativeFunction::var(VirtualMachine::input));
+        self.register_builtin_fn("abs", NativeFunction::a1(VirtualMachine::abs));
+        self.register_builtin_fn("min", NativeFunction::var(VirtualMachine::min));
+        self.register_builtin_fn("max", NativeFunction::var(VirtualMachine::max));
+        self.register_builtin_fn("clock", NativeFunction::a0(VirtualMachine::clock));
+        self.register_builtin_fn("exit", NativeFunction::a1(VirtualMachine::exit));
 
-        self.register_native_fn("int", NativeFunction::a1(VirtualMachine::int));
-        self.register_native_fn("float", NativeFunction::a1(VirtualMachine::float));
-        self.register_native_fn("str", NativeFunction::a1(VirtualMachine::str));
-        self.register_native_fn("bool", NativeFunction::a1(VirtualMachine::bool));
-        self.register_native_fn("list", NativeFunction::var(VirtualMachine::list));
-        self.register_native_fn("dict", NativeFunction::a0(VirtualMachine::dict));
-        self.register_native_fn("set", NativeFunction::var(VirtualMachine::set));
-        self.register_native_fn("bytes", NativeFunction::a1(VirtualMachine::bytes));
+        self.register_builtin_fn("int", NativeFunction::a1(VirtualMachine::int));
+        self.register_builtin_fn("float", NativeFunction::a1(VirtualMachine::float));
+        self.register_builtin_fn("str", NativeFunction::a1(VirtualMachine::str));
+        self.register_builtin_fn("bool", NativeFunction::a1(VirtualMachine::bool));
+        self.register_builtin_fn("list", NativeFunction::var(VirtualMachine::list));
+        self.register_builtin_fn("dict", NativeFunction::a0(VirtualMachine::dict));
+        self.register_builtin_fn("set", NativeFunction::var(VirtualMachine::set));
+        self.register_builtin_fn("bytes", NativeFunction::a1(VirtualMachine::bytes));
 
         // IterEnd sentinel — signals end of iteration in __next__.
-        self.globals.insert("IterEnd".into(), ObjectHandle::ITER_END);
-        self.register_native_fn("is_iter_end", NativeFunction::a1(VirtualMachine::is_iter_end));
-        self.register_native_fn("iter", NativeFunction::a1(VirtualMachine::iter));
-        self.register_native_fn("next", NativeFunction::a1(VirtualMachine::next));
+        self.builtins.insert("IterEnd".into(), ObjectHandle::ITER_END);
+        self.register_builtin_fn("is_iter_end", NativeFunction::a1(VirtualMachine::is_iter_end));
+        self.register_builtin_fn("iter", NativeFunction::a1(VirtualMachine::iter));
+        self.register_builtin_fn("next", NativeFunction::a1(VirtualMachine::next));
     }
 
     pub(crate) fn register_native_method(&mut self, class_handle: ObjectHandle, name: &'static str, function: impl Into<NativeFunction>) {
@@ -48,13 +48,13 @@ impl VirtualMachine {
         class.methods.insert(name.into(), Method::Native(handle));
     }
 
-    fn register_native_fn(&mut self, name: &'static str, function: NativeFunction) {
+    fn register_builtin_fn(&mut self, name: &'static str, function: NativeFunction) {
         let function = self.obj_heap.alloc_native_fn(name, function);
-        self.globals.insert(name.into(), function);
+        self.builtins.insert(name.into(), function);
     }
 
     fn register_builtin_class(&mut self, name: &'static str, class: ObjectHandle) {
-        self.globals.insert(name.into(), class);
+        self.builtins.insert(name.into(), class);
     }
 }
 

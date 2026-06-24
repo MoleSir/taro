@@ -25,6 +25,12 @@ impl VirtualMachine {
             self.obj_heap.mark_object(handle);
         }
 
+        // mark builtins (persistent, but must be traced so the objects they
+        // reference stay alive across GC cycles).
+        for &handle in self.builtins.values() {
+            self.obj_heap.mark_object(handle);
+        }
+
         // mark frames
         for frame in self.frames.iter() {
             self.obj_heap.mark_object(frame.closure);
