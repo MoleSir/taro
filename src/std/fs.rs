@@ -122,7 +122,7 @@ impl FileInstance {
         let found = vm.value_type_name(receiver);
         let reader = vm
             .obj_heap
-            .get_native_mut::<FileInstance>(receiver)
+            .get_instance_data_mut::<FileInstance>(receiver)
             .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "native", found })?
             .reader
             .as_mut()
@@ -136,7 +136,7 @@ impl FileInstance {
         let found = vm.value_type_name(receiver);
         let reader = vm
             .obj_heap
-            .get_native_mut::<FileInstance>(receiver)
+            .get_instance_data_mut::<FileInstance>(receiver)
             .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "native", found })?
             .reader
             .as_mut()
@@ -151,7 +151,7 @@ impl FileInstance {
         let found = vm.value_type_name(receiver);
         let reader = vm
             .obj_heap
-            .get_native_mut::<FileInstance>(receiver)
+            .get_instance_data_mut::<FileInstance>(receiver)
             .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "native", found })?
             .reader
             .as_mut()
@@ -164,7 +164,7 @@ impl FileInstance {
         let found = vm.value_type_name(receiver);
         let reader = vm
             .obj_heap
-            .get_native_mut::<FileInstance>(receiver)
+            .get_instance_data_mut::<FileInstance>(receiver)
             .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "native", found })?
             .reader
             .as_mut()
@@ -186,7 +186,7 @@ impl FileInstance {
     fn close(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let found = vm.value_type_name(receiver);
         vm.obj_heap
-            .get_native_mut::<FileInstance>(receiver)
+            .get_instance_data_mut::<FileInstance>(receiver)
             .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "native", found })?
             .reader = None;
         Ok(ObjectHandle::NIL)
@@ -197,7 +197,7 @@ impl FileInstance {
         let found = vm.value_type_name(receiver);
         let reader = vm
             .obj_heap
-            .get_native_mut::<FileInstance>(receiver)
+            .get_instance_data_mut::<FileInstance>(receiver)
             .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "native", found })?
             .reader
             .as_mut()
@@ -210,7 +210,7 @@ impl FileInstance {
         let found = vm.value_type_name(receiver);
         let reader = vm
             .obj_heap
-            .get_native_mut::<FileInstance>(receiver)
+            .get_instance_data_mut::<FileInstance>(receiver)
             .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "native", found })?
             .reader
             .as_mut()
@@ -220,7 +220,7 @@ impl FileInstance {
     }
 
     fn __str__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let (is_open, path, mode) = if let Some(d) = vm.obj_heap.get_native::<FileInstance>(receiver) {
+        let (is_open, path, mode) = if let Some(d) = vm.obj_heap.get_instance_data::<FileInstance>(receiver) {
             (d.reader.is_some(), d.path.clone(), d.mode.clone())
         } else {
             (false, "?".into(), "?".into())

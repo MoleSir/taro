@@ -48,6 +48,9 @@ pub(super) enum FfiError {
     #[error("Struct cannot be constructed directly; use ffi.define_struct() to create a struct type")]
     StructDirectConstruction,
 
+    #[error("scalar C type cannot be constructed directly; use CType instance (e.g. ffi.c_uint8(value))")]
+    ScalarDirectConstruction,
+
     #[error("CSymbol cannot be constructed directly")]
     CSymbolDirectConstruction,
 
@@ -59,10 +62,16 @@ pub(super) enum FfiError {
     GetAttrArgCount,
     #[error("__getattr__: not a struct instance")]
     GetAttrNotStruct,
+    #[error("__getattr__: not a scalar instance")]
+    GetAttrNotScalar,
+    #[error("scalar type has no attribute '{0}' (only .value is supported)")]
+    ScalarNoAttr(String),
     #[error("__setattr__ requires 3 arguments (self, name, value)")]
     SetAttrArgCount,
     #[error("__setattr__: not a struct instance")]
     SetAttrNotStruct,
+    #[error("__setattr__: not a scalar instance")]
+    SetAttrNotScalar,
 
     // ---- marshal ----
     #[error("expected a struct instance")]
@@ -89,6 +98,8 @@ pub(super) enum FfiError {
     CTypeClassNotFound,
     #[error("Struct class not found in ffi module")]
     StructClassNotFound,
+    #[error("scalar class '{0}' not found in ffi module")]
+    ScalarClassNotFound(String),
 
     // ---- BoundFn ----
     #[error("bound function call: missing self")]

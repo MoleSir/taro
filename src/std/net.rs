@@ -118,7 +118,7 @@ impl Socket {
         let found = vm.value_type_name(receiver);
         let stream = vm
             .obj_heap
-            .get_native_mut::<Socket>(receiver)
+            .get_instance_data_mut::<Socket>(receiver)
             .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "native", found })?
             .stream
             .as_mut()
@@ -136,7 +136,7 @@ impl Socket {
         let found = vm.value_type_name(receiver);
         let stream = vm
             .obj_heap
-            .get_native_mut::<Socket>(receiver)
+            .get_instance_data_mut::<Socket>(receiver)
             .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "native", found })?
             .stream
             .as_mut()
@@ -152,7 +152,7 @@ impl Socket {
     fn close(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let found = vm.value_type_name(receiver);
         vm.obj_heap
-            .get_native_mut::<Socket>(receiver)
+            .get_instance_data_mut::<Socket>(receiver)
             .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "native", found })?
             .stream = None;
         Ok(ObjectHandle::NIL)
@@ -171,7 +171,7 @@ impl Socket {
         let found = vm.value_type_name(receiver);
         let data = vm
             .obj_heap
-            .get_native_mut::<Socket>(receiver)
+            .get_instance_data_mut::<Socket>(receiver)
             .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "native", found })?;
         if let Some(ref stream) = data.stream {
             stream.set_read_timeout(Some(dur)).map_err(|e| RuntimeErrorKind::NetError(format!("settimeout: {}", e)))?;
@@ -181,7 +181,7 @@ impl Socket {
 
     /// `socket.__str__()` → `<Socket peer='host:port' status=open|closed>`
     fn __str__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let (is_open, addr) = if let Some(d) = vm.obj_heap.get_native::<Socket>(receiver) {
+        let (is_open, addr) = if let Some(d) = vm.obj_heap.get_instance_data::<Socket>(receiver) {
             (d.stream.is_some(), d.peer_addr.clone())
         } else {
             (false, "?".into())
@@ -237,7 +237,7 @@ impl Server {
         let found = vm.value_type_name(receiver);
         let listener = vm
             .obj_heap
-            .get_native_mut::<Server>(receiver)
+            .get_instance_data_mut::<Server>(receiver)
             .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "native", found })?
             .listener
             .as_mut()
@@ -257,7 +257,7 @@ impl Server {
     fn close(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let found = vm.value_type_name(receiver);
         vm.obj_heap
-            .get_native_mut::<Server>(receiver)
+            .get_instance_data_mut::<Server>(receiver)
             .ok_or_else(|| RuntimeErrorKind::TypeMismatch { expected: "native", found })?
             .listener = None;
         Ok(ObjectHandle::NIL)
@@ -265,7 +265,7 @@ impl Server {
 
     /// `server.__str__()` → `<Server addr='host:port' status=open|closed>`
     fn __str__(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let (is_open, addr) = if let Some(d) = vm.obj_heap.get_native::<Server>(receiver) {
+        let (is_open, addr) = if let Some(d) = vm.obj_heap.get_instance_data::<Server>(receiver) {
             (d.listener.is_some(), d.bind_addr.clone())
         } else {
             (false, "?".into())

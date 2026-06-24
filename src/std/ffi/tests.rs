@@ -432,3 +432,183 @@ fn ffi_ctype_in_bind_arg_types() {
     );
     vm.interpret(&source).expect("ffi_ctype_in_bind_arg_types should succeed");
 }
+
+// ===========================================================================
+// Scalar wrapper tests — typed construction, .value access, struct integration
+// ===========================================================================
+
+#[test]
+fn ffi_scalar_construction() {
+    // c_uint8(255) should construct a typed wrapper.
+    let mut vm = VirtualMachine::new();
+    let source = r#"
+        import "std/ffi";
+        var v = ffi.c_uint8(255);
+        print(v);
+    "#;
+    vm.interpret(source).expect("ffi_scalar_construction should succeed");
+}
+
+#[test]
+fn ffi_scalar_value_getter() {
+    // .value should return the underlying Taro value.
+    let mut vm = VirtualMachine::new();
+    let source = r#"
+        import "std/ffi";
+        var v = ffi.c_int32(42);
+        var x = v.value;
+        print(x);  // 42
+    "#;
+    vm.interpret(source).expect("ffi_scalar_value_getter should succeed");
+}
+
+#[test]
+fn ffi_scalar_value_setter() {
+    // .value = ... should update the wrapped value.
+    let mut vm = VirtualMachine::new();
+    let source = r#"
+        import "std/ffi";
+        var v = ffi.c_int32(42);
+        v.value = 99;
+        print(v.value);  // 99
+    "#;
+    vm.interpret(source).expect("ffi_scalar_value_setter should succeed");
+}
+
+#[test]
+fn ffi_scalar_float_construction() {
+    let mut vm = VirtualMachine::new();
+    let source = r#"
+        import "std/ffi";
+        var v = ffi.c_float(3.14);
+        print(v.value);  // ~3.14
+        var d = ffi.c_double(2.718);
+        print(d.value);  // ~2.718
+    "#;
+    vm.interpret(source).expect("ffi_scalar_float_construction should succeed");
+}
+
+#[test]
+fn ffi_scalar_bool_construction() {
+    let mut vm = VirtualMachine::new();
+    let source = r#"
+        import "std/ffi";
+        var t = ffi.c_bool(true);
+        print(t.value);   // true
+        var f = ffi.c_bool(false);
+        print(f.value);   // false
+    "#;
+    vm.interpret(source).expect("ffi_scalar_bool_construction should succeed");
+}
+
+#[test]
+fn ffi_scalar_all_integer_types() {
+    // All integer scalar types should construct.
+    let mut vm = VirtualMachine::new();
+    let source = r#"
+        import "std/ffi";
+        var a = ffi.c_int8(127);
+        var b = ffi.c_int16(32767);
+        var c = ffi.c_int32(2147483647);
+        var d = ffi.c_int64(9223372036854775807);
+        var e = ffi.c_uint8(255);
+        var f = ffi.c_uint16(65535);
+        var g = ffi.c_uint32(4294967295);
+        var h = ffi.c_uint64(9223372036854775807);
+        print(a.value);
+        print(b.value);
+        print(c.value);
+        print(d.value);
+        print(e.value);
+        print(f.value);
+        print(g.value);
+        print(h.value);
+    "#;
+    vm.interpret(source).expect("ffi_scalar_all_integer_types should succeed");
+}
+
+#[test]
+fn ffi_scalar_pointer_construction() {
+    // c_pointer accepts an integer address.
+    let mut vm = VirtualMachine::new();
+    let source = r#"
+        import "std/ffi";
+        var p = ffi.c_pointer(42);
+        print(p.value);  // 42 (the address as integer)
+    "#;
+    vm.interpret(source).expect("ffi_scalar_pointer_construction should succeed");
+}
+
+#[test]
+fn ffi_struct_with_typed_scalar_fields() {
+    // Struct fields can be typed scalars (auto-converted) or raw values.
+    let mut vm = VirtualMachine::new();
+    let source = r#"
+        import "std/ffi";
+        var Color = ffi.define_struct([["r", "uint8"], ["g", "uint8"], ["b", "uint8"], ["a", "uint8"]]);
+        // Mix typed wrappers and raw values.
+        var c = Color(ffi.c_uint8(255), 0, ffi.c_uint8(128), 255);
+        print(c.r);  // 255 — auto-unwrapped from CUint8
+        print(c.g);  // 0
+        print(c.b);  // 128
+        print(c.a);  // 255
+    "#;
+    vm.interpret(source).expect("ffi_struct_with_typed_scalar_fields should succeed");
+}
+
+#[test]
+fn ffi_struct_named_typed_fields() {
+    // Named struct fields with typed scalars.
+    let mut vm = VirtualMachine::new();
+    let source = r#"
+        import "std/ffi";
+        var Vec3 = ffi.define_struct([["x", ffi.c_float], ["y", ffi.c_float], ["z", ffi.c_float]]);
+        var v = Vec3(ffi.c_float(1.0), ffi.c_float(2.0), 3.0);
+        print(v.x);  // 1.0 — auto-unwrapped
+        print(v.y);  // 2.0
+        print(v.z);  // 3.0
+    "#;
+    vm.interpret(source).expect("ffi_struct_named_typed_fields should succeed");
+}
+
+#[test]
+fn ffi_scalar_passed_to_bind() {
+    // Typed scalar wrappers should marshal correctly in FFI calls.
+    let lib_path = if cfg!(target_os = "linux") {
+        "libc.so.6"
+    } else if cfg!(target_os = "macos") {
+        "libSystem.dylib"
+    } else {
+        return;
+    };
+
+    let mut vm = VirtualMachine::new();
+    let source = format!(
+        r##"
+        import "std/ffi";
+        var lib = ffi.CDynLib("{lib_path}");
+        var abs = lib.bind("abs", "int32", ["int32"]);
+        var r = abs(ffi.c_int32(-42));
+        print(r);  // 42 (FFI returns raw value)
+        "##
+    );
+    vm.interpret(&source).expect("ffi_scalar_passed_to_bind should succeed");
+}
+
+#[test]
+fn ffi_ctype_call_returns_typed_wrapper() {
+    // c_int32(42) should return a typed wrapper (CI32), not a raw value.
+    let mut vm = VirtualMachine::new();
+    let source = r#"
+        import "std/ffi";
+        var x = ffi.c_int32(42);
+        var y = ffi.c_int32(99);
+        // Different instances should be independent.
+        print(x.value);  // 42
+        print(y.value);  // 99
+        x.value = 77;
+        print(x.value);  // 77
+        print(y.value);  // 99 (unchanged)
+    "#;
+    vm.interpret(source).expect("ffi_ctype_call_returns_typed_wrapper should succeed");
+}

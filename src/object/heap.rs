@@ -402,18 +402,6 @@ impl ObjectHeap {
     pub fn get_bytes_iter_mut(&mut self, handle: ObjectHandle) -> Option<&mut ObjectBytesIterator> {
         self.get_instance_data_mut(handle)
     }
-
-    /// Return a shared reference to the native data stored in `handle`,
-    /// downcast to `T`.
-    pub fn get_native<T: ObjectInstanceData>(&self, handle: ObjectHandle) -> Option<&T> {
-        self.get_instance_data(handle)
-    }
-
-    /// Return a mutable reference to the native data stored in `handle`,
-    /// downcast to `T`.
-    pub fn get_native_mut<T: ObjectInstanceData>(&mut self, handle: ObjectHandle) -> Option<&mut T> {
-        self.get_instance_data_mut(handle)
-    }
 }
 
 impl ObjectHeap {

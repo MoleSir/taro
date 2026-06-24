@@ -39,9 +39,9 @@
 //! ffi.dlclose(lib);
 //! ```
 mod error;
+mod function;
 mod library;
 mod types;
-mod function;
 
 #[cfg(test)]
 mod tests;
@@ -80,6 +80,32 @@ impl VirtualMachine {
         self.register_native_method(struct_instance_class, "__getattr__", NativeFunction::var(types::CStruct::__getattr__));
         self.register_native_method(struct_instance_class, "__setattr__", NativeFunction::var(types::CStruct::__setattr__));
 
+        // Register a scalar wrapper class (e.g. CI8, CUint8, …).
+        // Each scalar class has the same method signatures — the per-type
+        // dispatch happens inside scalar_getattr / scalar_setattr.
+        macro_rules! register_scalar_class {
+            ($name:ident) => {{
+                let class = self.obj_heap.alloc_class(stringify!($name));
+                self.register_native_method(class, "__new__", NativeFunction::var(types::scalar_new_error));
+                self.register_native_method(class, "__getattr__", NativeFunction::var(types::scalar_getattr));
+                self.register_native_method(class, "__setattr__", NativeFunction::var(types::scalar_setattr));
+                class
+            }};
+        }
+
+        let ci8_class = register_scalar_class!(CI8);
+        let cuint8_class = register_scalar_class!(CUint8);
+        let ci16_class = register_scalar_class!(CI16);
+        let cuint16_class = register_scalar_class!(CUint16);
+        let ci32_class = register_scalar_class!(CI32);
+        let cuint32_class = register_scalar_class!(CUint32);
+        let ci64_class = register_scalar_class!(CI64);
+        let cuint64_class = register_scalar_class!(CUint64);
+        let cfloat_class = register_scalar_class!(CFloat);
+        let cdouble_class = register_scalar_class!(CDouble);
+        let cbool_class = register_scalar_class!(CBool);
+        let cpointer_class = register_scalar_class!(CPointer);
+
         macro_rules! ctype_singleton {
             ($variant:ident) => {
                 self.obj_heap.alloc_instance(ctype_class, CType::$variant)
@@ -109,6 +135,20 @@ impl VirtualMachine {
         exports.insert(ShrString::new_str("c_pointer"), ctype_singleton!(Pointer));
         exports.insert(ShrString::new_str("c_cstring"), ctype_singleton!(CString));
 
+        // ---- export scalar wrapper classes (looked up by name at runtime) ----
+        exports.insert(ShrString::new_str("CI8"), ci8_class);
+        exports.insert(ShrString::new_str("CUint8"), cuint8_class);
+        exports.insert(ShrString::new_str("CI16"), ci16_class);
+        exports.insert(ShrString::new_str("CUint16"), cuint16_class);
+        exports.insert(ShrString::new_str("CI32"), ci32_class);
+        exports.insert(ShrString::new_str("CUint32"), cuint32_class);
+        exports.insert(ShrString::new_str("CI64"), ci64_class);
+        exports.insert(ShrString::new_str("CUint64"), cuint64_class);
+        exports.insert(ShrString::new_str("CFloat"), cfloat_class);
+        exports.insert(ShrString::new_str("CDouble"), cdouble_class);
+        exports.insert(ShrString::new_str("CBool"), cbool_class);
+        exports.insert(ShrString::new_str("CPointer"), cpointer_class);
+
         exports.insert(ShrString::new_str("CDynLib"), library_class);
         exports.insert(ShrString::new_str("CSymbol"), csymbol_class);
         exports.insert(ShrString::new_str("CFunction"), cfunction_class);
@@ -116,6 +156,19 @@ impl VirtualMachine {
         exports.insert(ShrString::new_str("CStruct"), struct_instance_class);
 
         let module = self.obj_heap.alloc_fields_instance(self.obj_heap.module_class, exports);
+
+        self.obj_heap.get_class_mut(ci8_class).expect("CI8").module = Some(module);
+        self.obj_heap.get_class_mut(cuint8_class).expect("CUint8").module = Some(module);
+        self.obj_heap.get_class_mut(ci16_class).expect("CI16").module = Some(module);
+        self.obj_heap.get_class_mut(cuint16_class).expect("CUint16").module = Some(module);
+        self.obj_heap.get_class_mut(ci32_class).expect("CI32").module = Some(module);
+        self.obj_heap.get_class_mut(cuint32_class).expect("CUint32").module = Some(module);
+        self.obj_heap.get_class_mut(ci64_class).expect("CI64").module = Some(module);
+        self.obj_heap.get_class_mut(cuint64_class).expect("CUint64").module = Some(module);
+        self.obj_heap.get_class_mut(cfloat_class).expect("CFloat").module = Some(module);
+        self.obj_heap.get_class_mut(cdouble_class).expect("CDouble").module = Some(module);
+        self.obj_heap.get_class_mut(cbool_class).expect("CBool").module = Some(module);
+        self.obj_heap.get_class_mut(cpointer_class).expect("CPointer").module = Some(module);
 
         self.obj_heap.get_class_mut(library_class).expect("CDynLib").module = Some(module);
         self.obj_heap.get_class_mut(csymbol_class).expect("CSymbol").module = Some(module);

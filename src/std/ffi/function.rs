@@ -1,10 +1,10 @@
-use std::collections::HashMap;
-use std::ffi::{c_char, c_void};
-use crate::vm::{RuntimeResult, VirtualMachine};
-use crate::{impl_object_instance_data, ObjectHandle, ShrString, ToShrString};
 use super::error::FfiError;
 use super::library::CSymbol;
 use super::types::{CStruct, CType, CValue};
+use crate::vm::{RuntimeResult, VirtualMachine};
+use crate::{ObjectHandle, ShrString, ToShrString, impl_object_instance_data};
+use std::collections::HashMap;
+use std::ffi::{c_char, c_void};
 
 pub(super) struct CFunction {
     pub(super) ptr: libffi::middle::CodePtr,
@@ -29,15 +29,16 @@ impl CFunction {
         Self { ptr: libffi::middle::CodePtr(symbol.raw), ret_type, param_types, cif, struct_type_handle }
     }
 
-    pub(crate) fn from_handle(vm: &mut VirtualMachine, symbol: CSymbol, ret_type_handle: ObjectHandle, arg_types: ObjectHandle) -> RuntimeResult<Self> {
+    pub(crate) fn from_handle(
+        vm: &mut VirtualMachine,
+        symbol: CSymbol,
+        ret_type_handle: ObjectHandle,
+        arg_types: ObjectHandle,
+    ) -> RuntimeResult<Self> {
         // Parse return type — supports both string names ("int32", …)
         // and CType struct instances (for struct return types).
         let ret_type = CType::from_handle(vm, ret_type_handle)?;
-        let struct_type_handle = if matches!(ret_type, CType::Struct(_)) {
-            Some(ret_type_handle)
-        } else {
-            None
-        };
+        let struct_type_handle = if matches!(ret_type, CType::Struct(_)) { Some(ret_type_handle) } else { None };
 
         // Parse argument types
         let arg_type_handles = vm.obj_heap.get_list_instance(arg_types).ok_or(FfiError::BindArgTypesNotList)?;
@@ -61,7 +62,7 @@ impl CFunction {
 
     #[allow(non_snake_case)]
     fn __call__impl(vm: &mut VirtualMachine, self_handle: ObjectHandle, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
-        let function = vm.obj_heap.get_native::<Self>(self_handle).ok_or(FfiError::BoundFnNotBoundFn)?;
+        let function = vm.obj_heap.get_instance_data::<Self>(self_handle).ok_or(FfiError::BoundFnNotBoundFn)?;
         if args.len() != function.param_types.len() {
             return Err(FfiError::BoundFnArgCount { expected: function.param_types.len(), got: args.len() }.into());
         }
@@ -71,9 +72,7 @@ impl CFunction {
         // be dropped before the call completes.
         let mut c_values: Vec<CValue> = Vec::with_capacity(function.param_types.len());
         for (i, (ct, &handle)) in function.param_types.iter().zip(args).enumerate() {
-            let cv = ct
-                .taro_to_cvalue(vm, handle)
-                .map_err(|e| FfiError::MarshalArg { idx: i, reason: e.to_string() })?;
+            let cv = ct.taro_to_cvalue(vm, handle).map_err(|e| FfiError::MarshalArg { idx: i, reason: e.to_string() })?;
             c_values.push(cv);
         }
         let ffi_args: Vec<libffi::middle::Arg> = c_values.iter().map(|cv| cv.as_arg()).collect();
@@ -147,9 +146,7 @@ impl CFunction {
                 // use the generic middle::Cif::call::<R>().
                 let cif_raw = function.cif.as_raw_ptr();
                 let code_ptr = function.ptr;
-                let struct_type_handle = function
-                    .struct_type_handle
-                    .ok_or(FfiError::StructReturnUnsupported)?;
+                let struct_type_handle = function.struct_type_handle.ok_or(FfiError::StructReturnUnsupported)?;
                 // Clone layout to detach from `function`'s borrow of
                 // obj_heap before mutating vm below.
                 let layout = layout.clone();
@@ -169,14 +166,12 @@ impl CFunction {
                 // Decode each field from the raw buffer.
                 let mut fields = HashMap::with_capacity(layout.field_names.len());
                 for (i, name) in layout.field_names.iter().enumerate() {
-                    let field_val = layout.field_types[i]
-                        .read_from_buffer(vm, &buffer[layout.offsets[i]..])?;
+                    let field_val = layout.field_types[i].read_from_buffer(vm, &buffer[layout.offsets[i]..])?;
                     fields.insert(ShrString::new_string(name), field_val);
                 }
 
-                let struct_class = vm
-                    .lookup_module_export(struct_type_handle, &ShrString::new_str("CStruct"))
-                    .ok_or(FfiError::StructClassNotFound)?;
+                let struct_class =
+                    vm.lookup_module_export(struct_type_handle, &ShrString::new_str("CStruct")).ok_or(FfiError::StructClassNotFound)?;
                 let instance = CStruct { ctype: struct_type_handle, fields };
                 Ok(vm.obj_heap.alloc_instance(struct_class, instance))
             }
@@ -196,10 +191,7 @@ pub(super) fn call(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeRes
     let function = CFunction::from_handle(vm, symbol, args[1], args[2])?;
     let function_class = vm.lookup_module_export(args[0], &"CFunction".to_shrstring()).expect("must has cfunction");
     let function = vm.obj_heap.alloc_instance(function_class, function);
-    let arg_values: Vec<ObjectHandle> = if args.len() > 3 { 
-        vm.expect_type(vm.obj_heap.get_list_instance(args[3]), args[3], "list")?.clone() 
-    } else { 
-        vec![] 
-    };
+    let arg_values: Vec<ObjectHandle> =
+        if args.len() > 3 { vm.expect_type(vm.obj_heap.get_list_instance(args[3]), args[3], "list")?.clone() } else { vec![] };
     CFunction::__call__impl(vm, function, &arg_values)
 }

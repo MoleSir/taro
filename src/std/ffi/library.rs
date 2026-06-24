@@ -1,12 +1,12 @@
-use std::ffi::c_void;
-use crate::vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine};
-use crate::{impl_object_instance_data, ObjectHandle, ToShrString};
 use super::error::FfiError;
 use super::function::CFunction;
+use crate::vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine};
+use crate::{ObjectHandle, ToShrString, impl_object_instance_data};
+use std::ffi::c_void;
 
 #[derive(Clone)]
 pub(super) struct CSymbol {
-    pub(super) raw: *mut c_void
+    pub(super) raw: *mut c_void,
 }
 
 unsafe impl Send for CSymbol {}
@@ -34,10 +34,9 @@ impl_object_instance_data!(CDynLib, "CDynLib");
 impl CDynLib {
     pub(super) fn symbol_impl(&self, name: &str) -> RuntimeResult<CSymbol> {
         unsafe {
-            let symbol: libloading::Symbol<*const c_void> = self.lib
-                .get(name.as_bytes())
-                .map_err(|e| FfiError::DlSym { name: name.to_string(), error: e.to_string() })?;
-    
+            let symbol: libloading::Symbol<*const c_void> =
+                self.lib.get(name.as_bytes()).map_err(|e| FfiError::DlSym { name: name.to_string(), error: e.to_string() })?;
+
             let ptr_addr = *symbol as *mut c_void;
             Ok(CSymbol::new(ptr_addr))
         }
@@ -60,17 +59,21 @@ impl CDynLib {
 
     pub(super) fn symbol(vm: &mut VirtualMachine, library: ObjectHandle, name: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let name_str = vm.expect_type(vm.obj_heap.get_string_instance(name), name, "string")?;
-        let lib = vm.obj_heap.get_native::<Self>(library).ok_or(FfiError::DlSymNotLibrary)?;
+        let lib = vm.obj_heap.get_instance_data::<Self>(library).ok_or(FfiError::DlSymNotLibrary)?;
         let symbol = lib.symbol_impl(name_str.as_str())?;
         let symbol_class = vm.lookup_module_export(library, &"CSymbol".to_shrstring()).expect("must symbol");
         Ok(vm.obj_heap.alloc_instance(symbol_class, symbol))
     }
 
     pub(super) fn bind(
-        vm: &mut VirtualMachine, library: ObjectHandle, name: ObjectHandle, ret_type: ObjectHandle, param_types: ObjectHandle,
+        vm: &mut VirtualMachine,
+        library: ObjectHandle,
+        name: ObjectHandle,
+        ret_type: ObjectHandle,
+        param_types: ObjectHandle,
     ) -> RuntimeResult<ObjectHandle> {
         let name_str = vm.expect_type(vm.obj_heap.get_string_instance(name), name, "string")?;
-        let lib = vm.obj_heap.get_native::<Self>(library).ok_or(FfiError::BindNotLibrary)?;
+        let lib = vm.obj_heap.get_instance_data::<Self>(library).ok_or(FfiError::BindNotLibrary)?;
         let symbol = lib.symbol_impl(name_str.as_str())?;
 
         let function = CFunction::from_handle(vm, symbol, ret_type, param_types)?;

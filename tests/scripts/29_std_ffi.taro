@@ -7,12 +7,12 @@ print(ffi != nil);                // true
 
 // === 2. dlopen — load libm ===
 print("=== dlopen libm ===");
-var lib = ffi.dlopen("libm.so.6");
+var lib = ffi.CDynLib("libm.so.6");
 print(lib != nil);                // true
 
 // === 3. bind — cos function ===
 print("=== bind cos ===");
-var cos = ffi.bind(lib, "cos", "double", ["double"]);
+var cos = lib.bind("cos", "double", ["double"]);
 print(cos != nil);                // true
 var r = cos(0.0);
 print(r);                         // 1.0
@@ -24,26 +24,22 @@ print(r2);                        // ~-1.0
 
 // === 5. bind — libc abs ===
 print("=== bind libc abs ===");
-var libc = ffi.dlopen("libc.so.6");
-var abs_fn = ffi.bind(libc, "abs", "int32", ["int32"]);
+var libc = ffi.CDynLib("libc.so.6");
+var abs_fn = libc.bind("abs", "int32", ["int32"]);
 var a = abs_fn(-42);
 print(a);                         // 42
 
 // === 6. bind — void return ===
 print("=== bind void fn ===");
-var srand = ffi.bind(libc, "srand", "void", ["uint32"]);
+var srand = libc.bind("srand", "void", ["uint32"]);
 var v = srand(12345);
 print(v);                         // nil
 
-// === 7. StructDef and struct_new ===
+// === 7. define_struct and struct_new ===
 print("=== struct def/new ===");
-var Color = ffi.StructDef(["uint8", "uint8", "uint8", "uint8"]);
+var Color = ffi.define_struct(["uint8", "uint8", "uint8", "uint8"]);
 print(Color != nil);              // true
 var c = Color(255, 128, 64, 255);
 print(c != nil);                  // true
 
-// === 8. cleanup ===
-print("=== cleanup ===");
-ffi.dlclose(lib);
-ffi.dlclose(libc);
 print("done");
