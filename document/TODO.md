@@ -12,6 +12,7 @@
 - [x] gc in import 
 - [x] more str method
 - [x] bytes
+- [ ] clean vm call 
 - [x] std
   - [x] fs
   - [x] math

@@ -1,7 +1,7 @@
+use super::ModuleBuilder;
 use crate::vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine};
 use crate::{NativeFunction, ObjectHandle, ShrString, impl_object_instance_data};
 use std::io::{BufRead, BufReader, Read, Seek, Write};
-use super::ModuleBuilder;
 
 impl VirtualMachine {
     /// Create the `fs` std module.

@@ -141,13 +141,10 @@ pub struct Local {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum FunctionKind {
-    /// Regular function — the closure lives at stack slot 0 (placed by
-    /// `OP_CALL`), so we reserve slot 0 with a dummy local.
+    /// Regular function / method — the closure lives at stack slot 0 (placed by
+    /// `OP_CALL`), so we reserve slot 0 with a dummy local.  User-declared
+    /// parameters start at slot 1.
     Function,
-    /// Method — the receiver (`self`) lives at stack slot 0 (placed by
-    /// `OP_INVOKE` or bound-method call).  No dummy needed because the
-    /// user-declared `self` parameter naturally occupies slot 0.
-    Method,
     /// Top-level script (also used for module source files).  Definitions
     /// become globals.  For modules, the closure's `.module` field directs
     /// `GetGlobal` to the module's own fields.
@@ -318,12 +315,10 @@ macro_rules! record_error_at_previous {
 impl CompilationUnit {
     fn new(_obj_heap: &mut ObjectHeap, name: impl Into<ShrString>, kind: FunctionKind, enclosing: usize) -> Self {
         let name: ShrString = name.into();
-        // For regular functions and the top-level script, stack slot 0 holds
-        // the closure (placed by `OP_CALL`).  We reserve it with a dummy
-        // entry so the first user-declared local / parameter starts at slot 1.
-        // For methods, slot 0 holds the receiver (`self`), which is the first
-        // explicit parameter — no dummy needed.
-        let locals = if kind == FunctionKind::Method { vec![] } else { vec![Local { depth: 0, name: "".into(), is_captured: false }] };
+        // Stack slot 0 always holds the closure (placed by `OP_CALL`).
+        // Reserve it with a dummy entry so the first user-declared local /
+        // parameter starts at slot 1.
+        let locals = vec![Local { depth: 0, name: "".into(), is_captured: false }];
         // Modules start at scope depth 1 so top-level definitions use locals
         // (capturable by nested functions as upvalues) instead of globals.
         let scope_depth = 0;
@@ -550,7 +545,7 @@ impl<'a> Parser<'a> {
 
         let method_name = ShrString::new_string(self.previous().lexeme);
 
-        self.parse_function_body(FunctionKind::Method)?;
+        self.parse_function_body(FunctionKind::Function)?;
 
         self.emit(Instruction::Method(method_name));
 
@@ -1219,8 +1214,8 @@ impl<'a> Parser<'a> {
         parser.consume(TokenKind::Identifier, "Expect superclass method name after 'super.'.")?;
         let method_name = ShrString::new_string(parser.previous().lexeme.to_string());
 
-        // Push `self` (slot 0 in every method frame) as the receiver.
-        parser.emit(Instruction::GetLocal(0));
+        // Push `self` (slot 1 — slot 0 is the closure dummy) as the receiver.
+        parser.emit(Instruction::GetLocal(1));
 
         if parser.match_token(TokenKind::LeftParen) {
             let (pos_count, kw_count, _kw_names) = parser.parse_argument_list()?;

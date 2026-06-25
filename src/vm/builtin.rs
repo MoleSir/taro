@@ -1,5 +1,5 @@
-use crate::vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine};
 use crate::NativeFunction;
+use crate::vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine};
 use crate::{Object, ObjectBytes, ObjectHandle, ObjectSet};
 use std::collections::HashMap;
 
@@ -206,11 +206,13 @@ pub fn set(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<Obje
 /// `bytes(value)` — create bytes from a string or list of ints.
 pub fn bytes(vm: &mut VirtualMachine, arg: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     // Snapshot what we need to decide, then drop the immutable borrow.
-    let is_string = vm.obj_heap
+    let is_string = vm
+        .obj_heap
         .get_instance(arg)
         .map(|inst| inst.data.as_any_ref().downcast_ref::<crate::object::ObjectString>().is_some())
         .unwrap_or(false);
-    let is_list = vm.obj_heap
+    let is_list = vm
+        .obj_heap
         .get_instance(arg)
         .map(|inst| inst.data.as_any_ref().downcast_ref::<crate::object::ObjectList>().is_some())
         .unwrap_or(false);
@@ -272,7 +274,8 @@ fn format_impl(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<
                         if arg_idx >= value_args.len() {
                             return Err(RuntimeErrorKind::FormatError(format!(
                                 "not enough arguments: format string has at least {} placeholder(s), got {} argument(s)",
-                                placeholder_count, value_args.len()
+                                placeholder_count,
+                                value_args.len()
                             )));
                         }
                         let s = vm.__str__(value_args[arg_idx])?;
@@ -280,9 +283,7 @@ fn format_impl(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<
                         arg_idx += 1;
                     }
                     _ => {
-                        return Err(RuntimeErrorKind::FormatError(
-                            "unclosed '{' — use '{{' for a literal '{'".into(),
-                        ));
+                        return Err(RuntimeErrorKind::FormatError("unclosed '{' — use '{{' for a literal '{'".into()));
                     }
                 }
             }
@@ -294,9 +295,7 @@ fn format_impl(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<
                         result.push('}');
                     }
                     _ => {
-                        return Err(RuntimeErrorKind::FormatError(
-                            "stray '}' — use '}}' for a literal '}'".into(),
-                        ));
+                        return Err(RuntimeErrorKind::FormatError("stray '}' — use '}}' for a literal '}'".into()));
                     }
                 }
             }
@@ -307,10 +306,10 @@ fn format_impl(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<
     if arg_idx < value_args.len() {
         return Err(RuntimeErrorKind::FormatError(format!(
             "too many arguments: {} placeholder(s), {} argument(s)",
-            placeholder_count, value_args.len()
+            placeholder_count,
+            value_args.len()
         )));
     }
 
     Ok(result)
 }
-

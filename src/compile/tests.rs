@@ -1046,7 +1046,7 @@ fn test_invoke_bytecode() {
 }
 
 #[test]
-fn test_self_parameter_is_slot_zero() {
+fn test_self_parameter_is_slot_one() {
     let (chunk, heap) = compile_with_heap("class Foo { fun m(self) { return self; } }");
     let script_insts = instructions(&chunk, &heap);
     for inst in &script_insts {
@@ -1054,7 +1054,7 @@ fn test_self_parameter_is_slot_zero() {
             let fn_obj = heap.get(*function).as_function().unwrap();
             if fn_obj.name.as_str() == "m" {
                 let fn_insts = instructions(&fn_obj.chunk, &heap);
-                assert!(fn_insts.iter().any(|i| matches!(i, Instruction::GetLocal(0))));
+                assert!(fn_insts.iter().any(|i| matches!(i, Instruction::GetLocal(1))));
                 return;
             }
         }

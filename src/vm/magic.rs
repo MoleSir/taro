@@ -1,5 +1,5 @@
 use super::{RuntimeErrorKind, RuntimeResult, VirtualMachine};
-use crate::{Method, Object, ObjectHandle, ShrString, format_shr};
+use crate::{Object, ObjectHandle, ShrString, format_shr};
 
 impl VirtualMachine {
     // ================================================================================== //
@@ -25,18 +25,15 @@ impl VirtualMachine {
                 .ok_or_else(|| RuntimeErrorKind::NoImplementMethod(class.name.to_string(), method_name))?
         };
 
-        match method {
-            Method::User(closure_handle) => self.invoke_method_sync(receiver, closure_handle, args),
-            Method::Native(handle) => {
-                let native_fn = self.obj_heap.get_native_fn(handle).expect("must fn").function;
-                self.push_stack(receiver);
-                for &arg in args {
-                    self.push_stack(arg);
-                }
-                self.call_native_fn(native_fn, 1 + args.len(), false)?;
-                self.pop_stack()
-            }
+        // Push receiver + args, then insert the callee before them and call
+        // synchronously (User closures run to completion, natives return
+        // immediately).
+        self.push_stack(receiver);
+        for &arg in args {
+            self.push_stack(arg);
         }
+        let insert_pos = self.stack.len() - 1 - args.len();
+        self.insert_and_call_method_sync(&method, insert_pos, 1 + args.len())
     }
 
     // ================================================================================== //
@@ -59,13 +56,10 @@ impl VirtualMachine {
                 .ok_or_else(|| RuntimeErrorKind::NoImplementMethod(class.name.to_string(), "__call__"))?
         };
 
-        match method {
-            Method::User(closure_handle) => self.call_closure(closure_handle, arg_count + 1, false),
-            Method::Native(handle) => {
-                let native_fn = self.obj_heap.get_native_fn(handle).expect("must fn").function;
-                self.call_native_fn(native_fn, arg_count + 1, false)
-            }
-        }
+        let callee_idx = self.callee_slot(arg_count);
+        // Insert closure before self so the frame sees
+        // slot 0 = closure, slot 1 = self.
+        self.insert_and_call_method(&method, callee_idx, arg_count + 1)
     }
 
     // ================================================================================== //

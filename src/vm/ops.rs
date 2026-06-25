@@ -198,7 +198,7 @@ impl VirtualMachine {
                 let obj = self.obj_heap.get(receiver);
                 match obj {
                     Object::Instance(instance) => {
-                        if let Some(fields_data) = instance.data.as_any_ref().downcast_ref::<ObjectFields>()
+                        if let Some(fields_data) = instance.get_data_ref::<ObjectFields>()
                             && let Some(value) = fields_data.fields.get(&field_name).cloned()
                         {
                             self.pop_stack()?;
@@ -333,17 +333,14 @@ impl VirtualMachine {
                         .ok_or_else(|| RuntimeErrorKind::UndefinedProperty(method_name.as_str().to_string()))?
                 };
 
-                match method {
-                    Method::User(closure_handle) => {
-                        self.frame_mut()?.ip = ip;
-                        self.call_closure(closure_handle, arg_count + 1, false)?;
-                        return Ok(());
-                    }
-                    Method::Native(handle) => {
-                        let native_fn = self.obj_heap.get_native_fn(handle).expect("must fn").function;
-                        self.call_native_fn(native_fn, arg_count + 1, false)?;
-                    }
-                }
+                // Insert callee at the receiver position and call.
+                // Stack: [..., closure, receiver, arg1, ..., argN]
+                //          slot 0 = closure
+                //          slot 1 = receiver (= self)
+                self.frame_mut()?.ip = ip;
+                let callee_idx = self.callee_slot(arg_count);
+                self.insert_and_call_method(&method, callee_idx, arg_count + 1)?;
+                return Ok(());
             }
 
             Instruction::SuperInvoke(method_name, arg_count) => {
@@ -360,17 +357,10 @@ impl VirtualMachine {
                         .ok_or_else(|| RuntimeErrorKind::UndefinedProperty(method_name.as_str().to_string()))?
                 };
 
-                match method {
-                    Method::User(closure_handle) => {
-                        self.frame_mut()?.ip = ip;
-                        self.call_closure(closure_handle, arg_count + 1, false)?;
-                        return Ok(());
-                    }
-                    Method::Native(handle) => {
-                        let native_fn = self.obj_heap.get_native_fn(handle).expect("must fn").function;
-                        self.call_native_fn(native_fn, arg_count + 1, false)?;
-                    }
-                }
+                self.frame_mut()?.ip = ip;
+                let callee_idx = self.callee_slot(arg_count);
+                self.insert_and_call_method(&method, callee_idx, arg_count + 1)?;
+                return Ok(());
             }
 
             Instruction::BuildList(count) => {

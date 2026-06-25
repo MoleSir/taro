@@ -1,6 +1,6 @@
+use super::ModuleBuilder;
 use crate::vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine};
 use crate::{NativeFunction, ObjectHandle};
-use super::ModuleBuilder;
 
 impl VirtualMachine {
     /// Create the `random` std module.

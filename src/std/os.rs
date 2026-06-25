@@ -1,9 +1,9 @@
+use super::ModuleBuilder;
 use crate::object::ObjectDict;
 use crate::vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine};
 use crate::{NativeFunction, ObjectHandle, ShrString};
 use std::collections::HashMap;
 use std::process::Command;
-use super::ModuleBuilder;
 
 impl VirtualMachine {
     /// Create the `os` std module.

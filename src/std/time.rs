@@ -1,8 +1,8 @@
+use super::ModuleBuilder;
 use crate::vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine};
 use crate::{NativeFunction, ObjectHandle, ShrString};
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use super::ModuleBuilder;
 
 impl VirtualMachine {
     /// Create the `time` std module.

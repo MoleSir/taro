@@ -2,29 +2,6 @@ use super::{RuntimeErrorKind, RuntimeResult, VirtualMachine};
 use crate::{Method, NativeFunction, Object, ObjectFields, ObjectHandle, ShrString};
 
 impl VirtualMachine {
-    /// Invoke a method on a receiver synchronously, running its bytecode
-    /// to completion and returning the result handle.
-    pub(crate) fn invoke_method_sync(
-        &mut self,
-        receiver: ObjectHandle,
-        method: ObjectHandle,
-        extra_args: &[ObjectHandle],
-    ) -> RuntimeResult<ObjectHandle> {
-        self.push_stack(receiver);
-        for &arg in extra_args {
-            self.push_stack(arg);
-        }
-        let saved_frame_count = self.frames.len();
-        let total_args = 1 + extra_args.len();
-        self.call_closure(method, total_args, false)?;
-
-        while self.frames.len() > saved_frame_count {
-            self.step()?;
-        }
-
-        self.pop_stack()
-    }
-
     // -----------------------------------------------------------------
     //  call_value / call_value_kw  —  unified call dispatch
     // -----------------------------------------------------------------
@@ -32,7 +9,7 @@ impl VirtualMachine {
     pub(crate) fn call_value(&mut self, callee: ObjectHandle, arg_count: usize) -> RuntimeResult<()> {
         let obj = self.obj_heap.get(callee);
         match obj {
-            Object::Closure(_) => self.call_closure(callee, arg_count, true),
+            Object::Closure(_) => self.call_closure(callee, arg_count),
             Object::Class(_) => {
                 let (new_method, init_method) = {
                     let class = self.obj_heap.get_class(callee).expect("must class");
@@ -59,20 +36,11 @@ impl VirtualMachine {
                         }
 
                         // Call __new__ synchronously.
-                        match method {
-                            Method::User(closure_handle) => {
-                                let saved_frame_count = self.frames.len();
-                                let total = 1 + saved_args.len();
-                                self.call_closure(closure_handle, total, false)?;
-                                while self.frames.len() > saved_frame_count {
-                                    self.step()?;
-                                }
-                            }
-                            Method::Native(handle) => {
-                                let native_fn = self.obj_heap.get_native_fn(handle).expect("must fn").function;
-                                let total = 1 + saved_args.len();
-                                self.call_native_fn(native_fn, total, false)?;
-                            }
+                        let saved_frame_count = self.frames.len();
+                        let total = 1 + saved_args.len();
+                        self.insert_and_call_method(&method, callee_idx, total)?;
+                        while self.frames.len() > saved_frame_count {
+                            self.step()?;
                         }
 
                         // Pop the instance from __new__ and push it back
@@ -95,23 +63,13 @@ impl VirtualMachine {
 
                 // ---- optionally initialise ----------------------------------
                 if let Some(method) = init_method {
-                    // Run __init__ synchronously (like __new__) so we can
-                    // discard its return value afterwards — __init__ is only
-                    // a configurator, not the source of the instance.
-                    match method {
-                        Method::User(closure_handle) => {
-                            let saved_frame_count = self.frames.len();
-                            let total = arg_count + 1;
-                            self.call_closure(closure_handle, total, false)?;
-                            while self.frames.len() > saved_frame_count {
-                                self.step()?;
-                            }
-                        }
-                        Method::Native(handle) => {
-                            let native_fn = self.obj_heap.get_native_fn(handle).expect("must fn").function;
-                            let total = arg_count + 1;
-                            self.call_native_fn(native_fn, total, false)?;
-                        }
+                    // Run __init__ synchronously — its return value is
+                    // discarded below; __init__ is only a configurator.
+                    let saved_frame_count = self.frames.len();
+                    let total = arg_count + 1;
+                    self.insert_and_call_method(&method, index, total)?;
+                    while self.frames.len() > saved_frame_count {
+                        self.step()?;
                     }
                     // __init__'s return value is irrelevant — pop it and
                     // restore the instance as the result of the call.
@@ -137,17 +95,15 @@ impl VirtualMachine {
                 other => other,
             }),
             Object::BoundMethod(bound_method) => {
+                // Replace BoundMethod with [callee, receiver] so the frame
+                // sees slot 0 = callee, slot 1 = receiver (= self).
                 let index = self.callee_slot(arg_count);
-                self.stack[index] = bound_method.receiver;
-                match &bound_method.method {
-                    Method::User(closure_handle) => self.call_closure(*closure_handle, arg_count + 1, false),
-                    Method::Native(handle) => {
-                        let native_fn = self.obj_heap.get_native_fn(*handle).expect("must fn").function;
-                        self.call_native_fn(native_fn, arg_count + 1, false)
-                    }
-                }
+                let receiver = bound_method.receiver;
+                let method = bound_method.method; // copy to end the immutable borrow
+                self.stack[index] = receiver;
+                self.insert_and_call_method(&method, index, arg_count + 1)
             }
-            Object::NativeFn(native_fn) => self.call_native_fn(native_fn.function, arg_count, true),
+            Object::NativeFn(native_fn) => self.call_native_fn(native_fn.function, arg_count),
             _ => Err(RuntimeErrorKind::CanNotCall(self.obj_heap.type_of(callee))),
         }
     }
@@ -291,23 +247,69 @@ impl VirtualMachine {
     //  call_closure / call_native_fn  —  low-level frame entry
     // -----------------------------------------------------------------
 
+    /// Insert the callee for `method` at `insert_pos` on the stack, then
+    /// call it with `arg_count` arguments already sitting to the right of
+    /// the insertion point.
+    ///
+    /// After insertion the stack layout is
+    /// `[..., callee, arg_0, ..., arg_{n-1}]` — matching what
+    /// [`call_closure`] / [`call_native_fn`] expect.
+    pub(crate) fn insert_and_call_method(&mut self, method: &Method, insert_pos: usize, arg_count: usize) -> RuntimeResult<()> {
+        match method {
+            Method::User(closure_handle) => {
+                let h = *closure_handle;
+                self.stack.insert(insert_pos, h);
+                self.call_closure(h, arg_count)
+            }
+            Method::Native(handle) => {
+                let h = *handle;
+                let native_fn = self.obj_heap.get_native_fn(h).expect("must fn").function;
+                self.stack.insert(insert_pos, h);
+                self.call_native_fn(native_fn, arg_count)
+            }
+        }
+    }
+
+    /// Like [`insert_and_call_method`], but for synchronous dispatch:
+    /// runs User closures to completion via the step loop and returns
+    /// the result.  Native methods return immediately.
+    pub(crate) fn insert_and_call_method_sync(
+        &mut self,
+        method: &Method,
+        insert_pos: usize,
+        arg_count: usize,
+    ) -> RuntimeResult<ObjectHandle> {
+        match *method {
+            Method::User(h) => {
+                let saved_frame_count = self.frames.len();
+                self.stack.insert(insert_pos, h);
+                self.call_closure(h, arg_count)?;
+                while self.frames.len() > saved_frame_count {
+                    self.step()?;
+                }
+                self.pop_stack()
+            }
+            Method::Native(h) => {
+                let native_fn = self.obj_heap.get_native_fn(h).expect("must fn").function;
+                self.stack.insert(insert_pos, h);
+                self.call_native_fn(native_fn, arg_count)?;
+                self.pop_stack()
+            }
+        }
+    }
+
     /// Push a call frame for a user-defined closure.
     ///
-    /// `callee_on_stack` distinguishes two stack layouts:
-    /// - `true`:  the callee (closure) sits on the stack at slot 0 of the new
-    ///   frame.  `arg_count` is the number of *explicit* arguments (does not
-    ///   include the callee itself).
-    /// - `false`: the callee slot has been replaced by a receiver (e.g. via
-    ///   BoundMethod or Invoke).  Slot 0 is the receiver.  `arg_count` already
-    ///   includes the receiver.
-    pub(crate) fn call_closure(&mut self, closure: ObjectHandle, arg_count: usize, callee_on_stack: bool) -> RuntimeResult<()> {
+    /// The stack has the closure at slot 0 followed by `arg_count` arguments.
+    /// `arg_count` does NOT include the closure itself.
+    pub(crate) fn call_closure(&mut self, closure: ObjectHandle, arg_count: usize) -> RuntimeResult<()> {
         let closure_obj = self.obj_heap.get_closure(closure).expect("must closure");
         let function = self.obj_heap.get_function(closure_obj.function).expect("must function");
         // Allow arg_count in [required_arity, arity]; fill defaults for missing args.
         if arg_count < function.required_arity || arg_count > function.arity {
             Err(RuntimeErrorKind::ArgumentCountRange { min: function.required_arity, max: function.arity, got: arg_count })?;
         }
-        let slots_start = if callee_on_stack { self.stack.len() - arg_count - 1 } else { self.stack.len() - arg_count };
+        let slots_start = self.stack.len() - arg_count - 1;
 
         // Fill in default values for missing arguments.
         let num_missing = function.arity - arg_count;
@@ -327,16 +329,12 @@ impl VirtualMachine {
 
     /// Call a native function.
     ///
-    /// When `callee_on_stack` is true the callee is popped before the native
-    /// function reads its arguments (see [`call_closure`] for the two stack layouts).
-    pub(crate) fn call_native_fn(&mut self, native_func: NativeFunction, arg_count: usize, callee_on_stack: bool) -> RuntimeResult<()> {
-        let actual_args = if callee_on_stack {
-            let callee_idx = self.stack.len() - arg_count - 1;
-            self.stack.remove(callee_idx);
-            arg_count
-        } else {
-            arg_count
-        };
+    /// The callee sits on the stack at slot 0; it is popped before the native
+    /// function reads its arguments.  `arg_count` does NOT include the callee.
+    pub(crate) fn call_native_fn(&mut self, native_func: NativeFunction, arg_count: usize) -> RuntimeResult<()> {
+        let callee_idx = self.stack.len() - arg_count - 1;
+        self.stack.remove(callee_idx);
+        let actual_args = arg_count;
         let result = match native_func {
             NativeFunction::Arity0(f) => {
                 self.get_0_args(actual_args)?;

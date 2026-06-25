@@ -170,8 +170,7 @@ impl CFunction {
                     fields.insert(ShrString::new_string(name), field_val);
                 }
 
-                let struct_class =
-                    vm.lookup_module_export(struct_type_handle, "CStruct").ok_or(FfiError::StructClassNotFound)?;
+                let struct_class = vm.lookup_module_export(struct_type_handle, "CStruct").ok_or(FfiError::StructClassNotFound)?;
                 let instance = CStruct { ctype: struct_type_handle, fields };
                 Ok(vm.obj_heap.alloc_instance(struct_class, instance))
             }

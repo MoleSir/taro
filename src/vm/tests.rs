@@ -423,7 +423,7 @@ pub fn test_class_with_method() {
     let mut vm = run_chunk(|c, h| {
         let cls = h.alloc_class("Calc", h.builtins_module);
         let mut mc = Chunk::new();
-        mc.write_instruction(Instruction::GetLocal(1), 1, 1, h);
+        mc.write_instruction(Instruction::GetLocal(2), 1, 1, h);
         mc.write_instruction(Instruction::Constant(h.alloc_integer_instance(2)), 1, 1, h);
         mc.write_instruction(Instruction::Mul, 1, 1, h);
         mc.write_instruction(Instruction::Return, 1, 1, h);
@@ -512,7 +512,7 @@ pub fn test_super_invoke() {
         let derived = h.alloc_class("Derived", h.builtins_module);
         h.get_class_mut(derived).unwrap().superclass = Some(base);
         let mut dc = Chunk::new();
-        dc.write_instruction(Instruction::GetLocal(0), 1, 1, h);
+        dc.write_instruction(Instruction::GetLocal(1), 1, 1, h);
         dc.write_instruction(Instruction::SuperInvoke("m".into(), 0), 1, 1, h);
         dc.write_instruction(Instruction::Return, 1, 1, h);
         let dm = h.alloc_function("m", 1, 1, vec![], vec![], dc);
@@ -1639,10 +1639,7 @@ pub fn test_import_nested_file_modules() {
     .unwrap();
 
     let mut vm = VirtualMachine::new();
-    vm.interpret(&format!(
-        "import \"{outer_path}\" as outer; print(outer.quadruple(5));"
-    ))
-    .unwrap();
+    vm.interpret(&format!("import \"{outer_path}\" as outer; print(outer.quadruple(5));")).unwrap();
 
     std::fs::remove_file(&inner_path).ok();
     std::fs::remove_file(&outer_path).ok();
@@ -1686,8 +1683,11 @@ pub fn test_import_module_caching() {
     // The global should still point to the same cached module with x == 100.
     let fields = vm.obj_heap.get_module(module_handle).map(|m| &m.fields).unwrap();
     let x_handle = fields.get(&crate::ShrString::new_str("x")).copied().unwrap();
-    assert_eq!(*vm.obj_heap.expect_integer(x_handle).unwrap(), 100,
-        "second import should return the cached module with x == 100, not a fresh module with x == 42");
+    assert_eq!(
+        *vm.obj_heap.expect_integer(x_handle).unwrap(),
+        100,
+        "second import should return the cached module with x == 100, not a fresh module with x == 42"
+    );
 
     std::fs::remove_file(&path).ok();
 }

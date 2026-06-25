@@ -232,11 +232,8 @@ impl CType {
 
                 let mut data = vec![0u8; layout.size];
                 for (i, (name, fct)) in layout.field_names.iter().zip(&layout.field_types).enumerate() {
-                    let value_handle = struct_data
-                        .fields
-                        .get(name.as_str())
-                        .copied()
-                        .ok_or_else(|| FfiError::StructFieldNotFound(name.clone()))?;
+                    let value_handle =
+                        struct_data.fields.get(name.as_str()).copied().ok_or_else(|| FfiError::StructFieldNotFound(name.clone()))?;
                     fct.write_to_buffer(vm, value_handle, &mut data[layout.offsets[i]..])
                         .map_err(|e| FfiError::StructFieldError { name: name.clone(), error: e.to_string() })?;
                 }
@@ -298,11 +295,8 @@ impl CType {
                 };
 
                 for (i, (name, fct)) in layout.field_names.iter().zip(&layout.field_types).enumerate() {
-                    let value_handle = struct_data
-                        .fields
-                        .get(name.as_str())
-                        .copied()
-                        .ok_or_else(|| FfiError::StructFieldNotFound(name.clone()))?;
+                    let value_handle =
+                        struct_data.fields.get(name.as_str()).copied().ok_or_else(|| FfiError::StructFieldNotFound(name.clone()))?;
                     fct.write_to_buffer(vm, value_handle, &mut buf[layout.offsets[i]..])?;
                 }
                 Ok(())
@@ -386,12 +380,12 @@ impl CType {
 
                 let mut fields = HashMap::with_capacity(inner_layout.field_names.len());
                 for (i, name) in inner_layout.field_names.iter().enumerate() {
-                    let field_val = inner_layout.field_types[i].read_from_buffer(vm, &buf[inner_layout.offsets[i]..], inner_ctype_handle)?;
+                    let field_val =
+                        inner_layout.field_types[i].read_from_buffer(vm, &buf[inner_layout.offsets[i]..], inner_ctype_handle)?;
                     fields.insert(ShrString::new_string(name), field_val);
                 }
 
-                let struct_class =
-                    vm.lookup_module_export(inner_ctype_handle, "CStruct").ok_or(FfiError::StructClassNotFound)?;
+                let struct_class = vm.lookup_module_export(inner_ctype_handle, "CStruct").ok_or(FfiError::StructClassNotFound)?;
                 let instance = CStruct { ctype: inner_ctype_handle, fields };
                 Ok(vm.obj_heap.alloc_instance(struct_class, instance))
             }

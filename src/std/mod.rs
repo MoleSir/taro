@@ -7,8 +7,8 @@ mod os;
 mod random;
 mod time;
 
-use std::collections::HashMap;
 use crate::{NativeFunction, ObjectHandle, ObjectHeap, ObjectInstanceData, ShrString};
+use std::collections::HashMap;
 
 // ============================================================================
 // ModuleBuilder — constructs std modules with less boilerplate

@@ -95,7 +95,7 @@ impl VirtualMachine {
         let closure = self.obj_heap.alloc_closure(function, self.main_module);
         self.reset();
         self.push_stack(closure);
-        self.call_closure(closure, 0, true).expect("can't failed in script call");
+        self.call_closure(closure, 0).expect("can't failed in script call");
         self.run().map_err(InterpretError::Runtime)
     }
 

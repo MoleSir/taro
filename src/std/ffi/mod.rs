@@ -46,9 +46,9 @@ mod types;
 #[cfg(test)]
 mod tests;
 
+use super::ModuleBuilder;
 use crate::vm::{RuntimeResult, VirtualMachine};
 use crate::{NativeFunction, ObjectHandle};
-use super::ModuleBuilder;
 use types::CType;
 
 // ===========================================================================

@@ -52,9 +52,15 @@ macro_rules! impl_object_instance_data {
     ($ty:ty, $type_name:expr) => {
         impl $crate::object::ObjectInstanceData for $ty {
             fn mark_references(&self, _heap: &mut $crate::object::ObjectHeap) {}
-            fn type_name(&self) -> &'static str { $type_name }
-            fn as_any_ref(&self) -> &dyn std::any::Any { self }
-            fn as_any_mut(&mut self) -> &mut dyn std::any::Any { self }
+            fn type_name(&self) -> &'static str {
+                $type_name
+            }
+            fn as_any_ref(&self) -> &dyn std::any::Any {
+                self
+            }
+            fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+                self
+            }
         }
     };
 }
@@ -147,4 +153,3 @@ impl ObjectInstance {
         self.data.as_any_ref().downcast_ref()
     }
 }
-

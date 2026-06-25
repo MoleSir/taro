@@ -33,11 +33,7 @@ pub(crate) struct Modules {
 impl Modules {
     /// Build the default module system with all native std modules registered.
     pub fn default() -> Self {
-        let mut m = Self {
-            loaded: HashMap::new(),
-            search_paths: VirtualMachine::default_search_paths(),
-            native: HashMap::new(),
-        };
+        let mut m = Self { loaded: HashMap::new(), search_paths: VirtualMachine::default_search_paths(), native: HashMap::new() };
 
         // Register every native std module.
         // Adding a new one is just one line here + its create_*_module impl.
@@ -78,11 +74,8 @@ impl Modules {
         let is_filesystem_path = path.starts_with('.') || path.starts_with('/');
         let has_taro_ext = import_path.extension().map_or(false, |e| e == "taro");
 
-        let search_dirs: Vec<&Path> = if is_filesystem_path {
-            vec![Path::new(".")]
-        } else {
-            self.search_paths.iter().map(|d| d.as_path()).collect()
-        };
+        let search_dirs: Vec<&Path> =
+            if is_filesystem_path { vec![Path::new(".")] } else { self.search_paths.iter().map(|d| d.as_path()).collect() };
 
         for dir in search_dirs {
             let mut candidate = PathBuf::from(dir);
@@ -140,9 +133,8 @@ impl VirtualMachine {
             return Ok(cached);
         }
 
-        let source = std::fs::read_to_string(&resolved).map_err(|e| {
-            RuntimeErrorKind::ImportError(format!("cannot read '{}': {e}", resolved.display()))
-        })?;
+        let source = std::fs::read_to_string(&resolved)
+            .map_err(|e| RuntimeErrorKind::ImportError(format!("cannot read '{}': {e}", resolved.display())))?;
         let display = resolved.display().to_string();
         let module = self.import_source_module(&source, &display)?;
         self.modules.loaded.insert(key, module);
@@ -175,7 +167,7 @@ impl VirtualMachine {
             let closure = vm.obj_heap.alloc_closure(function, module);
             vm.reset();
             vm.push_stack(closure);
-            vm.call_closure(closure, 0, true).expect("can't fail in script call");
+            vm.call_closure(closure, 0).expect("can't fail in script call");
             vm.run()
         });
 

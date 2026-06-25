@@ -1,9 +1,9 @@
+use super::ModuleBuilder;
 use crate::vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine};
 use crate::{NativeFunction, ObjectHandle, ShrString, impl_object_instance_data};
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::time::Duration;
-use super::ModuleBuilder;
 
 impl VirtualMachine {
     /// Create the `net` std module.

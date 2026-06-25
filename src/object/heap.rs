@@ -3,9 +3,9 @@ use std::{collections::HashMap, sync::LazyLock};
 use super::{
     Method, NativeFunction, Object, ObjectBool, ObjectBoundMethod, ObjectBytes, ObjectBytesIterator, ObjectClass, ObjectClosure,
     ObjectDict, ObjectDictIterator, ObjectFields, ObjectFloat, ObjectFunction, ObjectInstance, ObjectInstanceData, ObjectInt,
-    ObjectIterEnd, ObjectList, ObjectListIterator, ObjectModule, ObjectNativeFn, ObjectNil, ObjectSet, ObjectSetIterator,
-    ObjectString, ObjectStringIterator, ObjectUpvalue, register_bool_builtins, register_bytes_builtins, register_dict_builtins,
-    register_float_builtins, register_int_builtins, register_list_builtins, register_set_builtins, register_string_builtins,
+    ObjectIterEnd, ObjectList, ObjectListIterator, ObjectModule, ObjectNativeFn, ObjectNil, ObjectSet, ObjectSetIterator, ObjectString,
+    ObjectStringIterator, ObjectUpvalue, register_bool_builtins, register_bytes_builtins, register_dict_builtins, register_float_builtins,
+    register_int_builtins, register_list_builtins, register_set_builtins, register_string_builtins,
 };
 use crate::vm::{RuntimeErrorKind, RuntimeResult};
 use crate::{Chunk, ShrString};
@@ -621,4 +621,3 @@ impl ObjectHeap {
         }
     }
 }
-
