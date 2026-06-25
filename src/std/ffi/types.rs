@@ -310,12 +310,14 @@ impl CType {
         }
     }
 
-    pub(super) fn read_from_buffer(&self, vm: &mut VirtualMachine, buf: &[u8]) -> RuntimeResult<ObjectHandle> {
+    /// `self_handle` is the heap handle of the CType instance that owns this
+    /// type descriptor — used to walk back to the owning module for class lookups.
+    pub(super) fn read_from_buffer(&self, vm: &mut VirtualMachine, buf: &[u8], self_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         // Helper: allocate a scalar wrapper instance by looking up its class.
         macro_rules! alloc_scalar_from_buf {
             ($wrapper:ident, $value:expr) => {{
                 let class = vm
-                    .lookup_loaded_module_export("std/ffi", stringify!($wrapper))
+                    .lookup_module_export(self_handle, stringify!($wrapper))
                     .ok_or_else(|| FfiError::ScalarClassNotFound(stringify!($wrapper).into()))?;
                 vm.obj_heap.alloc_instance(class, $wrapper { value: $value })
             }};
@@ -379,13 +381,12 @@ impl CType {
             CType::Struct(inner_layout) => {
                 // Allocate a temporary CType instance on the heap as the
                 // ctype back-link for the nested result struct.
-                let ctype_class =
-                    vm.lookup_loaded_module_export("std/ffi", "CType").ok_or(FfiError::CTypeClassNotFound)?;
+                let ctype_class = vm.lookup_module_export(self_handle, "CType").ok_or(FfiError::CTypeClassNotFound)?;
                 let inner_ctype_handle = vm.obj_heap.alloc_instance(ctype_class, self.clone());
 
                 let mut fields = HashMap::with_capacity(inner_layout.field_names.len());
                 for (i, name) in inner_layout.field_names.iter().enumerate() {
-                    let field_val = inner_layout.field_types[i].read_from_buffer(vm, &buf[inner_layout.offsets[i]..])?;
+                    let field_val = inner_layout.field_types[i].read_from_buffer(vm, &buf[inner_layout.offsets[i]..], inner_ctype_handle)?;
                     fields.insert(ShrString::new_string(name), field_val);
                 }
 

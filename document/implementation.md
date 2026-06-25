@@ -43,6 +43,14 @@ src/
     ├── std/                  # Virtual std modules (no .taro file needed)
     │   ├── mod.rs            #   import_std_module dispatcher
     │   ├── argparse.taro     #   std/argparse — CLI argument parser (pure taro)
+    │   ├── ffi/              #   std/ffi — Foreign Function Interface
+    │   │   ├── mod.rs        #     Module factory, CType scalar singletons, scalar class definitions
+    │   │   ├── error.rs      #     FfiError enum (40+ variants) with thiserror
+    │   │   ├── function.rs   #     CFunction — FFI call marshalling (call_cif, __call__)
+    │   │   ├── library.rs    #     CDynLib (dlopen/dlsym) and CSymbol
+    │   │   ├── types.rs      #     CType enum (I8..Pointer/CString/Void/Struct), CValue,
+    │   │   │                 #       CStruct, scalar wrappers, marshalling & buffer I/O
+    │   │   └── tests.rs      #     Unit tests for CType, struct layout, scalar I/O
     │   ├── fs.rs             #   std/fs — File class (read/write/read_bytes/readline/seek/tell/close) + standalone functions
     │   ├── itertools.taro    #   std/itertools — lazy iterators (pure taro)
     │   ├── json.rs           #   std/json — JSON encode/decode via serde_json
@@ -75,7 +83,8 @@ tests/scripts/                # Integration test scripts
 ├── 25_std_json.taro         # std/json integration tests
 ├── 26_std_itertools.taro    # std/itertools integration tests
 ├── 27_std_argparse.taro     # std/argparse integration tests
-└── 28_std_logging.taro      # std/logging integration tests
+├── 28_std_logging.taro      # std/logging integration tests
+└── 29_std_ffi.taro          # std/ffi integration tests (libm cos, libc abs, srand, struct)
 tests/scripts/lib/           # File-based modules used by import tests
 └── math.taro                #   Sample module (add, mul, PI, Vec class)
 examples/                    # Runnable example scripts

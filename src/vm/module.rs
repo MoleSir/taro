@@ -265,6 +265,8 @@ impl VirtualMachine {
     /// Look up an export from a module that was previously loaded via `import`.
     ///
     /// `module_path` is the original import path (e.g. `"std/ffi"`).
+    /// Used sparingly — only when no instance handle is available to walk the
+    /// object graph via [`lookup_module_export`].
     /// Returns `None` if the module hasn't been loaded yet.
     pub fn lookup_loaded_module_export(&self, module_path: &str, name: &str) -> Option<ObjectHandle> {
         let key = ModuleKey::Native(ShrString::new_string(module_path));

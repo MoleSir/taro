@@ -467,6 +467,7 @@ Module globals do not leak — `PI` is only accessible via `math.PI`.
 | Module | Description |
 |--------|-------------|
 | `std/argparse`  | CLI argument parser — flag definitions, type coercion (pure taro) |
+| `std/ffi`        | Foreign Function Interface — dynamic library loading, C function calls, structs |
 | `std/fs`        | File I/O — `File` class + standalone convenience functions |
 | `std/itertools` | Lazy iterators — map, filter, zip, chain, take, drop, … (pure taro) |
 | `std/json`      | JSON encoding (serialize) and decoding (parse) |
@@ -756,6 +757,134 @@ print(n.timestamp);                   // same as time.time()
 | `time.now()` | Current UTC time as a structured object with fields: `year`, `month`, `day`, `hour`, `min`, `sec`, `wday` (0=Sun), `yday` (1–366), `timestamp`. |
 
 All time fields are in UTC.
+
+### `std/ffi`
+
+Foreign Function Interface — load dynamic libraries, call C functions, and define C-compatible
+struct types. Backed by `libffi` for ABI-level calling and `libloading` for `dlopen`/`dlsym`.
+
+```taro
+import "std/ffi";
+
+// ---- Load libraries and bind functions ----
+var libm = ffi.CDynLib("libm.so.6");
+
+// bind caches the type info — subsequent calls are fast (no string parsing)
+var cos = libm.bind("cos", "double", ["double"]);
+print(cos(0.0));                        // 1.0
+print(cos(3.141592653589793));          // ~-1.0
+
+// libc examples
+var libc = ffi.CDynLib("libc.so.6");
+var abs = libc.bind("abs", "int32", ["int32"]);
+print(abs(-42));                        // 42
+
+// void return functions
+var srand = libc.bind("srand", "void", ["uint32"]);
+print(srand(12345));                    // nil
+
+// ---- Low-level one-shot call (no pre-binding) ----
+var sym = libm.symbol("cos");
+var val = ffi.call(sym, "double", ["double"], [0.0]);
+print(val);                             // 1.0
+
+// ---- Scalar CType singletons (for use as type arguments) ----
+// ffi.c_int8, c_uint8, c_int16, c_uint16, c_int32, c_uint32,
+// ffi.c_int64, c_uint64, c_float, c_double, c_bool, c_pointer, c_cstring
+
+// ---- Struct definition (positional fields) ----
+var Color = ffi.define_struct(["uint8", "uint8", "uint8", "uint8"]);
+var c = Color(255, 128, 64, 255);
+print(c[0]);                            // 255 (positional access)
+
+// ---- Struct definition (named fields) ----
+var Vec3 = ffi.define_struct([
+    ["x", "float"],
+    ["y", "float"],
+    ["z", "float"],
+]);
+var v = Vec3(1.0, 2.0, 3.0);
+print(v.x);                             // 1.0 (named field access)
+v.y = 5.0;                              // field mutation
+
+// ---- Nested structs via CType singletons ----
+var Vector3 = ffi.define_struct([
+    ["x", ffi.c_float],
+    ["y", ffi.c_float],
+    ["z", ffi.c_float],
+]);
+var Camera3D = ffi.define_struct([
+    ["position", Vector3],
+    ["target", Vector3],
+    ["up", Vector3],
+    ["fovy", ffi.c_float],
+    ["projection", ffi.c_int32],
+]);
+
+// ---- Scalar value wrapping ----
+var n = ffi.c_int32(42);                // wraps 42 as a typed C int32
+print(n.value);                         // 42
+n.value = 99;                           // mutation
+```
+
+**Classes:**
+
+| Class | Description |
+|-------|-------------|
+| `CDynLib(path)` | Load a dynamic library (`.so` / `.dylib` / `.dll`). Methods: `symbol(name)`, `bind(name, ret, params)`. |
+| `CSymbol` | Opaque symbol pointer — returned by `lib.symbol()`, passed to `ffi.call()`. |
+| `CFunction` | Bound C function — returned by `lib.bind()`. Callable directly with Taro values. |
+| `CType` | Type descriptor for a C type. Scalar singletons (e.g. `ffi.c_float`) are pre-built `CType` instances; `ffi.define_struct(...)` creates struct `CType` instances. Both are callable: scalar CType converts a value (returns a scalar wrapper), struct CType constructs a `CStruct` instance. |
+| `CStruct` | Concrete struct instance with named field access (`s.field`) and mutation (`s.field = v`). |
+
+**`CDynLib` methods:**
+
+| Method | Description |
+|--------|-------------|
+| `lib.symbol(name)` | Look up a symbol by name, return a `CSymbol`. |
+| `lib.bind(name, ret_type, param_types)` | Look up a symbol and bind it as a `CFunction`. `ret_type` and `param_types` accept both string names (`"int32"`, `"double"`, …) and `CType` instances (for struct return/param types). |
+
+**`CFunction` call semantics:**
+
+| Feature | Description |
+|---------|-------------|
+| Argument marshalling | Taro integers/floats are converted to the declared C types. Strings become `CString` (`*const c_char`). Struct instances are serialized to raw byte buffers. |
+| Return marshalling | Scalar returns become Taro integers/floats. `void` returns `nil`. `CString` return is converted to a Taro string. Struct return re-reads from the raw buffer into a `CStruct` instance. |
+| Struct return | When `ret_type` is a struct `CType` instance, the result is returned as a `CStruct` with named fields. |
+| Error handling | Argument count mismatch, type errors, and FFI-level errors produce runtime errors with descriptive messages. |
+
+**Functions:**
+
+| Function | Description |
+|----------|-------------|
+| `ffi.call(symbol, ret_type, param_types[, args])` | One-shot FFI call. `symbol` is a `CSymbol`, `ret_type` and `param_types` are type descriptors (strings or `CType` instances), `args` is an optional list of argument values. |
+| `ffi.define_struct(descriptors)` | Define a C struct type. `descriptors` is a list of either type strings (positional fields) or `[name, type]` pairs (named fields). Returns a callable `CType` instance that constructs `CStruct` instances. |
+
+**Scalar wrapper types:**
+
+Each scalar has a wrapper class (e.g. `CI8`, `CUint8`, `CFloat`, `CBool`, `CPointer`)
+that stores a single native C value. Scalar wrappers support `.value` get/set for reading
+and mutating the wrapped value. When accessed as struct fields via `CStruct.__getattr__`,
+scalar wrappers are auto-unwrapped to plain Taro values.
+
+**Supported C types:**
+
+| Type string | C type | Size | Wrapper class |
+|-------------|--------|------|---------------|
+| `"int8"` | `i8` | 1 | `CI8` |
+| `"uint8"` | `u8` | 1 | `CUint8` |
+| `"int16"` | `i16` | 2 | `CI16` |
+| `"uint16"` | `u16` | 2 | `CUint16` |
+| `"int32"` | `i32` | 4 | `CI32` |
+| `"uint32"` | `u32` | 4 | `CUint32` |
+| `"int64"` | `i64` | 8 | `CI64` |
+| `"uint64"` | `u64` | 8 | `CUint64` |
+| `"float"` | `f32` | 4 | `CFloat` |
+| `"double"` | `f64` | 8 | `CDouble` |
+| `"bool"` | `u8` | 1 | `CBool` |
+| `"pointer"` | `*const c_void` | 8 | `CPointer` |
+| `"cstring"` | `*const c_char` | 8 | — |
+| `"void"` | — | — | — (return only) |
 
 ### `std/json`
 

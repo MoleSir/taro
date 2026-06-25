@@ -166,7 +166,7 @@ impl CFunction {
                 // Decode each field from the raw buffer.
                 let mut fields = HashMap::with_capacity(layout.field_names.len());
                 for (i, name) in layout.field_names.iter().enumerate() {
-                    let field_val = layout.field_types[i].read_from_buffer(vm, &buffer[layout.offsets[i]..])?;
+                    let field_val = layout.field_types[i].read_from_buffer(vm, &buffer[layout.offsets[i]..], struct_type_handle)?;
                     fields.insert(ShrString::new_string(name), field_val);
                 }
 
