@@ -85,6 +85,9 @@ pub enum RuntimeErrorKind {
     #[error("Expected {min}..{max} arguments but got {got}")]
     ArgumentCountRange { min: usize, max: usize, got: usize },
 
+    #[error("range() step must not be zero")]
+    RangeStepZero,
+
     #[error("unknown keyword argument '{0}'")]
     UnknownKeywordArg(String),
 

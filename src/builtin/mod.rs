@@ -1,11 +1,15 @@
-use crate::NativeFunction;
+pub mod types;
+pub mod range;
+
+use range::ObjectRangeIter;
+
+use crate::{NativeFunction, ObjectClass};
 use crate::vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine};
-use crate::{Object, ObjectBytes, ObjectHandle, ObjectSet};
-use std::collections::HashMap;
+use crate::{Object, ObjectHandle};
 
 impl VirtualMachine {
     pub fn init_builtins(&mut self) {
-        // ---- define builtin classes ----
+        // define builtin classes
         self.register_builtin_class("Int", self.obj_heap.int_class);
         self.register_builtin_class("Float", self.obj_heap.float_class);
         self.register_builtin_class("String", self.obj_heap.string_class);
@@ -15,7 +19,7 @@ impl VirtualMachine {
         self.register_builtin_class("Bytes", self.obj_heap.bytes_class);
         self.register_builtin_class("Bool", self.obj_heap.bool_class);
 
-        // ---- global native functions ----
+        // global native functions
         self.register_builtin_fn("print", NativeFunction::var(print));
         self.register_builtin_fn("len", NativeFunction::a1(len));
         self.register_builtin_fn("type", NativeFunction::a1(VirtualMachine::typeof_val));
@@ -23,26 +27,38 @@ impl VirtualMachine {
         self.register_builtin_fn("abs", NativeFunction::a1(abs));
         self.register_builtin_fn("min", NativeFunction::var(min));
         self.register_builtin_fn("max", NativeFunction::var(max));
-        self.register_builtin_fn("clock", NativeFunction::a0(clock));
-        self.register_builtin_fn("exit", NativeFunction::a1(exit));
+        self.register_builtin_fn("sum", NativeFunction::var(sum));
+        self.register_builtin_fn("id", NativeFunction::a1(id));
+        self.register_builtin_fn("exit", NativeFunction::var(exit));
+        self.register_builtin_fn("isinstance", NativeFunction::a2(isinstance));
+        self.register_builtin_fn("format", NativeFunction::var(format));
+        self.register_builtin_fn("printf", NativeFunction::var(printf));
 
-        self.register_builtin_fn("int", NativeFunction::a1(int));
-        self.register_builtin_fn("float", NativeFunction::a1(float));
-        self.register_builtin_fn("str", NativeFunction::a1(str));
-        self.register_builtin_fn("bool", NativeFunction::a1(bool));
-        self.register_builtin_fn("list", NativeFunction::var(list));
-        self.register_builtin_fn("dict", NativeFunction::a0(dict));
-        self.register_builtin_fn("set", NativeFunction::var(set));
-        self.register_builtin_fn("bytes", NativeFunction::a1(bytes));
+        // types
+        self.register_builtin_fn("int", NativeFunction::a1(types::int));
+        self.register_builtin_fn("float", NativeFunction::a1(types::float));
+        self.register_builtin_fn("str", NativeFunction::a1(types::str));
+        self.register_builtin_fn("bool", NativeFunction::a1(types::bool));
+        self.register_builtin_fn("list", NativeFunction::var(types::list));
+        self.register_builtin_fn("dict", NativeFunction::a0(types::dict));
+        self.register_builtin_fn("set", NativeFunction::var(types::set));
+        self.register_builtin_fn("bytes", NativeFunction::a1(types::bytes));
 
         // IterEnd sentinel — signals end of iteration in __next__.
         self.builtins.insert("IterEnd".into(), ObjectHandle::ITER_END);
         self.register_builtin_fn("is_iter_end", NativeFunction::a1(is_iter_end));
         self.register_builtin_fn("iter", NativeFunction::a1(iter));
         self.register_builtin_fn("next", NativeFunction::a1(next));
-        self.register_builtin_fn("isinstance", NativeFunction::a2(isinstance));
-        self.register_builtin_fn("format", NativeFunction::var(format));
-        self.register_builtin_fn("printf", NativeFunction::var(printf));
+
+        // range
+        let mut range_iter_class = ObjectClass::new("RangeIter", self.obj_heap.builtins_module);
+        range_iter_class.insert_method(&mut self.obj_heap, "__iter__", NativeFunction::a1(ObjectRangeIter::__iter__));
+        range_iter_class.insert_method(&mut self.obj_heap, "__next__", NativeFunction::a1(ObjectRangeIter::__next__));
+        range_iter_class.insert_method(&mut self.obj_heap, "__str__", NativeFunction::a1(ObjectRangeIter::__str__));
+        range_iter_class.insert_method(&mut self.obj_heap, "__len__", NativeFunction::a1(ObjectRangeIter::__len__));
+        let range_iter_class = self.obj_heap.alloc(range_iter_class);
+        self.register_builtin_class("RangeIter", range_iter_class);
+        self.register_builtin_fn("range", NativeFunction::var(range::range));
     }
 
     fn register_builtin_fn(&mut self, name: &'static str, function: NativeFunction) {
@@ -139,6 +155,30 @@ pub fn abs(vm: &mut VirtualMachine, arg: ObjectHandle) -> RuntimeResult<ObjectHa
     }
 }
 
+/// `sum(iterable, start=0)` — sum all elements of an iterable, using `__add__`.
+/// Returns `start` (default 0) when the iterable is empty.
+pub fn sum(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
+    if args.is_empty() {
+        return Err(RuntimeErrorKind::ArgumentCountMismatch { expected: 1, got: 0 });
+    }
+    let (iterable, start) = if args.len() >= 2 {
+        (args[0], args[1])
+    } else {
+        (args[0], vm.obj_heap.alloc_integer_instance(0))
+    };
+
+    let iterator = vm.__iter__(iterable)?;
+    let mut accumulator = start;
+    loop {
+        let item = vm.__next__(iterator)?;
+        if item.is_iter_end() {
+            break;
+        }
+        accumulator = vm.__add__(accumulator, item)?;
+    }
+    Ok(accumulator)
+}
+
 /// `min(a, b, ...)` — return the smallest argument.
 pub fn min(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
     if args.is_empty() {
@@ -169,12 +209,6 @@ pub fn max(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<Obje
     Ok(max_val)
 }
 
-/// `clock()` — return elapsed wall-clock time in seconds (fractional).
-pub fn clock(vm: &mut VirtualMachine) -> RuntimeResult<ObjectHandle> {
-    let dur = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
-    Ok(vm.obj_heap.alloc_float_instance(dur.as_secs_f64()))
-}
-
 pub fn len(vm: &mut VirtualMachine, arg: ObjectHandle) -> RuntimeResult<ObjectHandle> {
     let n = vm.__len__(arg)?;
     Ok(vm.obj_heap.alloc_integer_instance(n))
@@ -193,72 +227,18 @@ pub fn iter(vm: &mut VirtualMachine, iterator: ObjectHandle) -> RuntimeResult<Ob
     vm.__iter__(iterator)
 }
 
-pub fn str(vm: &mut VirtualMachine, arg: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-    let s = vm.__str__(arg)?;
-    Ok(vm.obj_heap.alloc_string_instance(s))
-}
-
-pub fn bool(vm: &mut VirtualMachine, arg: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-    let b = vm.__bool__(arg)?;
-    Ok(vm.obj_heap.alloc_bool_instance(b))
-}
-
-pub fn int(vm: &mut VirtualMachine, arg: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-    let n = vm.__int__(arg)?;
-    Ok(vm.obj_heap.alloc_integer_instance(n))
-}
-
-pub fn float(vm: &mut VirtualMachine, arg: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-    let n = vm.__float__(arg)?;
-    Ok(vm.obj_heap.alloc_float_instance(n))
-}
-
-/// list
-pub fn list(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
-    Ok(vm.obj_heap.alloc_list_instance(args.to_vec()))
-}
-
-/// dict
-pub fn dict(vm: &mut VirtualMachine) -> RuntimeResult<ObjectHandle> {
-    Ok(vm.obj_heap.alloc_dict_instance(std::collections::HashMap::new()))
-}
-
-/// `set(args...)` — create a new set from the given arguments.
-pub fn set(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
-    let set_handle = vm.obj_heap.alloc_set_instance(HashMap::new());
-    for &item in args {
-        ObjectSet::add(vm, set_handle, item)?;
-    }
-    Ok(set_handle)
-}
-
-/// `bytes(value)` — create bytes from a string or list of ints.
-pub fn bytes(vm: &mut VirtualMachine, arg: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-    // Snapshot what we need to decide, then drop the immutable borrow.
-    let is_string = vm
-        .obj_heap
-        .get_instance(arg)
-        .map(|inst| inst.data.as_any_ref().downcast_ref::<crate::object::ObjectString>().is_some())
-        .unwrap_or(false);
-    let is_list = vm
-        .obj_heap
-        .get_instance(arg)
-        .map(|inst| inst.data.as_any_ref().downcast_ref::<crate::object::ObjectList>().is_some())
-        .unwrap_or(false);
-
-    if is_string {
-        let s = vm.obj_heap.get_string_instance(arg).expect("must string").as_str().to_string();
-        ObjectBytes::from_string(vm, s.as_str())
-    } else if is_list {
-        ObjectBytes::from_list(vm, arg)
+pub fn exit(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
+    // let n = vm.__int__(arg)?;
+    let code = if args.len() == 0 {
+        0
     } else {
-        Err(RuntimeErrorKind::UnexpectedType("string or list of ints", vm.obj_heap.type_of(arg)))
-    }
+        *vm.obj_heap.expect_integer(args[0])? as i32
+    };
+    std::process::exit(code);
 }
 
-pub fn exit(vm: &mut VirtualMachine, arg: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-    let n = vm.__int__(arg)?;
-    std::process::exit(n as i32)
+pub fn id(vm: &mut VirtualMachine, obj: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+    Ok(vm.obj_heap.alloc_integer_instance(obj.0 as i64))
 }
 
 /// `format(fmt, args...)` — substitute `{}` placeholders with `__str__` of

@@ -25,11 +25,38 @@ src/
 │           ├── set.rs        # Set builtin methods
 │           ├── string.rs     # String builtin methods
 │           └── bytes.rs      # Bytes builtin methods
+|
 ├── compile/
 │   ├── mod.rs                # Compiler entry point
 │   ├── parse.rs              # Parser — Pratt parsing, statement/expression compilation
 │   ├── scan.rs               # Lexer / scanner
 │   └── token.rs              # Token & TokenKind
+|
+├── std/                      # Virtual std modules (no .taro file needed)
+│   ├── mod.rs                #   import_std_module dispatcher
+│   ├── argparse.taro         #   std/argparse — CLI argument parser (pure taro)
+│   ├── ffi/                  #   std/ffi — Foreign Function Interface
+│   │   ├── mod.rs            #     Module factory, CType scalar singletons, scalar class definitions
+│   │   ├── error.rs          #     FfiError enum (40+ variants) with thiserror
+│   │   ├── function.rs       #     CFunction — FFI call marshalling (call_cif, __call__)
+│   │   ├── library.rs        #     CDynLib (dlopen/dlsym) and CSymbol
+│   │   ├── types.rs          #     CType enum (I8..Pointer/CString/Void/Struct), CValue,
+│   │   │                     #       CStruct, scalar wrappers, marshalling & buffer I/O
+│   │   └── tests.rs          #     Unit tests for CType, struct layout, scalar I/O
+│   ├── fs.rs                 #   std/fs — File class (read/write/read_bytes/readline/seek/tell/close) + standalone functions
+│   ├── itertools.taro        #   std/itertools — lazy iterators (pure taro)
+│   ├── json.rs               #   std/json — JSON encode/decode via serde_json
+│   ├── logging.taro          #   std/logging — leveled logging with timestamps (pure taro)
+│   ├── math.rs               #   std/math — trig, log, rounding, conversion + constants
+│   ├── net.rs                #   std/net — TCP Socket client + Server listener
+│   ├── os.rs                 #   std/os — env vars, pid, cwd, shell commands
+│   ├── random.rs             #   std/random — random numbers, randint, choice, shuffle
+│   └── time.rs               #   std/time — timestamp, sleep, structured UTC time
+|
+├── builtin                   # Global built-in functions & class registration
+│                             #   (print, str, len, type, abs, min, max, input, clock,
+│                             #    is_iter_end, int, float, bool, list, dict, set, bytes, exit)
+|
 └── vm/
     ├── mod.rs                # VirtualMachine — execution loop, call frames, stack ops,
     │                         #   import_module, call_native_fn dispatch (NativeFunction enum)
@@ -37,32 +64,12 @@ src/
     ├── gc.rs                 # GC threshold & trigger
     ├── utils.rs              # VM utility helpers (get_args, value_type_name)
     ├── magic.rs              # Magic method bindings (__add__, __getitem__, …)
-    ├── builtin.rs            # Global built-in functions & class registration
-    │                         #   (print, str, len, type, abs, min, max, input, clock,
-    │                         #    is_iter_end, int, float, bool, list, dict, set, bytes, exit)
-    ├── std/                  # Virtual std modules (no .taro file needed)
-    │   ├── mod.rs            #   import_std_module dispatcher
-    │   ├── argparse.taro     #   std/argparse — CLI argument parser (pure taro)
-    │   ├── ffi/              #   std/ffi — Foreign Function Interface
-    │   │   ├── mod.rs        #     Module factory, CType scalar singletons, scalar class definitions
-    │   │   ├── error.rs      #     FfiError enum (40+ variants) with thiserror
-    │   │   ├── function.rs   #     CFunction — FFI call marshalling (call_cif, __call__)
-    │   │   ├── library.rs    #     CDynLib (dlopen/dlsym) and CSymbol
-    │   │   ├── types.rs      #     CType enum (I8..Pointer/CString/Void/Struct), CValue,
-    │   │   │                 #       CStruct, scalar wrappers, marshalling & buffer I/O
-    │   │   └── tests.rs      #     Unit tests for CType, struct layout, scalar I/O
-    │   ├── fs.rs             #   std/fs — File class (read/write/read_bytes/readline/seek/tell/close) + standalone functions
-    │   ├── itertools.taro    #   std/itertools — lazy iterators (pure taro)
-    │   ├── json.rs           #   std/json — JSON encode/decode via serde_json
-    │   ├── logging.taro      #   std/logging — leveled logging with timestamps (pure taro)
-    │   ├── math.rs           #   std/math — trig, log, rounding, conversion + constants
-    │   ├── net.rs            #   std/net — TCP Socket client + Server listener
-    │   ├── os.rs             #   std/os — env vars, pid, cwd, shell commands
-    │   ├── random.rs         #   std/random — random numbers, randint, choice, shuffle
-    │   └── time.rs           #   std/time — timestamp, sleep, structured UTC time
-    └── tests.rs              # VM runtime tests (411 tests)
+    └── builtin.rs            # Global built-in functions & class registration
+                              #   (print, str, len, type, abs, min, max, input, clock,
+                              #    is_iter_end, int, float, bool, list, dict, set, bytes, exit)
 
-tests/scripts/                # Integration test scripts
+
+tests/scripts/               # Integration test scripts
 ├── 00_test.taro             # Smoke test
 ├── 01–09_*.taro             # Language features (literals, arithmetic, control flow, closures, …)
 ├── 10_class.taro            # Class & instance

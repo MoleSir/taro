@@ -570,6 +570,36 @@ impl ObjectString {
         Ok(vm.obj_heap.alloc_bool_instance(has_cased))
     }
 
+    /// `string.ascii()` — return an ASCII-safe representation of the string
+    /// by escaping non-ASCII characters with `\\u` / `\\U` escapes, similar
+    /// to Python's `ascii()` function.  ASCII control characters are escaped
+    /// with `\\x` and common escapes (`\\n`, `\\t`, `\\r`, `\\\\`, `\\"`).
+    pub fn ascii(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+        let s = vm.obj_heap.expect_string(receiver)?;
+        let mut result = String::with_capacity(s.len());
+        for c in s.chars() {
+            match c {
+                '\\' => result.push_str("\\\\"),
+                '\"' => result.push_str("\\\""),
+                '\n' => result.push_str("\\n"),
+                '\r' => result.push_str("\\r"),
+                '\t' => result.push_str("\\t"),
+                c if c.is_ascii_graphic() || c == ' ' => result.push(c),
+                c if c.is_ascii() => {
+                    // ASCII control chars (0-31, 127)
+                    result.push_str(&format!("\\x{:02x}", c as u8));
+                }
+                c if (c as u32) <= 0xFFFF => {
+                    result.push_str(&format!("\\u{:04x}", c as u32));
+                }
+                c => {
+                    result.push_str(&format!("\\U{:08x}", c as u32));
+                }
+            }
+        }
+        Ok(vm.obj_heap.alloc_string_instance(result.into()))
+    }
+
     pub fn __getitem__(vm: &mut VirtualMachine, receiver: ObjectHandle, idx_handle: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         let s = vm.obj_heap.expect_string(receiver)?.clone();
         let idx_val = *vm.obj_heap.expect_integer(idx_handle)?;
@@ -672,6 +702,7 @@ pub fn register_string_builtins(heap: &mut ObjectHeap) {
     heap.register_native_method(sc, "is_lower", NativeFunction::a1(ObjectString::is_lower));
     heap.register_native_method(sc, "is_upper", NativeFunction::a1(ObjectString::is_upper));
     heap.register_native_method(sc, "is_title", NativeFunction::a1(ObjectString::is_title));
+    heap.register_native_method(sc, "ascii", NativeFunction::a1(ObjectString::ascii));
     heap.register_native_method(sc, "splitlines", NativeFunction::a1(ObjectString::splitlines));
 
     // a2 — receiver + 1 argument

@@ -183,17 +183,6 @@ print(max(-1, -5, 0));               // 0
 print(max(2.5, 1.5, 3.5));           // 3.5
 print(max(1, 2.0, 3));               // 3
 
-// === 11. clock() ===
-print("=== clock ===");
-var t1 = clock();
-// burn some cycles
-var i = 0;
-while i < 1000 {
-    i = i + 1;
-}
-var t2 = clock();
-print(t2 >= t1);    // should be true
-
 // === 12. input() ===
 // print("=== input ===");
 // var s = input("Input your name: ");

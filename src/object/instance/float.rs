@@ -48,6 +48,24 @@ macro_rules! float_cmp_op {
     };
 }
 
+macro_rules! float_a1_bool {
+    ($name:ident, $val:ident, $expr:expr) => {
+        pub fn $name(vm: &mut VirtualMachine, $val: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+            let $val = *vm.obj_heap.expect_float($val)?;
+            Ok(vm.obj_heap.alloc_bool_instance($expr))
+        }
+    };
+}
+
+macro_rules! float_a1_float {
+    ($name:ident, $val:ident, $expr:expr) => {
+        pub fn $name(vm: &mut VirtualMachine, $val: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+            let $val = *vm.obj_heap.expect_float($val)?;
+            Ok(vm.obj_heap.alloc_float_instance($expr))
+        }
+    };
+}
+
 impl ObjectFloat {
     float_binary_arith!(__add__, |a, b| a + b, "add");
     float_binary_arith!(__sub__, |a, b| a - b, "sub");
@@ -145,6 +163,19 @@ impl ObjectFloat {
     pub fn __float__(_vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
         Ok(receiver)
     }
+
+    float_a1_float!(abs, val, val.abs());
+    float_a1_float!(signum, val, val.signum());
+    float_a1_float!(ceil, val, val.ceil());
+    float_a1_float!(floor, val, val.floor());
+    float_a1_float!(round, val, val.round());
+    float_a1_float!(to_degrees, val, val.to_degrees());
+    float_a1_float!(to_radians, val, val.to_radians());
+
+    float_a1_bool!(is_integer, val, val == val.trunc() && val.is_finite());
+    float_a1_bool!(is_nan, val, val.is_nan());
+    float_a1_bool!(is_infinite, val, val.is_infinite());
+    float_a1_bool!(is_finite, val, val.is_finite());
 }
 
 // ========================================================================== //
@@ -173,4 +204,17 @@ pub fn register_float_builtins(heap: &mut ObjectHeap) {
     heap.register_native_method(fc, "__hash__", NativeFunction::a1(ObjectFloat::__hash__));
     heap.register_native_method(fc, "__int__", NativeFunction::a1(ObjectFloat::__int__));
     heap.register_native_method(fc, "__float__", NativeFunction::a1(ObjectFloat::__float__));
+
+    // object methods — a1
+    heap.register_native_method(fc, "abs", NativeFunction::a1(ObjectFloat::abs));
+    heap.register_native_method(fc, "signum", NativeFunction::a1(ObjectFloat::signum));
+    heap.register_native_method(fc, "ceil", NativeFunction::a1(ObjectFloat::ceil));
+    heap.register_native_method(fc, "floor", NativeFunction::a1(ObjectFloat::floor));
+    heap.register_native_method(fc, "round", NativeFunction::a1(ObjectFloat::round));
+    heap.register_native_method(fc, "is_integer", NativeFunction::a1(ObjectFloat::is_integer));
+    heap.register_native_method(fc, "is_nan", NativeFunction::a1(ObjectFloat::is_nan));
+    heap.register_native_method(fc, "is_infinite", NativeFunction::a1(ObjectFloat::is_infinite));
+    heap.register_native_method(fc, "is_finite", NativeFunction::a1(ObjectFloat::is_finite));
+    heap.register_native_method(fc, "to_degrees", NativeFunction::a1(ObjectFloat::to_degrees));
+    heap.register_native_method(fc, "to_radians", NativeFunction::a1(ObjectFloat::to_radians));
 }

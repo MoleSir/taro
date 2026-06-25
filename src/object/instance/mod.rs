@@ -16,7 +16,7 @@ pub use list::{ObjectList, ObjectListIterator, register_list_builtins};
 pub use set::{ObjectSet, ObjectSetIterator, register_set_builtins};
 pub use string::{ObjectString, ObjectStringIterator, register_string_builtins};
 
-use super::{Method, ObjectHandle, ObjectHeap};
+use super::{Method, NativeFunction, ObjectHandle, ObjectHeap};
 use crate::ShrString;
 use std::any::Any;
 use std::collections::HashMap;
@@ -128,6 +128,12 @@ pub struct ObjectClass {
 impl ObjectClass {
     pub fn new(name: impl Into<ShrString>, module: ObjectHandle) -> Self {
         Self { name: name.into(), methods: HashMap::new(), superclass: None, module }
+    }
+
+    pub fn insert_method(&mut self, obj_heap: &mut ObjectHeap, name: impl Into<ShrString>, method: NativeFunction) {
+        let name = name.into();
+        let method = obj_heap.alloc_native_fn(name.clone(), method);
+        self.methods.insert(name, Method::Native(method));
     }
 }
 

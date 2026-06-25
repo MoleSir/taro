@@ -1,4 +1,3 @@
-mod builtin;
 pub(crate) mod call;
 mod error;
 mod gc;
@@ -8,8 +7,6 @@ pub(crate) mod ops;
 mod utils;
 pub use error::*;
 
-#[cfg(test)]
-mod tests;
 use crate::{ObjectHandle, ShrString};
 use std::{collections::HashMap, path::PathBuf};
 

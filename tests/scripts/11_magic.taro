@@ -392,11 +392,6 @@ print(max(3, 1, 4, 1, 5));
 print(min(2.5, 1.5, 3.5));
 print(max(2.5, 1.5, 3.5));
 
-// === 29. clock() builtin ===
-print("=== clock ===");
-var t = clock();
-print(t > 0);
-
 // === 30. __floordiv__ magic method ===
 print("=== __floordiv__ ===");
 class VecFD {

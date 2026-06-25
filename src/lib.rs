@@ -1,7 +1,13 @@
 mod base;
 pub use base::*;
-pub mod compile;
+
 mod object;
-pub mod vm;
 pub use object::*;
+
+pub mod compile;
+pub mod vm;
 mod std;
+mod builtin;
+
+#[cfg(test)]
+mod tests;

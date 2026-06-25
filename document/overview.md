@@ -393,7 +393,6 @@ Comparison fallback mechanism: `!=` works with only `__eq__`, `>=` works with on
 | `min(a, b, ...)` | Smallest argument (variadic). |
 | `max(a, b, ...)` | Largest argument (variadic). |
 | `input(prompt?)` | Read a line from stdin, with optional prompt (no trailing newline). |
-| `clock()` | Wall-clock time in seconds since Unix epoch (as float). |
 | `list(a, b, ...)` | Create a list from the given arguments (variadic). |
 | `dict()` | Create an empty dict. |
 | `set(a, b, ...)` | Create a set from the given arguments (variadic). |

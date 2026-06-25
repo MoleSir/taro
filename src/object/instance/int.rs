@@ -48,6 +48,15 @@ macro_rules! int_cmp_op {
     };
 }
 
+macro_rules! int_a1_bool {
+    ($name:ident, $val:ident, $expr:expr) => {
+        pub fn $name(vm: &mut VirtualMachine, $val: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+            let $val = *vm.obj_heap.expect_integer($val)?;
+            Ok(vm.obj_heap.alloc_bool_instance($expr))
+        }
+    };
+}
+
 impl ObjectInt {
     pub fn new(value: i64) -> Self {
         Self { value }
@@ -148,6 +157,20 @@ impl ObjectInt {
         let val = *vm.obj_heap.expect_integer(receiver)?;
         Ok(vm.obj_heap.alloc_float_instance(val as f64))
     }
+
+    pub fn abs(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+        let val = *vm.obj_heap.expect_integer(receiver)?;
+        Ok(vm.obj_heap.alloc_integer_instance(val.abs()))
+    }
+
+    pub fn signum(vm: &mut VirtualMachine, receiver: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+        let val = *vm.obj_heap.expect_integer(receiver)?;
+        Ok(vm.obj_heap.alloc_integer_instance(val.signum()))
+    }
+
+    int_a1_bool!(is_positive, val, val > 0);
+    int_a1_bool!(is_negative, val, val < 0);
+    int_a1_bool!(is_zero, val, val == 0);
 }
 
 // ========================================================================== //
@@ -176,4 +199,10 @@ pub fn register_int_builtins(heap: &mut ObjectHeap) {
     heap.register_native_method(ic, "__hash__", NativeFunction::a1(ObjectInt::__hash__));
     heap.register_native_method(ic, "__int__", NativeFunction::a1(ObjectInt::__int__));
     heap.register_native_method(ic, "__float__", NativeFunction::a1(ObjectInt::__float__));
+
+    heap.register_native_method(ic, "abs", NativeFunction::a1(ObjectInt::abs));
+    heap.register_native_method(ic, "signum", NativeFunction::a1(ObjectInt::signum));
+    heap.register_native_method(ic, "is_positive", NativeFunction::a1(ObjectInt::is_positive));
+    heap.register_native_method(ic, "is_negative", NativeFunction::a1(ObjectInt::is_negative));
+    heap.register_native_method(ic, "is_zero", NativeFunction::a1(ObjectInt::is_zero));
 }

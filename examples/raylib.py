@@ -11,7 +11,6 @@ class Color(Structure):
         ("a", c_ubyte),
     ]
 
-
 WHITE = Color(255, 255, 255, 255)
 BLACK = Color(0, 0, 0, 255)
 SKYBLUE = Color(102, 191, 255, 255)
