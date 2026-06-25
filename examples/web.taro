@@ -47,7 +47,7 @@ class TaroWeb {
     fun run(self, port) {
         var server = net.Server();
         server.bind(port);
-        print("TaroWeb is running on http://127.0.0.1:" + str(port));
+        printf("TaroWeb is running on http://127.0.0.1:{}", port);
         print("Press Ctrl+C to stop.");
 
         while true {
@@ -65,7 +65,7 @@ class TaroWeb {
     // 处理单个 HTTP 请求
     fun handle_request(self, client, req_data) {
         var path = extract_path(req_data);
-        print("[Request] " + path);
+        printf("[Request] {}", path);
 
         var handler = self.routes.get(path);
         var response_body = "";
@@ -74,7 +74,7 @@ class TaroWeb {
         // 路由分发
         if (handler == nil) {
             status_code = "404 Not Found";
-            response_body = "<h1>404 Not Found</h1><p>The page '" + path + "' does not exist.</p>";
+            response_body = format("<h1>404 Not Found</h1><p>The page '{}' does not exist.</p>", path);
         } else {
             // 执行绑定的函数获取返回值
             response_body = str(handler());
@@ -121,5 +121,4 @@ fun api_ping() {
 }
 app.route("/api/ping", api_ping);
 
-// 启动服务器，监听 8080 端口
-app.run(8080);
+app.run(8090);

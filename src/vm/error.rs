@@ -159,4 +159,7 @@ pub enum RuntimeErrorKind {
 
     #[error("FFI error: {0}")]
     FfiError(String),
+
+    #[error("format error: {0}")]
+    FormatError(String),
 }

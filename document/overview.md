@@ -399,6 +399,7 @@ Comparison fallback mechanism: `!=` works with only `__eq__`, `>=` works with on
 | `set(a, b, ...)` | Create a set from the given arguments (variadic). |
 | `bytes(value)` | Create bytes from a string (UTF-8 encode) or list of ints (0–255). |
 | `is_iter_end(value)` | Return `true` if the value is the `IterEnd` sentinel (used to detect end of iteration in custom iterators). |
+| `format(fmt, args...)` | Substitute `{}` placeholders with `__str__` of each argument. `{{`/`}}` for literal braces. Errors on placeholder/arg count mismatch. |
 
 ## Builtin methods
 

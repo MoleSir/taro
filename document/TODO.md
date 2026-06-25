@@ -6,7 +6,7 @@
 - [x] for-in (iterator)
 - [x] default arguments 
 - [x] source line in run time error
-- [ ] str formart
+- [x] str formart
 - [x] ffi
 - [x] cache imported module
 - [x] gc in import 

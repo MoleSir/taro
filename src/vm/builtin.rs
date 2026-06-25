@@ -16,30 +16,32 @@ impl VirtualMachine {
         self.register_builtin_class("Bool", self.obj_heap.bool_class);
 
         // ---- global native functions ----
-        self.register_builtin_fn("print", NativeFunction::var(VirtualMachine::print));
-        self.register_builtin_fn("len", NativeFunction::a1(VirtualMachine::len));
+        self.register_builtin_fn("print", NativeFunction::var(print));
+        self.register_builtin_fn("len", NativeFunction::a1(len));
         self.register_builtin_fn("type", NativeFunction::a1(VirtualMachine::typeof_val));
-        self.register_builtin_fn("input", NativeFunction::var(VirtualMachine::input));
-        self.register_builtin_fn("abs", NativeFunction::a1(VirtualMachine::abs));
-        self.register_builtin_fn("min", NativeFunction::var(VirtualMachine::min));
-        self.register_builtin_fn("max", NativeFunction::var(VirtualMachine::max));
-        self.register_builtin_fn("clock", NativeFunction::a0(VirtualMachine::clock));
-        self.register_builtin_fn("exit", NativeFunction::a1(VirtualMachine::exit));
+        self.register_builtin_fn("input", NativeFunction::var(input));
+        self.register_builtin_fn("abs", NativeFunction::a1(abs));
+        self.register_builtin_fn("min", NativeFunction::var(min));
+        self.register_builtin_fn("max", NativeFunction::var(max));
+        self.register_builtin_fn("clock", NativeFunction::a0(clock));
+        self.register_builtin_fn("exit", NativeFunction::a1(exit));
 
-        self.register_builtin_fn("int", NativeFunction::a1(VirtualMachine::int));
-        self.register_builtin_fn("float", NativeFunction::a1(VirtualMachine::float));
-        self.register_builtin_fn("str", NativeFunction::a1(VirtualMachine::str));
-        self.register_builtin_fn("bool", NativeFunction::a1(VirtualMachine::bool));
-        self.register_builtin_fn("list", NativeFunction::var(VirtualMachine::list));
-        self.register_builtin_fn("dict", NativeFunction::a0(VirtualMachine::dict));
-        self.register_builtin_fn("set", NativeFunction::var(VirtualMachine::set));
-        self.register_builtin_fn("bytes", NativeFunction::a1(VirtualMachine::bytes));
+        self.register_builtin_fn("int", NativeFunction::a1(int));
+        self.register_builtin_fn("float", NativeFunction::a1(float));
+        self.register_builtin_fn("str", NativeFunction::a1(str));
+        self.register_builtin_fn("bool", NativeFunction::a1(bool));
+        self.register_builtin_fn("list", NativeFunction::var(list));
+        self.register_builtin_fn("dict", NativeFunction::a0(dict));
+        self.register_builtin_fn("set", NativeFunction::var(set));
+        self.register_builtin_fn("bytes", NativeFunction::a1(bytes));
 
         // IterEnd sentinel — signals end of iteration in __next__.
         self.builtins.insert("IterEnd".into(), ObjectHandle::ITER_END);
-        self.register_builtin_fn("is_iter_end", NativeFunction::a1(VirtualMachine::is_iter_end));
-        self.register_builtin_fn("iter", NativeFunction::a1(VirtualMachine::iter));
-        self.register_builtin_fn("next", NativeFunction::a1(VirtualMachine::next));
+        self.register_builtin_fn("is_iter_end", NativeFunction::a1(is_iter_end));
+        self.register_builtin_fn("iter", NativeFunction::a1(iter));
+        self.register_builtin_fn("next", NativeFunction::a1(next));
+        self.register_builtin_fn("format", NativeFunction::var(format));
+        self.register_builtin_fn("printf", NativeFunction::var(printf));
     }
 
     fn register_builtin_fn(&mut self, name: &'static str, function: NativeFunction) {
@@ -49,173 +51,6 @@ impl VirtualMachine {
 
     fn register_builtin_class(&mut self, name: &'static str, class: ObjectHandle) {
         self.builtins.insert(name.into(), class);
-    }
-}
-
-impl VirtualMachine {
-    pub fn print(&mut self, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
-        for (i, &arg) in args.iter().enumerate() {
-            if i == 0 {
-                print!("{}", self.__str__(arg)?);
-            } else {
-                print!(" {}", self.__str__(arg)?);
-            }
-        }
-        println!("");
-        Ok(ObjectHandle::NIL)
-    }
-
-    /// `input()` or `input("prompt")` — read a line from stdin.
-    pub fn input(&mut self, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
-        if let Some(&prompt) = args.first() {
-            print!("{}", self.__str__(prompt)?);
-            use std::io::Write;
-            let _ = std::io::stdout().flush();
-        }
-        let mut line = String::new();
-        std::io::stdin().read_line(&mut line).map_err(|e| RuntimeErrorKind::IoError(format!("failed to read stdin: {}", e)))?;
-        // Trim the trailing newline (and optional \r).
-        if line.ends_with('\n') {
-            line.pop();
-        }
-        if line.ends_with('\r') {
-            line.pop();
-        }
-        Ok(self.obj_heap.alloc_string_instance(line.into()))
-    }
-
-    /// `abs(value)` — return the absolute value of a number.
-    pub fn abs(&mut self, arg: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let bi = self.obj_heap.expect_instance(arg)?;
-        if let Some(v) = bi.data.as_any_ref().downcast_ref::<crate::object::ObjectInt>() {
-            Ok(self.obj_heap.alloc_integer_instance(v.value.wrapping_abs()))
-        } else if let Some(v) = bi.data.as_any_ref().downcast_ref::<crate::object::ObjectFloat>() {
-            Ok(self.obj_heap.alloc_float_instance(v.value.abs()))
-        } else {
-            Err(RuntimeErrorKind::UnexpectedType("number", self.obj_heap.type_of(arg)))
-        }
-    }
-
-    /// `min(a, b, ...)` — return the smallest argument.
-    pub fn min(&mut self, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
-        if args.is_empty() {
-            return Err(RuntimeErrorKind::ArgumentCountMismatch { expected: 1, got: 0 });
-        }
-        let mut min_val = args[0];
-        for &arg in &args[1..] {
-            let cmp = self.__lt__(arg, min_val)?;
-            if self.__bool__(cmp)? {
-                min_val = arg;
-            }
-        }
-        Ok(min_val)
-    }
-
-    /// `max(a, b, ...)` — return the largest argument.
-    pub fn max(&mut self, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
-        if args.is_empty() {
-            return Err(RuntimeErrorKind::ArgumentCountMismatch { expected: 1, got: 0 });
-        }
-        let mut max_val = args[0];
-        for &arg in &args[1..] {
-            let cmp = self.__gt__(arg, max_val)?;
-            if self.__bool__(cmp)? {
-                max_val = arg;
-            }
-        }
-        Ok(max_val)
-    }
-
-    /// `clock()` — return elapsed wall-clock time in seconds (fractional).
-    pub fn clock(&mut self) -> RuntimeResult<ObjectHandle> {
-        let dur = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
-        Ok(self.obj_heap.alloc_float_instance(dur.as_secs_f64()))
-    }
-
-    pub fn len(&mut self, arg: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let n = self.__len__(arg)?;
-        Ok(self.obj_heap.alloc_integer_instance(n))
-    }
-
-    /// `is_iter_end(value)` — return true if value is the iteration-end sentinel.
-    pub fn is_iter_end(&mut self, value: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        Ok(self.obj_heap.alloc_bool_instance(value.is_iter_end()))
-    }
-
-    pub fn next(&mut self, iterator: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        self.__next__(iterator)
-    }
-
-    pub fn iter(&mut self, iterator: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        self.__iter__(iterator)
-    }
-
-    pub fn str(&mut self, arg: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let s = self.__str__(arg)?;
-        Ok(self.obj_heap.alloc_string_instance(s))
-    }
-
-    pub fn bool(&mut self, arg: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let b = self.__bool__(arg)?;
-        Ok(self.obj_heap.alloc_bool_instance(b))
-    }
-
-    pub fn int(&mut self, arg: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let n = self.__int__(arg)?;
-        Ok(self.obj_heap.alloc_integer_instance(n))
-    }
-
-    pub fn float(&mut self, arg: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let n = self.__float__(arg)?;
-        Ok(self.obj_heap.alloc_float_instance(n))
-    }
-
-    /// list
-    pub fn list(&mut self, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
-        Ok(self.obj_heap.alloc_list_instance(args.to_vec()))
-    }
-
-    /// dict
-    pub fn dict(&mut self) -> RuntimeResult<ObjectHandle> {
-        Ok(self.obj_heap.alloc_dict_instance(std::collections::HashMap::new()))
-    }
-
-    /// `set(args...)` — create a new set from the given arguments.
-    pub fn set(&mut self, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
-        let set_handle = self.obj_heap.alloc_set_instance(HashMap::new());
-        for &item in args {
-            ObjectSet::add(self, set_handle, item)?;
-        }
-        Ok(set_handle)
-    }
-
-    /// `bytes(value)` — create bytes from a string or list of ints.
-    pub fn bytes(&mut self, arg: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        // Snapshot what we need to decide, then drop the immutable borrow.
-        let is_string = self
-            .obj_heap
-            .get_instance(arg)
-            .map(|inst| inst.data.as_any_ref().downcast_ref::<crate::object::ObjectString>().is_some())
-            .unwrap_or(false);
-        let is_list = self
-            .obj_heap
-            .get_instance(arg)
-            .map(|inst| inst.data.as_any_ref().downcast_ref::<crate::object::ObjectList>().is_some())
-            .unwrap_or(false);
-
-        if is_string {
-            let s = self.obj_heap.get_string_instance(arg).expect("must string").as_str().to_string();
-            ObjectBytes::from_string(self, s.as_str())
-        } else if is_list {
-            ObjectBytes::from_list(self, arg)
-        } else {
-            Err(RuntimeErrorKind::UnexpectedType("string or list of ints", self.obj_heap.type_of(arg)))
-        }
-    }
-
-    pub fn exit(&mut self, arg: ObjectHandle) -> RuntimeResult<ObjectHandle> {
-        let n = self.__int__(arg)?;
-        std::process::exit(n as i32)
     }
 
     /// `type(value)` — for Instance, return the class object;
@@ -231,3 +66,251 @@ impl VirtualMachine {
         }
     }
 }
+
+pub fn print(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
+    for (i, &arg) in args.iter().enumerate() {
+        if i == 0 {
+            print!("{}", vm.__str__(arg)?);
+        } else {
+            print!(" {}", vm.__str__(arg)?);
+        }
+    }
+    println!("");
+    Ok(ObjectHandle::NIL)
+}
+
+/// `input()` or `input("prompt")` — read a line from stdin.
+pub fn input(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
+    if let Some(&prompt) = args.first() {
+        print!("{}", vm.__str__(prompt)?);
+        use std::io::Write;
+        let _ = std::io::stdout().flush();
+    }
+    let mut line = String::new();
+    std::io::stdin().read_line(&mut line).map_err(|e| RuntimeErrorKind::IoError(format!("failed to read stdin: {}", e)))?;
+    // Trim the trailing newline (and optional \r).
+    if line.ends_with('\n') {
+        line.pop();
+    }
+    if line.ends_with('\r') {
+        line.pop();
+    }
+    Ok(vm.obj_heap.alloc_string_instance(line.into()))
+}
+
+/// `abs(value)` — return the absolute value of a number.
+pub fn abs(vm: &mut VirtualMachine, arg: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+    let bi = vm.obj_heap.expect_instance(arg)?;
+    if let Some(v) = bi.data.as_any_ref().downcast_ref::<crate::object::ObjectInt>() {
+        Ok(vm.obj_heap.alloc_integer_instance(v.value.wrapping_abs()))
+    } else if let Some(v) = bi.data.as_any_ref().downcast_ref::<crate::object::ObjectFloat>() {
+        Ok(vm.obj_heap.alloc_float_instance(v.value.abs()))
+    } else {
+        Err(RuntimeErrorKind::UnexpectedType("number", vm.obj_heap.type_of(arg)))
+    }
+}
+
+/// `min(a, b, ...)` — return the smallest argument.
+pub fn min(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
+    if args.is_empty() {
+        return Err(RuntimeErrorKind::ArgumentCountMismatch { expected: 1, got: 0 });
+    }
+    let mut min_val = args[0];
+    for &arg in &args[1..] {
+        let cmp = vm.__lt__(arg, min_val)?;
+        if vm.__bool__(cmp)? {
+            min_val = arg;
+        }
+    }
+    Ok(min_val)
+}
+
+/// `max(a, b, ...)` — return the largest argument.
+pub fn max(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
+    if args.is_empty() {
+        return Err(RuntimeErrorKind::ArgumentCountMismatch { expected: 1, got: 0 });
+    }
+    let mut max_val = args[0];
+    for &arg in &args[1..] {
+        let cmp = vm.__gt__(arg, max_val)?;
+        if vm.__bool__(cmp)? {
+            max_val = arg;
+        }
+    }
+    Ok(max_val)
+}
+
+/// `clock()` — return elapsed wall-clock time in seconds (fractional).
+pub fn clock(vm: &mut VirtualMachine) -> RuntimeResult<ObjectHandle> {
+    let dur = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default();
+    Ok(vm.obj_heap.alloc_float_instance(dur.as_secs_f64()))
+}
+
+pub fn len(vm: &mut VirtualMachine, arg: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+    let n = vm.__len__(arg)?;
+    Ok(vm.obj_heap.alloc_integer_instance(n))
+}
+
+/// `is_iter_end(value)` — return true if value is the iteration-end sentinel.
+pub fn is_iter_end(vm: &mut VirtualMachine, value: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+    Ok(vm.obj_heap.alloc_bool_instance(value.is_iter_end()))
+}
+
+pub fn next(vm: &mut VirtualMachine, iterator: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+    vm.__next__(iterator)
+}
+
+pub fn iter(vm: &mut VirtualMachine, iterator: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+    vm.__iter__(iterator)
+}
+
+pub fn str(vm: &mut VirtualMachine, arg: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+    let s = vm.__str__(arg)?;
+    Ok(vm.obj_heap.alloc_string_instance(s))
+}
+
+pub fn bool(vm: &mut VirtualMachine, arg: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+    let b = vm.__bool__(arg)?;
+    Ok(vm.obj_heap.alloc_bool_instance(b))
+}
+
+pub fn int(vm: &mut VirtualMachine, arg: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+    let n = vm.__int__(arg)?;
+    Ok(vm.obj_heap.alloc_integer_instance(n))
+}
+
+pub fn float(vm: &mut VirtualMachine, arg: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+    let n = vm.__float__(arg)?;
+    Ok(vm.obj_heap.alloc_float_instance(n))
+}
+
+/// list
+pub fn list(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
+    Ok(vm.obj_heap.alloc_list_instance(args.to_vec()))
+}
+
+/// dict
+pub fn dict(vm: &mut VirtualMachine) -> RuntimeResult<ObjectHandle> {
+    Ok(vm.obj_heap.alloc_dict_instance(std::collections::HashMap::new()))
+}
+
+/// `set(args...)` — create a new set from the given arguments.
+pub fn set(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
+    let set_handle = vm.obj_heap.alloc_set_instance(HashMap::new());
+    for &item in args {
+        ObjectSet::add(vm, set_handle, item)?;
+    }
+    Ok(set_handle)
+}
+
+/// `bytes(value)` — create bytes from a string or list of ints.
+pub fn bytes(vm: &mut VirtualMachine, arg: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+    // Snapshot what we need to decide, then drop the immutable borrow.
+    let is_string = vm.obj_heap
+        .get_instance(arg)
+        .map(|inst| inst.data.as_any_ref().downcast_ref::<crate::object::ObjectString>().is_some())
+        .unwrap_or(false);
+    let is_list = vm.obj_heap
+        .get_instance(arg)
+        .map(|inst| inst.data.as_any_ref().downcast_ref::<crate::object::ObjectList>().is_some())
+        .unwrap_or(false);
+
+    if is_string {
+        let s = vm.obj_heap.get_string_instance(arg).expect("must string").as_str().to_string();
+        ObjectBytes::from_string(vm, s.as_str())
+    } else if is_list {
+        ObjectBytes::from_list(vm, arg)
+    } else {
+        Err(RuntimeErrorKind::UnexpectedType("string or list of ints", vm.obj_heap.type_of(arg)))
+    }
+}
+
+pub fn exit(vm: &mut VirtualMachine, arg: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+    let n = vm.__int__(arg)?;
+    std::process::exit(n as i32)
+}
+
+/// `format(fmt, args...)` — substitute `{}` placeholders with `__str__` of
+/// each argument.  `{{` and `}}` escape to literal `{` / `}`.
+pub fn format(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
+    let s = format_impl(vm, args)?;
+    Ok(vm.obj_heap.alloc_string_instance(s.into()))
+}
+
+pub fn printf(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {
+    let s = format_impl(vm, args)?;
+    println!("{}", s);
+    Ok(ObjectHandle::NIL)
+}
+
+fn format_impl(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<String> {
+    if args.is_empty() {
+        return Err(RuntimeErrorKind::FormatError("missing format string".into()));
+    }
+    let fmt = vm.obj_heap.expect_string(args[0])?;
+    let fmt_str = fmt.as_str().to_string(); // drop the immutable borrow before __str__ below
+    let value_args = &args[1..];
+
+    let mut result = String::new();
+    let mut chars = fmt_str.chars().peekable();
+    let mut arg_idx = 0;
+    let mut placeholder_count = 0;
+
+    while let Some(ch) = chars.next() {
+        match ch {
+            '{' => {
+                match chars.peek() {
+                    Some(&'{') => {
+                        // Escaped "{{" → literal "{"
+                        chars.next();
+                        result.push('{');
+                    }
+                    Some(&'}') => {
+                        // Placeholder "{}"
+                        chars.next();
+                        placeholder_count += 1;
+                        if arg_idx >= value_args.len() {
+                            return Err(RuntimeErrorKind::FormatError(format!(
+                                "not enough arguments: format string has at least {} placeholder(s), got {} argument(s)",
+                                placeholder_count, value_args.len()
+                            )));
+                        }
+                        let s = vm.__str__(value_args[arg_idx])?;
+                        result.push_str(s.as_str());
+                        arg_idx += 1;
+                    }
+                    _ => {
+                        return Err(RuntimeErrorKind::FormatError(
+                            "unclosed '{' — use '{{' for a literal '{'".into(),
+                        ));
+                    }
+                }
+            }
+            '}' => {
+                match chars.peek() {
+                    Some(&'}') => {
+                        // Escaped "}}" → literal "}"
+                        chars.next();
+                        result.push('}');
+                    }
+                    _ => {
+                        return Err(RuntimeErrorKind::FormatError(
+                            "stray '}' — use '}}' for a literal '}'".into(),
+                        ));
+                    }
+                }
+            }
+            other => result.push(other),
+        }
+    }
+
+    if arg_idx < value_args.len() {
+        return Err(RuntimeErrorKind::FormatError(format!(
+            "too many arguments: {} placeholder(s), {} argument(s)",
+            placeholder_count, value_args.len()
+        )));
+    }
+
+    Ok(result)
+}
+
