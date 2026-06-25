@@ -505,7 +505,7 @@ pub fn test_builtin_type() {
 }
 
 #[test]
-pub fn test_super_invoke() {
+pub fn test_inherited_method_call() {
     let mut vm = run_chunk(|c, h| {
         let base = h.alloc_class("Base", h.builtins_module);
         let mut bc = Chunk::new();
@@ -518,8 +518,11 @@ pub fn test_super_invoke() {
         let derived = h.alloc_class("Derived", h.builtins_module);
         h.get_class_mut(derived).unwrap().superclass = Some(base);
         let mut dc = Chunk::new();
-        dc.write_instruction(Instruction::GetLocal(1), 1, 1, h);
-        dc.write_instruction(Instruction::SuperInvoke("m".into(), 0), 1, 1, h);
+        // Base.m(self) — explicit class-qualified call
+        dc.write_instruction(Instruction::Constant(base), 1, 1, h); // push Base class
+        dc.write_instruction(Instruction::GetProperty("m".into()), 1, 1, h); // pop Base, push raw closure
+        dc.write_instruction(Instruction::GetLocal(1), 1, 1, h); // push self
+        dc.write_instruction(Instruction::Call(1), 1, 1, h); // call closure(self)
         dc.write_instruction(Instruction::Return, 1, 1, h);
         let dm = h.alloc_function("m", 1, 1, vec![], vec![], dc);
         let dm_cl = h.alloc_closure(dm, ObjectHandle::NIL);
@@ -1118,7 +1121,7 @@ pub fn test_call_magic_with_super() {
             fun __call__(self, x) { return x + 1; }
         }
         class Derived extends Base {
-            fun __call__(self, x) { return super.__call__(x) * 10; }
+            fun __call__(self, x) { return Base.__call__(self, x) * 10; }
         }
         var d = Derived();
         print(d(5));  // (5 + 1) * 10 = 60

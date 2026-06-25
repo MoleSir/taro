@@ -6,8 +6,9 @@ impl VirtualMachine {
     //           Core dispatch helper
     // ================================================================================== //
 
-    /// Look up `method_name` on the receiver's class and call it with the given
-    /// `args`.  Works for both Native and User methods.
+    /// Look up `method_name` on the receiver's class (walking the superclass
+    /// chain) and call it with the given `args`.  Works for both Native and
+    /// User methods.
     pub(crate) fn dispatch_magic(
         &mut self,
         receiver: ObjectHandle,
@@ -17,12 +18,21 @@ impl VirtualMachine {
         let class_handle = self.obj_heap.expect_instance(receiver)?.class;
 
         let method = {
-            let class = self.obj_heap.expect_class(class_handle)?;
-            class
-                .methods
-                .get(method_name)
-                .copied()
-                .ok_or_else(|| RuntimeErrorKind::NoImplementMethod(class.name.to_string(), method_name))?
+            let class_name = {
+                let class = self.obj_heap.expect_class(class_handle)?;
+                class.name.to_string()
+            };
+            let mut cur = class_handle;
+            loop {
+                let class = self.obj_heap.expect_class(cur)?;
+                if let Some(m) = class.methods.get(method_name).copied() {
+                    break m;
+                }
+                match class.superclass {
+                    Some(sc) => cur = sc,
+                    None => return Err(RuntimeErrorKind::NoImplementMethod(class_name, method_name)),
+                }
+            }
         };
 
         // Push receiver + args, then insert the callee before them and call
@@ -47,13 +57,23 @@ impl VirtualMachine {
     /// so the stack has `arg_count + 1` items belonging to this call.
     pub fn __call__(&mut self, callee: ObjectHandle, arg_count: usize) -> RuntimeResult<()> {
         let instance = self.obj_heap.get_instance(callee).ok_or_else(|| RuntimeErrorKind::CanNotCall(self.obj_heap.type_of(callee)))?;
+        let class_handle = instance.class;
         let method = {
-            let class = self.obj_heap.expect_class(instance.class)?;
-            class
-                .methods
-                .get("__call__")
-                .copied()
-                .ok_or_else(|| RuntimeErrorKind::NoImplementMethod(class.name.to_string(), "__call__"))?
+            let class_name = {
+                let class = self.obj_heap.expect_class(class_handle)?;
+                class.name.to_string()
+            };
+            let mut cur = class_handle;
+            loop {
+                let class = self.obj_heap.expect_class(cur)?;
+                if let Some(m) = class.methods.get("__call__").copied() {
+                    break m;
+                }
+                match class.superclass {
+                    Some(sc) => cur = sc,
+                    None => return Err(RuntimeErrorKind::NoImplementMethod(class_name, "__call__")),
+                }
+            }
         };
 
         let callee_idx = self.callee_slot(arg_count);

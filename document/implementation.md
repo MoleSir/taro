@@ -68,7 +68,7 @@ tests/scripts/                # Integration test scripts
 ├── 10_class.taro            # Class & instance
 ├── 11_magic.taro            # Magic methods (arithmetic, comparison, conversion)
 ├── 12_builin.taro           # Builtin functions
-├── 13_super.taro            # Inheritance & super calls
+├── 13_super.taro            # Inheritance & parent method calls
 ├── 14_list.taro             # List operations
 ├── 15_dict.taro             # Dict operations
 ├── 16_builtin_methods.taro  # List/Dict builtin methods

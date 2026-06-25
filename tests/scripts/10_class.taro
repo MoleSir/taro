@@ -345,7 +345,7 @@ class NoStr {
 var ns = NoStr(42);
 print(ns);  // <instance of NoStr>
 
-// === 28. Inheritance: subclass inherits superclass method ===
+// === 28. Inheritance: subclass inherits parent method ===
 print("=== inheritance ===");
 class Animal {
     fun speak(self) {

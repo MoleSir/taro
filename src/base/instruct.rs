@@ -49,7 +49,6 @@ pub enum ByteCode {
     GetProperty,
     Method,
     Inherit,
-    SuperInvoke,
 
     BuildList,
     BuildDict,
@@ -136,7 +135,6 @@ pub enum Instruction {
     SetProperty(ShrString),
     GetProperty(ShrString),
     Method(ShrString),
-    SuperInvoke(ShrString, usize),
     Inherit,
 
     BuildList(usize),

@@ -194,11 +194,6 @@ impl Chunk {
                 let handle = heap.alloc_string_instance(method_name);
                 self.write_const_op(ByteCode::Method, handle);
             }
-            Instruction::SuperInvoke(method_name, arg_count) => {
-                let handle = heap.alloc_string_instance(method_name);
-                self.write_const_op(ByteCode::SuperInvoke, handle);
-                self.write_byte(arg_count as u8);
-            }
 
             Instruction::BuildList(count) => {
                 assert!(count < u16::MAX as usize, "Too much elements.");
@@ -357,11 +352,6 @@ impl Chunk {
             ByteCode::Method => {
                 let method_name = self.read_string_constant(ip, heap)?;
                 Ok(Instruction::Method(method_name))
-            }
-            ByteCode::SuperInvoke => {
-                let method_name = self.read_string_constant(ip, heap)?;
-                let arg_count = self.read_byte(ip)? as usize;
-                Ok(Instruction::SuperInvoke(method_name, arg_count))
             }
 
             ByteCode::BuildList => {

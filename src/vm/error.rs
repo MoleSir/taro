@@ -94,9 +94,6 @@ pub enum RuntimeErrorKind {
     #[error("missing required argument '{0}'")]
     MissingArgument(String),
 
-    #[error("no superclass to call super method on")]
-    NoSuperclass,
-
     #[error("Undefined property {0}")]
     UndefinedProperty(String),
 

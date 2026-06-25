@@ -40,6 +40,7 @@ impl VirtualMachine {
         self.register_builtin_fn("is_iter_end", NativeFunction::a1(is_iter_end));
         self.register_builtin_fn("iter", NativeFunction::a1(iter));
         self.register_builtin_fn("next", NativeFunction::a1(next));
+        self.register_builtin_fn("isinstance", NativeFunction::a2(isinstance));
         self.register_builtin_fn("format", NativeFunction::var(format));
         self.register_builtin_fn("printf", NativeFunction::var(printf));
     }
@@ -65,6 +66,34 @@ impl VirtualMachine {
             }
         }
     }
+}
+
+/// `isinstance(value, class)` — return true if value is an instance of class
+/// or any of its subclasses (walking the superclass chain).
+pub fn isinstance(vm: &mut VirtualMachine, obj: ObjectHandle, class: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+    // Sentinel handles (nil, IterEnd) have no real class.
+    if obj.is_nil() || obj.is_iter_end() {
+        return Ok(vm.obj_heap.alloc_bool_instance(false));
+    }
+    let instance = match vm.obj_heap.get_instance(obj) {
+        Some(inst) => inst,
+        None => return Ok(vm.obj_heap.alloc_bool_instance(false)),
+    };
+    // Validate that `class` is actually a class handle.
+    let _ = vm.obj_heap.expect_class(class)?;
+
+    let mut cur = instance.class;
+    loop {
+        if cur == class {
+            return Ok(vm.obj_heap.alloc_bool_instance(true));
+        }
+        let cls = vm.obj_heap.get_class(cur).expect("must class");
+        match cls.superclass {
+            Some(sc) => cur = sc,
+            None => break,
+        }
+    }
+    Ok(vm.obj_heap.alloc_bool_instance(false))
 }
 
 pub fn print(vm: &mut VirtualMachine, args: &[ObjectHandle]) -> RuntimeResult<ObjectHandle> {

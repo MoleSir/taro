@@ -114,7 +114,6 @@ fn get_rule(kind: TokenKind) -> ParseRule {
         TokenKind::Nil => ParseRule::new(Some(Parser::literal), None, Prec::None),
         TokenKind::Or => ParseRule::new(None, Some(Parser::or), Prec::Or),
         TokenKind::Return => ParseRule::NONE,
-        TokenKind::Super => ParseRule::new(Some(Parser::super_), None, Prec::None),
         TokenKind::True => ParseRule::new(Some(Parser::literal), None, Prec::None),
         TokenKind::Var => ParseRule::NONE,
         TokenKind::While => ParseRule::NONE,
@@ -1207,29 +1206,6 @@ impl<'a> Parser<'a> {
         let path = parser.previous().lexeme;
         let inner = &path[1..path.len() - 1]; // strip quotes
         parser.emit(Instruction::Import(ShrString::new_string(inner)));
-        Ok(())
-    }
-
-    /// `super_` — prefix parser for `super.method(args)` syntax.
-    fn super_(parser: &mut Parser<'_>, _can_assign: bool) -> ParseResult<()> {
-        parser.consume(TokenKind::Dot, "Expect '.' after 'super'.")?;
-        parser.consume(TokenKind::Identifier, "Expect superclass method name after 'super.'.")?;
-        let method_name = ShrString::new_string(parser.previous().lexeme.to_string());
-
-        // Push `self` (slot 1 — slot 0 is the closure dummy) as the receiver.
-        parser.emit(Instruction::GetLocal(1));
-
-        if parser.match_token(TokenKind::LeftParen) {
-            let (pos_count, kw_count, _kw_names) = parser.parse_argument_list()?;
-            let arg_count = pos_count + kw_count;
-            if kw_count > 0 {
-                record_error_at_current!(parser, ParseErrorKind::ExpectedExpression);
-            }
-            parser.emit(Instruction::SuperInvoke(method_name, arg_count));
-        } else {
-            bail_error_at_current!(parser, ParseErrorKind::ExpectedToken("Expect '(' after super method name."));
-        }
-
         Ok(())
     }
 

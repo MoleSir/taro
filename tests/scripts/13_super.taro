@@ -1,7 +1,8 @@
-// Super method calls — comprehensive coverage
+// Parent class method calls via explicit class-qualified syntax
+// (taro uses `ParentClass.method(self, args)` instead of `super.method(args)`)
 
-// === 1. Basic super.method() ===
-print("=== basic super.method() ===");
+// === 1. Basic parent call ===
+print("=== basic parent method call ===");
 class Base {
     fun value(self) {
         return 42;
@@ -11,16 +12,16 @@ class Derived extends Base {
     fun value(self) {
         return 99;
     }
-    fun call_super(self) {
-        return super.value();
+    fun call_parent(self) {
+        return Base.value(self);
     }
 }
 var d = Derived();
-print(d.value());       // 99 — overridden
-print(d.call_super());  // 42 — superclass method
+print(d.value());        // 99 — overridden
+print(d.call_parent());  // 42 — parent class method
 
-// === 2. Super with arguments ===
-print("=== super with args ===");
+// === 2. Parent call with arguments ===
+print("=== parent call with args ===");
 class Greeter {
     fun greet(self, msg) {
         print(msg);
@@ -31,7 +32,7 @@ class QuietGreeter extends Greeter {
         // override that does nothing
     }
     fun test(self) {
-        super.greet("hello from base");
+        Greeter.greet(self, "hello from base");
     }
 }
 QuietGreeter().test();
@@ -47,14 +48,14 @@ class B extends A {
 class C extends B {
     fun name(self) { return "C"; }
     fun parent_name(self) {
-        return super.name();
+        return B.name(self);
     }
 }
 print(C().name());         // "C"
 print(C().parent_name());  // "B", not "A"
 
-// === 4. Super inside __init__ ===
-print("=== super in __init__ ===");
+// === 4. Parent __init__ call ===
+print("=== parent __init__ call ===");
 class Animal {
     fun __init__(self, name) {
         self.name = name;
@@ -62,7 +63,7 @@ class Animal {
 }
 class Dog extends Animal {
     fun __init__(self, name, breed) {
-        super.__init__(name);
+        Animal.__init__(self, name);
         self.breed = breed;
     }
 }
@@ -70,8 +71,8 @@ var dog = Dog("Buddy", "Golden");
 print(dog.name);   // Buddy
 print(dog.breed);  // Golden
 
-// === 5. Super with multiple args ===
-print("=== super multiple args ===");
+// === 5. Parent call with multiple args ===
+print("=== parent multiple args ===");
 class Math {
     fun sum(self, a, b, c) {
         return a + b + c;
@@ -80,13 +81,13 @@ class Math {
 class SubMath extends Math {
     fun sum(self, a, b, c) {
         // delegate to parent
-        return super.sum(a, b, c);
+        return Math.sum(self, a, b, c);
     }
 }
 print(SubMath().sum(1, 2, 3));  // 6
 
-// === 6. Super in method that also does work ===
-print("=== super with extra work ===");
+// === 6. Parent call with extra work ===
+print("=== parent with extra work ===");
 class Writer {
     fun write(self, text) {
         print("base: " + text);
@@ -95,14 +96,14 @@ class Writer {
 class FancyWriter extends Writer {
     fun write(self, text) {
         print("--- fancy start ---");
-        super.write(text);
+        Writer.write(self, text);
         print("--- fancy end ---");
     }
 }
 FancyWriter().write("hello");
 
-// === 7. Super.__bool__ ===
-print("=== super __bool__ ===");
+// === 7. Calling parent __bool__ ===
+print("=== parent __bool__ ===");
 class Truthy {
     fun __bool__(self) {
         return true;
@@ -113,9 +114,9 @@ class AlwaysFalse extends Truthy {
         return false;
     }
     fun parent_bool(self) {
-        return super.__bool__();
+        return Truthy.__bool__(self);
     }
 }
 print(AlwaysFalse().parent_bool());  // true (from parent)
 
-print("super done");
+print("parent calls done");

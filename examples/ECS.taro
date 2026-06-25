@@ -41,7 +41,7 @@ class Entity {
 
 class Player extends Entity {
     fun __init__(self, id, x, y, name) {
-        // 由于没有提供 super()，在子类中直接初始化基类属性（Taro 的继承会在创建时复制方法）
+        // 在子类中直接初始化基类属性（Taro 的继承通过链式查找解析方法）
         self.id = id;
         self.pos = Vec2(x, y);
         self.velocity = Vec2(0, 0);

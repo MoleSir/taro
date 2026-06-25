@@ -325,7 +325,7 @@ x.b();  // B
 x.c();  // C
 ```
 
-Methods are copied from superclass to subclass at class-creation time. Subclass methods override inherited ones.
+Methods are resolved by walking the superclass chain at lookup time. Subclass methods shadow inherited ones.
 
 ## Magic methods
 

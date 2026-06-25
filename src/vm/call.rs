@@ -12,8 +12,26 @@ impl VirtualMachine {
             Object::Closure(_) => self.call_closure(callee, arg_count),
             Object::Class(_) => {
                 let (new_method, init_method) = {
-                    let class = self.obj_heap.get_class(callee).expect("must class");
-                    (class.methods.get("__new__").copied(), class.methods.get("__init__").copied())
+                    let mut cur = callee;
+                    let mut new_m = None;
+                    let mut init_m = None;
+                    loop {
+                        let class = self.obj_heap.get_class(cur).expect("must class");
+                        if new_m.is_none() {
+                            new_m = class.methods.get("__new__").copied();
+                        }
+                        if init_m.is_none() {
+                            init_m = class.methods.get("__init__").copied();
+                        }
+                        if new_m.is_some() && init_m.is_some() {
+                            break;
+                        }
+                        match class.superclass {
+                            Some(sc) => cur = sc,
+                            None => break,
+                        }
+                    }
+                    (new_m, init_m)
                 };
 
                 // ---- create the instance ------------------------------------

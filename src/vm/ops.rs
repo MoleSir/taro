@@ -198,26 +198,41 @@ impl VirtualMachine {
                 let obj = self.obj_heap.get(receiver);
                 match obj {
                     Object::Instance(instance) => {
+                        let class_handle = instance.class;
                         if let Some(fields_data) = instance.get_data_ref::<ObjectFields>()
                             && let Some(value) = fields_data.fields.get(&field_name).cloned()
                         {
                             self.pop_stack()?;
                             self.push_stack(value);
                         } else {
-                            // Try a regular method first.
-                            let class = self.obj_heap.get_class(instance.class).expect("must class");
-                            let method = class.methods.get(&field_name).copied();
+                            // Walk class + superclass chain for the method.
+                            let mut method = None;
+                            let mut cur = class_handle;
+                            loop {
+                                let class = self.obj_heap.get_class(cur).expect("must class");
+                                if let Some(m) = class.methods.get(&field_name).copied() {
+                                    method = Some(m);
+                                    break;
+                                }
+                                match class.superclass {
+                                    Some(sc) => cur = sc,
+                                    None => break,
+                                }
+                            }
                             if let Some(m) = method {
                                 let receiver = self.pop_stack()?;
                                 let bound = self.obj_heap.alloc_bound_method(receiver, m);
                                 self.push_stack(bound);
-                            } else if let Some(_magic) = class.methods.get("__getattr__").copied() {
-                                // Fall back to __getattr__(self, field_name).
-                                let receiver = self.pop_stack()?;
-                                let result = self.__getattr__(receiver, &field_name)?;
-                                self.push_stack(result);
                             } else {
-                                return Err(RuntimeErrorKind::UndefinedProperty(field_name.to_string()));
+                                // Fall back to __getattr__ on the direct class only.
+                                let class = self.obj_heap.get_class(class_handle).expect("must class");
+                                if class.methods.contains_key("__getattr__") {
+                                    let receiver = self.pop_stack()?;
+                                    let result = self.__getattr__(receiver, &field_name)?;
+                                    self.push_stack(result);
+                                } else {
+                                    return Err(RuntimeErrorKind::UndefinedProperty(field_name.to_string()));
+                                }
                             }
                         }
                     }
@@ -282,41 +297,15 @@ impl VirtualMachine {
             Instruction::Inherit => {
                 let superclass = self.peek_stack(0)?;
                 let subclass = self.peek_stack(1)?;
-                let super_methods = {
-                    let sc = self.obj_heap.get_class(superclass).expect("must class");
-                    sc.methods.clone()
-                };
-                let sub = self.obj_heap.get_class_mut(subclass).expect("must class");
-                sub.superclass = Some(superclass);
-                for (name, method) in super_methods {
-                    sub.methods.entry(name).or_insert(method);
+                {
+                    let sub = self.obj_heap.get_class_mut(subclass).expect("must class");
+                    sub.superclass = Some(superclass);
                 }
                 self.pop_stack()?;
             }
 
             Instruction::Method(method_name) => {
                 self.define_method(method_name)?;
-            }
-
-            Instruction::SuperInvoke(method_name, arg_count) => {
-                let method = {
-                    let receiver = self.peek_stack(arg_count)?;
-                    let instance = self.obj_heap.get_instance(receiver)
-                        .ok_or_else(|| RuntimeErrorKind::UndefinedProperty(method_name.as_str().to_string()))?;
-                    let class = self.obj_heap.get_class(instance.class).expect("must class");
-                    let superclass_handle = class.superclass.ok_or(RuntimeErrorKind::NoSuperclass)?;
-                    let superclass = self.obj_heap.get_class(superclass_handle).expect("must class");
-                    superclass
-                        .methods
-                        .get(&method_name)
-                        .copied()
-                        .ok_or_else(|| RuntimeErrorKind::UndefinedProperty(method_name.as_str().to_string()))?
-                };
-
-                self.frame_mut()?.ip = ip;
-                let callee_idx = self.callee_slot(arg_count);
-                self.insert_and_call_method(&method, callee_idx, arg_count + 1)?;
-                return Ok(());
             }
 
             Instruction::BuildList(count) => {
