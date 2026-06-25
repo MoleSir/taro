@@ -1,0 +1,150 @@
+import "std/math";
+import "std/random";
+import "std/itertools" as it;
+import "std/logging" as log;
+
+// 1. 基础组件：支持运算符重载的二维向量
+class Vec2 {
+    fun __init__(self, x, y) {
+        self.x = float(x);
+        self.y = float(y);
+    }
+
+    fun __add__(self, other) { return Vec2(self.x + other.x, self.y + other.y); }
+    fun __sub__(self, other) { return Vec2(self.x - other.x, self.y - other.y); }
+    fun __mul__(self, scalar) { return Vec2(self.x * scalar, self.y * scalar); }
+    fun __eq__(self, other) { return self.x == other.x and self.y == other.y; }
+    fun __str__(self) { return "(" + str(math.round(self.x)) + "," + str(math.round(self.y)) + ")"; }
+
+    fun magnitude(self) {
+        return math.hypot(self.x, self.y);
+    }
+    
+    fun distance_to(self, other) {
+        return (self - other).magnitude();
+    }
+}
+
+// 2. 面向对象：实体基类与派生类
+class Entity {
+    fun __init__(self, id, x, y) {
+        self.id = id;
+        self.pos = Vec2(x, y);
+        self.velocity = Vec2(0, 0);
+        self.active = true;
+    }
+
+    fun update(self, dt) {
+        self.pos = self.pos + (self.velocity * dt);
+    }
+}
+
+class Player extends Entity {
+    fun __init__(self, id, x, y, name) {
+        // 由于没有提供 super()，在子类中直接初始化基类属性（Taro 的继承会在创建时复制方法）
+        self.id = id;
+        self.pos = Vec2(x, y);
+        self.velocity = Vec2(0, 0);
+        self.active = true;
+        self.name = name;
+        self.health = 100;
+    }
+
+    fun take_damage(self, amount) {
+        self.health = self.health - amount;
+        if (self.health <= 0) { self.active = false; }
+    }
+}
+
+class Monster extends Entity {
+    fun __init__(self, id, x, y, damage) {
+        self.id = id;
+        self.pos = Vec2(x, y);
+        self.velocity = Vec2(random.uniform(-10, 10), random.uniform(-10, 10));
+        self.active = true;
+        self.damage = damage;
+    }
+}
+
+// 3. 游戏世界引擎
+class World {
+    fun __init__(self) {
+        self.entities = [];
+        self.time = 0.0;
+    }
+
+    fun spawn(self, entity) {
+        self.entities.append(entity);
+    }
+
+    fun simulate_tick(self, dt) {
+        self.time = self.time + dt;
+        for e in self.entities {
+            if (e.active) { e.update(dt); }
+        }
+    }
+
+    // 4. 使用复杂的数据管道 (itertools) 统计系统状态
+    fun print_analytics(self) {
+        // 提取所有活跃实体的坐标
+        var active_entities = it.filter(fun(e) { return e.active; }, self.entities);
+        
+        // 查找所有 Player 类型 (利用内置的 type 函数)
+        var players = it.filter(fun(e) { return type(e) == Player; }, active_entities);
+        var player_list = it.collect(players);
+        
+        // 过滤出移动速度大于 5 的怪物
+        var fast_monsters = it.filter(
+            fun(e) { return type(e) == Monster and e.velocity.magnitude() > 5; }, 
+            self.entities
+        );
+        var fast_count = len(it.collect(fast_monsters));
+
+        log.info("--- World Analytics at t=" + str(self.time) + " ---");
+        log.info("Alive Players: " + str(len(player_list)));
+        log.info("Fast Monsters: " + str(fast_count));
+
+        if (len(player_list) > 0) {
+            var p1 = player_list[0];
+            // 计算这个玩家距离所有活跃怪物的最近距离
+            var monster_dists = it.map(
+                fun(m) { return p1.pos.distance_to(m.pos); },
+                it.filter(fun(e) { return type(e) == Monster and e.active; }, self.entities)
+            );
+            
+            // reduce 求最小值
+            var min_dist = it.reduce(
+                fun(acc, dist) { return math.min(acc, dist); }, 
+                monster_dists, 
+                99999.0
+            );
+            log.info("Player " + p1.name + " (" + str(p1.health) + "HP) is " + 
+                     str(math.round(min_dist)) + " units away from nearest monster.");
+        }
+    }
+}
+
+// 5. 运行模拟
+fun main() {
+    log.set_level(log.INFO);
+    var world = World();
+
+    // 批量生成实体
+    world.spawn(Player("p1", 0, 0, "Hero"));
+    
+    for (var i = 0; i < 100; i = i + 1) {
+        var mx = random.randint(-500, 500);
+        var my = random.randint(-500, 500);
+        var dmg = random.randint(5, 20);
+        world.spawn(Monster("m_" + str(i), mx, my, dmg));
+    }
+
+    // 运行 5 帧模拟
+    for (var tick = 0; tick < 5; tick = tick + 1) {
+        world.simulate_tick(0.16); // 16ms delta time
+    }
+
+    world.print_analytics();
+}
+
+main();

@@ -35,6 +35,10 @@ impl VirtualMachine {
         m.define_fn("log10", NativeFunction::a1(log10));
         m.define_fn("hypot", NativeFunction::a2(hypot));
 
+        // ---- comparison ----
+        m.define_fn("min", NativeFunction::a2(min));
+        m.define_fn("max", NativeFunction::a2(max));
+
         // ---- rounding ----
         m.define_fn("floor", NativeFunction::a1(floor));
         m.define_fn("ceil", NativeFunction::a1(ceil));
@@ -127,6 +131,22 @@ fn hypot(vm: &mut VirtualMachine, x: ObjectHandle, y: ObjectHandle) -> RuntimeRe
     let xv = as_f64(vm, x, "hypot")?;
     let yv = as_f64(vm, y, "hypot")?;
     Ok(vm.obj_heap.alloc_float_instance(xv.hypot(yv)))
+}
+
+// =====================================================================
+//  Comparison
+// =====================================================================
+
+fn min(vm: &mut VirtualMachine, a: ObjectHandle, b: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+    let lhs = as_f64(vm, a, "min")?;
+    let rhs = as_f64(vm, b, "min")?;
+    Ok(vm.obj_heap.alloc_float_instance(lhs.min(rhs)))
+}
+
+fn max(vm: &mut VirtualMachine, a: ObjectHandle, b: ObjectHandle) -> RuntimeResult<ObjectHandle> {
+    let lhs = as_f64(vm, a, "max")?;
+    let rhs = as_f64(vm, b, "max")?;
+    Ok(vm.obj_heap.alloc_float_instance(lhs.max(rhs)))
 }
 
 // =====================================================================

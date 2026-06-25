@@ -1,0 +1,152 @@
+import "std/net";
+import "std/json";
+import "std/fs";
+import "std/os";
+import "std/time";
+import "std/logging" as log;
+import "std/argparse";
+
+// 1. 核心存储引擎
+class StorageEngine {
+    fun __init__(self, db_file) {
+        self.db_file = db_file;
+        self.data = dict();
+        self.changes_since_save = 0;
+        self.load();
+    }
+
+    // 使用魔法方法，支持 len(engine)
+    fun __len__(self) {
+        return len(self.data);
+    }
+
+    fun load(self) {
+        if (fs.exists(self.db_file)) {
+            var content = fs.read(self.db_file);
+            if (!content.is_empty()) {
+                var parsed = json.decode(content);
+                if (parsed != nil) {
+                    self.data = parsed;
+                    log.info("Loaded " + str(len(self.data)) + " keys from " + self.db_file);
+                }
+            }
+        }
+    }
+
+    fun save(self) {
+        var content = json.encode(self.data);
+        fs.write(self.db_file, content);
+        self.changes_since_save = 0;
+        log.info("Saved database to disk.");
+    }
+
+    fun execute(self, cmd_line) {
+        var parts = cmd_line.trim().split(" ");
+        if (len(parts) == 0 or parts[0].is_empty()) { return "ERR empty command"; }
+        
+        var op = parts[0].upper();
+        
+        if (op == "PING") { return "PONG"; }
+        else if (op == "DBSIZE") { return str(len(self)); }
+        else if (op == "SAVE") { self.save(); return "OK"; }
+        else if (op == "KEYS") { return json.encode(self.data.keys()); }
+        
+        if (len(parts) < 2) { return "ERR missing key"; }
+        var key = parts[1];
+
+        if (op == "GET") {
+            var val = self.data.get(key);
+            if (val == nil) { return "(nil)"; }
+            return str(val);
+        } else if (op == "DEL") {
+            if (self.data.get(key) != nil) {
+                self.data.pop(key);
+                self.changes_since_save = self.changes_since_save + 1;
+                return "1";
+            }
+            return "0";
+        } else if (op == "SET") {
+            if (len(parts) < 3) { return "ERR missing value"; }
+            var val = cmd_line.substr(op.len() + key.len() + 2, cmd_line.len());
+            self.data[key] = val.trim();
+            self.changes_since_save = self.changes_since_save + 1;
+            
+            // 自动保存策略：每 10 次修改落盘一次
+            if (self.changes_since_save >= 10) { self.save(); }
+            return "OK";
+        }
+
+        return "ERR unknown command: " + op;
+    }
+}
+
+// 2. TCP 服务端
+class KVServer {
+    fun __init__(self, host, port, db_file) {
+        self.host = host;
+        self.port = port;
+        self.engine = StorageEngine(db_file);
+        self.server = net.Server();
+    }
+
+    fun start(self) {
+        var addr = self.host + ":" + str(self.port);
+        self.server.bind(addr);
+        log.info("TaroKV Server listening on " + addr);
+
+        while (true) {
+            var client = self.server.accept();
+            log.debug("Client connected");
+            
+            // 简单的短连接协议：接收一行，处理，返回，关闭
+            var req = client.recv(4096);
+            if (req != nil and req.len() > 0) {
+                var response = self.engine.execute(req);
+                client.send(response + "\n");
+            }
+            client.close();
+        }
+    }
+}
+
+// 3. 交互式 REPL 客户端
+fun run_cli_client(host, port) {
+    print("Welcome to TaroKV CLI. Type 'exit' to quit.");
+    var addr = host + ":" + str(port);
+    
+    while (true) {
+        var cmd = input(addr + "> ");
+        if (cmd == nil or cmd.trim() == "exit") { break; }
+        if (cmd.trim().is_empty()) { continue; }
+
+        var sock = net.Socket();
+        // 如果连接失败，会抛出运行时错误或返回 nil（取决于你的 Socket 实现）
+        sock.connect(host, port);
+        sock.send(cmd + "\n");
+        var resp = sock.recv(4096);
+        print(resp.trim());
+        sock.close();
+    }
+}
+
+// 4. 应用主入口与路由
+fun main() {
+    log.set_level(log.INFO);
+    var parser = argparse.Parser();
+    parser.add_bool("--server", "is_server");
+    parser.add_str("--host", "host", "127.0.0.1");
+    parser.add_int("--port", "port", 6379);
+    parser.add_str("--db", "db_file", "tarokv.json");
+
+    var args = parser.parse(os.args());
+    if (args == nil) { return; }
+
+    if (args["is_server"]) {
+        var srv = KVServer(args["host"], args["port"], args["db_file"]);
+        srv.start();
+    } else {
+        run_cli_client(args["host"], args["port"]);
+    }
+}
+
+main();

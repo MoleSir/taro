@@ -13,6 +13,7 @@
 - [x] more str method
 - [x] bytes
 - [ ] clean vm call 
+- [ ] invoke
 - [x] std
   - [x] fs
   - [x] math

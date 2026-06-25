@@ -188,8 +188,17 @@ impl VirtualMachine {
 
         let new_handle = self.obj_heap.alloc_upvalue(Some(slot));
         if let Some(prev_handle) = prev {
-            self.obj_heap.get_upvalue_mut(prev_handle).expect("must upvalue").next = Some(new_handle);
+            // Insert between prev (larger slot) and prev.next (smaller slot).
+            let prev_mut = self.obj_heap.get_upvalue_mut(prev_handle).expect("must upvalue");
+            let old_next = prev_mut.next;
+            prev_mut.next = Some(new_handle);
+            self.obj_heap.get_upvalue_mut(new_handle).expect("must upvalue").next = old_next;
         } else {
+            // New upvalue has the largest slot seen so far — chain it to the
+            // previous largest so the `next` chain (larger → smaller) stays intact.
+            if let Some(&old_last) = self.open_upvalues.last() {
+                self.obj_heap.get_upvalue_mut(new_handle).expect("must upvalue").next = Some(old_last);
+            }
             self.open_upvalues.push(new_handle);
         }
         Ok(new_handle)

@@ -194,11 +194,6 @@ impl Chunk {
                 let handle = heap.alloc_string_instance(method_name);
                 self.write_const_op(ByteCode::Method, handle);
             }
-            Instruction::Invoke(method_name, arg_count) => {
-                let handle = heap.alloc_string_instance(method_name);
-                self.write_const_op(ByteCode::Invoke, handle);
-                self.write_byte(arg_count as u8);
-            }
             Instruction::SuperInvoke(method_name, arg_count) => {
                 let handle = heap.alloc_string_instance(method_name);
                 self.write_const_op(ByteCode::SuperInvoke, handle);
@@ -362,11 +357,6 @@ impl Chunk {
             ByteCode::Method => {
                 let method_name = self.read_string_constant(ip, heap)?;
                 Ok(Instruction::Method(method_name))
-            }
-            ByteCode::Invoke => {
-                let method_name = self.read_string_constant(ip, heap)?;
-                let arg_count = self.read_byte(ip)? as usize;
-                Ok(Instruction::Invoke(method_name, arg_count))
             }
             ByteCode::SuperInvoke => {
                 let method_name = self.read_string_constant(ip, heap)?;

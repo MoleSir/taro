@@ -299,8 +299,9 @@ pub fn test_list_append_method() {
     let mut vm = run_chunk(|c, h| {
         c.write_instruction(Instruction::Constant(h.alloc_integer_instance(1)), 1, 1, h);
         c.write_instruction(Instruction::BuildList(1), 1, 1, h);
+        c.write_instruction(Instruction::GetProperty("append".into()), 1, 1, h);
         c.write_instruction(Instruction::Constant(h.alloc_integer_instance(2)), 1, 1, h);
-        c.write_instruction(Instruction::Invoke("append".into(), 1), 1, 1, h);
+        c.write_instruction(Instruction::Call(1), 1, 1, h);
         c.write_instruction(Instruction::Return, 1, 1, h);
     });
     assert_eq!(
@@ -349,8 +350,9 @@ pub fn test_dict_get_method() {
         c.write_instruction(Instruction::Constant(k), 1, 1, h);
         c.write_instruction(Instruction::Constant(h.alloc_integer_instance(42)), 1, 1, h);
         c.write_instruction(Instruction::BuildDict(1), 1, 1, h);
+        c.write_instruction(Instruction::GetProperty("get".into()), 1, 1, h);
         c.write_instruction(Instruction::Constant(k), 1, 1, h);
-        c.write_instruction(Instruction::Invoke("get".into(), 1), 1, 1, h);
+        c.write_instruction(Instruction::Call(1), 1, 1, h);
         c.write_instruction(Instruction::Return, 1, 1, h);
     });
     let r = vm.pop_stack().unwrap();
@@ -363,8 +365,9 @@ pub fn test_dict_get_missing() {
         c.write_instruction(Instruction::Constant(h.alloc_string_instance("x".into())), 1, 1, h);
         c.write_instruction(Instruction::Constant(h.alloc_integer_instance(42)), 1, 1, h);
         c.write_instruction(Instruction::BuildDict(1), 1, 1, h);
+        c.write_instruction(Instruction::GetProperty("get".into()), 1, 1, h);
         c.write_instruction(Instruction::Constant(h.alloc_string_instance("y".into())), 1, 1, h);
-        c.write_instruction(Instruction::Invoke("get".into(), 1), 1, 1, h);
+        c.write_instruction(Instruction::Call(1), 1, 1, h);
         c.write_instruction(Instruction::Return, 1, 1, h);
     });
     assert!({
@@ -379,7 +382,8 @@ pub fn test_dict_keys_method() {
         c.write_instruction(Instruction::Constant(h.alloc_string_instance("a".into())), 1, 1, h);
         c.write_instruction(Instruction::Constant(h.alloc_integer_instance(1)), 1, 1, h);
         c.write_instruction(Instruction::BuildDict(1), 1, 1, h);
-        c.write_instruction(Instruction::Invoke("keys".into(), 0), 1, 1, h);
+        c.write_instruction(Instruction::GetProperty("keys".into()), 1, 1, h);
+        c.write_instruction(Instruction::Call(0), 1, 1, h);
         c.write_instruction(Instruction::Return, 1, 1, h);
     });
     let r = vm.pop_stack().unwrap();
@@ -393,8 +397,9 @@ pub fn test_dict_pop_method() {
         c.write_instruction(Instruction::Constant(k), 1, 1, h);
         c.write_instruction(Instruction::Constant(h.alloc_integer_instance(42)), 1, 1, h);
         c.write_instruction(Instruction::BuildDict(1), 1, 1, h);
+        c.write_instruction(Instruction::GetProperty("pop".into()), 1, 1, h);
         c.write_instruction(Instruction::Constant(k), 1, 1, h);
-        c.write_instruction(Instruction::Invoke("pop".into(), 1), 1, 1, h);
+        c.write_instruction(Instruction::Call(1), 1, 1, h);
         c.write_instruction(Instruction::Return, 1, 1, h);
     });
     let r = vm.pop_stack().unwrap();
@@ -432,8 +437,9 @@ pub fn test_class_with_method() {
         h.get_class_mut(cls).unwrap().methods.insert("double".into(), crate::Method::User(mcl));
         c.write_instruction(Instruction::Constant(cls), 1, 1, h);
         c.write_instruction(Instruction::Call(0), 1, 1, h);
+        c.write_instruction(Instruction::GetProperty("double".into()), 1, 1, h);
         c.write_instruction(Instruction::Constant(h.alloc_integer_instance(5)), 1, 1, h);
-        c.write_instruction(Instruction::Invoke("double".into(), 1), 1, 1, h);
+        c.write_instruction(Instruction::Call(1), 1, 1, h);
         c.write_instruction(Instruction::Return, 1, 1, h);
     });
     assert_eq!(
@@ -521,7 +527,8 @@ pub fn test_super_invoke() {
 
         c.write_instruction(Instruction::Constant(derived), 1, 1, h);
         c.write_instruction(Instruction::Call(0), 1, 1, h);
-        c.write_instruction(Instruction::Invoke("m".into(), 0), 1, 1, h);
+        c.write_instruction(Instruction::GetProperty("m".into()), 1, 1, h);
+        c.write_instruction(Instruction::Call(0), 1, 1, h);
         c.write_instruction(Instruction::Return, 1, 1, h);
     });
     assert_eq!(
@@ -3211,6 +3218,200 @@ pub fn test_default_param_method() {
         var g = Greeter();
         g.greet(\"World\");
         g.greet(\"Taro\", \"?\");  // Invoke still uses positional
+    ",
+    )
+    .unwrap();
+}
+
+// ===========================================================================
+// Lambda (anonymous function) expressions — runtime tests
+// ===========================================================================
+
+#[test]
+pub fn test_lambda_assigned_and_called() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(
+        "
+        var double = fun(x) { return x * 2; };
+        print(double(21));  // 42
+    ",
+    )
+    .unwrap();
+}
+
+#[test]
+pub fn test_lambda_no_params() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(
+        "
+        var answer = fun() { return 42; };
+        print(answer());  // 42
+    ",
+    )
+    .unwrap();
+}
+
+#[test]
+pub fn test_lambda_passed_as_argument() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(
+        "
+        fun apply(f, x) { return f(x); }
+        var result = apply(fun(n) { return n + 10; }, 5);
+        print(result);  // 15
+    ",
+    )
+    .unwrap();
+}
+
+#[test]
+pub fn test_lambda_closure_captures_local() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(
+        "
+        fun makeAdder(n) {
+            return fun(x) { return x + n; };
+        }
+        var add5 = makeAdder(5);
+        print(add5(10));  // 15
+        print(add5(100)); // 105
+    ",
+    )
+    .unwrap();
+}
+
+#[test]
+pub fn test_lambda_closure_multiple_upvalues() {
+    // Single lambda capturing two parameters.
+    let mut vm = VirtualMachine::new();
+    vm.interpret(
+        "
+        fun combine(a, b) {
+            return fun() { return a * b; };
+        }
+        var fn12 = combine(3, 4);
+        print(fn12());  // 12
+    ",
+    )
+    .unwrap();
+}
+
+#[test]
+pub fn test_lambda_immediately_called() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(
+        "
+        var result = fun(x) { return x * 3; }(7);
+        print(result);  // 21
+    ",
+    )
+    .unwrap();
+}
+
+#[test]
+pub fn test_lambda_in_list_comprehension_style() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(
+        "
+        fun map(f, items) {
+            var result = [];
+            for item in items {
+                result.append(f(item));
+            }
+            return result;
+        }
+        var doubled = map(fun(x) { return x * 2; }, [1, 2, 3]);
+        print(doubled[0]);  // 2
+        print(doubled[1]);  // 4
+        print(doubled[2]);  // 6
+    ",
+    )
+    .unwrap();
+}
+
+#[test]
+pub fn test_lambda_nested_in_expression() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(
+        "
+        var square = fun(x) { return x * x; };
+        print(square(4) + square(3));  // 16 + 9 = 25
+    ",
+    )
+    .unwrap();
+}
+
+#[test]
+pub fn test_lambda_with_default_param() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(
+        "
+        var greet = fun(name, greeting = \"Hi\") {
+            return greeting + \" \" + name;
+        };
+        print(greet(\"Taro\"));            // Hi Taro
+        print(greet(\"Taro\", \"Hello\"));  // Hello Taro
+    ",
+    )
+    .unwrap();
+}
+
+#[test]
+pub fn test_lambda_recursive_indirect() {
+    // Lambda calls itself via a variable that captures it.
+    // Just verify it compiles and runs without crash.
+    let mut vm = VirtualMachine::new();
+    vm.interpret(
+        "
+        var sum_to = nil;
+        sum_to = fun(n) {
+            if n <= 0 { return 0; }
+            return n + sum_to(n - 1);
+        };
+        print(sum_to(5));  // 15
+    ",
+    )
+    .unwrap();
+}
+
+// ===========================================================================
+// Two closures capturing the same upvalues
+// ===========================================================================
+// Exercises `capture_upvalue` linked-list maintenance: when two closures in
+// the same enclosing function capture the same upvalues, the second closure
+// must reuse the existing upvalue objects (not create duplicates).
+
+#[test]
+pub fn test_two_closures_same_upvalues_named() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(
+        "
+        fun outer(a, b) {
+            fun inner1() { return a + b; }
+            fun inner2() { return a * b; }
+            return [inner1, inner2];
+        }
+        var funcs = outer(3, 4);
+        print(funcs[0]());  // 7
+        print(funcs[1]());  // 12
+    ",
+    )
+    .unwrap();
+}
+
+#[test]
+pub fn test_two_lambdas_same_upvalues() {
+    let mut vm = VirtualMachine::new();
+    vm.interpret(
+        "
+        fun outer(a, b) {
+            var f1 = fun() { return a + b; };
+            var f2 = fun() { return a * b; };
+            return [f1, f2];
+        }
+        var funcs = outer(3, 4);
+        print(funcs[0]());  // 7
+        print(funcs[1]());  // 12
     ",
     )
     .unwrap();

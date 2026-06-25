@@ -298,55 +298,11 @@ impl VirtualMachine {
                 self.define_method(method_name)?;
             }
 
-            // ---- Invoke — unified dispatch ----
-            Instruction::Invoke(method_name, arg_count) => {
-                let receiver = self.peek_stack(arg_count)?;
-
-                // First, check if the receiver is an Instance/Module with a
-                // field named `method_name`.  If so, try to call it directly.
-                let field_value = match self.obj_heap.get(receiver) {
-                    Object::Instance(inst) => {
-                        inst.data.as_any_ref().downcast_ref::<ObjectFields>().and_then(|f| f.fields.get(&method_name).copied())
-                    }
-                    Object::Module(module) => module.fields.get(&method_name).copied(),
-                    _ => None,
-                };
-
-                if let Some(handle) = field_value {
-                    // Replace the receiver slot with the field value and call it.
-                    let index = self.callee_slot(arg_count);
-                    self.stack[index] = handle;
-                    self.frame_mut()?.ip = ip;
-                    self.call_value(handle, arg_count)?;
-                    return Ok(());
-                }
-
-                // Not a field — fall back to class method lookup.
-                let class_handle = self.obj_heap.get_instance(receiver).expect("must instance").class;
-
-                let method = {
-                    let class_ = self.obj_heap.get_class(class_handle).expect("must class");
-                    class_
-                        .methods
-                        .get(&method_name)
-                        .copied()
-                        .ok_or_else(|| RuntimeErrorKind::UndefinedProperty(method_name.as_str().to_string()))?
-                };
-
-                // Insert callee at the receiver position and call.
-                // Stack: [..., closure, receiver, arg1, ..., argN]
-                //          slot 0 = closure
-                //          slot 1 = receiver (= self)
-                self.frame_mut()?.ip = ip;
-                let callee_idx = self.callee_slot(arg_count);
-                self.insert_and_call_method(&method, callee_idx, arg_count + 1)?;
-                return Ok(());
-            }
-
             Instruction::SuperInvoke(method_name, arg_count) => {
                 let method = {
                     let receiver = self.peek_stack(arg_count)?;
-                    let instance = self.obj_heap.get_instance(receiver).expect("must instance");
+                    let instance = self.obj_heap.get_instance(receiver)
+                        .ok_or_else(|| RuntimeErrorKind::UndefinedProperty(method_name.as_str().to_string()))?;
                     let class = self.obj_heap.get_class(instance.class).expect("must class");
                     let superclass_handle = class.superclass.ok_or(RuntimeErrorKind::NoSuperclass)?;
                     let superclass = self.obj_heap.get_class(superclass_handle).expect("must class");

@@ -107,7 +107,7 @@ fn get_rule(kind: TokenKind) -> ParseRule {
         TokenKind::Extends => ParseRule::NONE,
         TokenKind::False => ParseRule::new(Some(Parser::literal), None, Prec::None),
         TokenKind::For => ParseRule::NONE,
-        TokenKind::Fun => ParseRule::NONE,
+        TokenKind::Fun => ParseRule::new(Some(Parser::lambda), None, Prec::Call),
         TokenKind::If => ParseRule::NONE,
         TokenKind::In => ParseRule::NONE,
         TokenKind::Import => ParseRule::new(Some(Parser::import_expr), None, Prec::Call),
@@ -403,12 +403,13 @@ impl<'a> Parser<'a> {
     fn parse_declaration(&mut self) -> ParseResult<()> {
         if self.match_token(TokenKind::Var) {
             self.parse_var_declaration()
-        } else if self.match_token(TokenKind::Fun) {
-            self.parse_fun_declaration()
         } else if self.match_token(TokenKind::Class) {
             self.parse_class_declaration()
         } else if self.match_token(TokenKind::Import) {
             self.parse_import_declaration()
+        } else if self.check(TokenKind::Fun) && self.peek_next().kind == TokenKind::Identifier {
+            self.advance(); // consume 'fun'
+            self.parse_fun_declaration()
         } else {
             self.parse_statement()
         }
@@ -485,7 +486,7 @@ impl<'a> Parser<'a> {
     fn parse_fun_declaration(&mut self) -> ParseResult<()> {
         let var_name = self.declare_variable_name("Expect variable name.")?;
         self.mark_local_initialized();
-        self.parse_function_body(FunctionKind::Function)?;
+        self.parse_function_body(FunctionKind::Function, self.previous().lexeme.to_string())?;
         self.finalize_variable(var_name)?;
         Ok(())
     }
@@ -544,17 +545,15 @@ impl<'a> Parser<'a> {
         self.consume(TokenKind::Identifier, "Expect method name.")?;
 
         let method_name = ShrString::new_string(self.previous().lexeme);
-
-        self.parse_function_body(FunctionKind::Function)?;
+        
+        self.parse_function_body(FunctionKind::Function, self.previous().lexeme.to_string())?;
 
         self.emit(Instruction::Method(method_name));
 
         Ok(())
     }
 
-    fn parse_function_body(&mut self, kind: FunctionKind) -> ParseResult<()> {
-        let name = if kind != FunctionKind::Script { self.previous().lexeme.to_string() } else { String::new() };
-
+    fn parse_function_body(&mut self, kind: FunctionKind, name: impl Into<ShrString>) -> ParseResult<()> {
         // Save the current loop stack — functions cannot see enclosing loops.
         // break/continue inside a nested function should always error.
         let saved_loop_stack = std::mem::take(&mut self.loop_stack);
@@ -1180,14 +1179,17 @@ impl<'a> Parser<'a> {
         let field_name = ShrString::new_string(parser.previous().lexeme.to_string());
 
         if parser.match_token(TokenKind::LeftParen) {
-            // Method invocation — optimized OP_INVOKE.
-            let (pos_count, kw_count, _kw_names) = parser.parse_argument_list()?;
-            let arg_count = pos_count + kw_count;
+            // Method invocation: GetProperty pushes the callee (bound method
+            // or field value) onto the stack; Call then invokes it.  This
+            // replaces the old fused Invoke instruction and gets keyword-
+            // argument support for free.
+            parser.emit(Instruction::GetProperty(field_name));
+            let (pos_count, kw_count, kw_names) = parser.parse_argument_list()?;
             if kw_count > 0 {
-                // TODO: support keyword args in Invoke
-                record_error_at_current!(parser, ParseErrorKind::ExpectedExpression);
+                parser.emit(Instruction::CallKw { pos_count, kw_count, kw_names });
+            } else {
+                parser.emit(Instruction::Call(pos_count));
             }
-            parser.emit(Instruction::Invoke(field_name, arg_count));
         } else if can_assign && parser.match_token(TokenKind::Equal) {
             parser.parse_expression()?;
             parser.emit(Instruction::SetProperty(field_name));
@@ -1308,6 +1310,11 @@ impl<'a> Parser<'a> {
         } else {
             parser.emit(Instruction::IndexGet);
         }
+        Ok(())
+    }
+
+    fn lambda(parser: &mut Parser<'_>, _can_assign: bool) -> ParseResult<()> {
+        parser.parse_function_body(FunctionKind::Function, "<lambda>")?;
         Ok(())
     }
 

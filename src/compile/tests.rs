@@ -1042,7 +1042,8 @@ fn test_property_get_and_set_bytecode() {
 #[test]
 fn test_invoke_bytecode() {
     let c = codes("{ var s = Scone(); s.topping(\"berries\", \"cream\"); }");
-    assert!(c.iter().any(|&b| b == ByteCode::Invoke as u8));
+    assert!(c.iter().any(|&b| b == ByteCode::GetProperty as u8));
+    assert!(c.iter().any(|&b| b == ByteCode::Call as u8));
 }
 
 #[test]
@@ -1237,4 +1238,229 @@ fn test_for_in_string_literal() {
     let codes = &chunk.codes;
     assert!(codes.iter().any(|&b| b == ByteCode::ForInIter as u8));
     assert!(codes.iter().any(|&b| b == ByteCode::ForInNext as u8));
+}
+
+// ------------------------------------------------------------------------
+//  Lambda (anonymous function) expressions
+// ------------------------------------------------------------------------
+
+#[test]
+fn test_lambda_no_params() {
+    let (chunk, heap) = compile_with_heap("fun() { return 42; };");
+    let script_insts = instructions(&chunk, &heap);
+    // Closure + Pop + Nil + Return
+    assert!(script_insts.iter().any(|i| matches!(i, Instruction::Closure { .. })));
+    let fn_handle = script_insts
+        .iter()
+        .find_map(|i| if let Instruction::Closure { function, .. } = i { Some(*function) } else { None })
+        .expect("should have Closure");
+    let fn_obj = heap.get(fn_handle).as_function().unwrap();
+    assert_eq!(fn_obj.arity, 0);
+    assert_eq!(fn_obj.name.as_str(), "<lambda>");
+}
+
+#[test]
+fn test_lambda_with_params() {
+    let (chunk, heap) = compile_with_heap("fun(x, y) { return x + y; };");
+    let script_insts = instructions(&chunk, &heap);
+    let fn_handle = script_insts
+        .iter()
+        .find_map(|i| if let Instruction::Closure { function, .. } = i { Some(*function) } else { None })
+        .expect("should have Closure");
+    let fn_obj = heap.get(fn_handle).as_function().unwrap();
+    assert_eq!(fn_obj.arity, 2);
+    assert_eq!(fn_obj.required_arity, 2);
+}
+
+#[test]
+fn test_lambda_assigned_to_var() {
+    let (chunk, heap) = compile_with_heap("var f = fun(x) { return x + 1; };");
+    let script_insts = instructions(&chunk, &heap);
+    // Should have Closure + DefineGlobal (or SetLocal if in scope)
+    assert!(script_insts.iter().any(|i| matches!(i, Instruction::Closure { .. })));
+    // Verify the lambda has 1 param
+    let fn_handle = script_insts
+        .iter()
+        .find_map(|i| if let Instruction::Closure { function, .. } = i { Some(*function) } else { None })
+        .expect("should have Closure");
+    let fn_obj = heap.get(fn_handle).as_function().unwrap();
+    assert_eq!(fn_obj.arity, 1);
+}
+
+#[test]
+fn test_lambda_passed_as_argument() {
+    let (chunk, heap) = compile_with_heap("call(fun(x) { return x; });");
+    let script_insts = instructions(&chunk, &heap);
+    // Should have GetGlobal("call"), Closure, Call
+    assert!(script_insts.iter().any(|i| matches!(i, Instruction::GetGlobal(_))));
+    assert!(script_insts.iter().any(|i| matches!(i, Instruction::Closure { .. })));
+    assert!(script_insts.iter().any(|i| matches!(i, Instruction::Call(_))));
+}
+
+#[test]
+fn test_lambda_captures_upvalue() {
+    let (chunk, heap) = compile_with_heap("fun outer() { var x = 1; var f = fun() { return x; }; }");
+    let script_insts = instructions(&chunk, &heap);
+    // Get the outer function
+    let outer_fn_handle = script_insts
+        .iter()
+        .find_map(|i| if let Instruction::Closure { function, .. } = i { Some(*function) } else { None })
+        .expect("should have outer Closure");
+    let outer_fn = heap.get(outer_fn_handle).as_function().unwrap();
+    let outer_insts = instructions(&outer_fn.chunk, &heap);
+    // The lambda inside outer should capture x as an upvalue
+    let (_, upvalues) = outer_insts
+        .iter()
+        .find_map(|i| if let Instruction::Closure { function, upvalues } = i { Some((*function, upvalues.clone())) } else { None })
+        .expect("should have inner lambda Closure");
+    assert_eq!(upvalues.len(), 1);
+    assert!(upvalues[0].is_local);
+    assert_eq!(upvalues[0].index, 1); // slot 1 = x
+}
+
+#[test]
+fn test_lambda_immediately_called() {
+    let (chunk, heap) = compile_with_heap("fun(x) { return x; }(42);");
+    let script_insts = instructions(&chunk, &heap);
+    // Closure + Constant(42) + Call(1) + Pop + Nil + Return
+    assert!(script_insts.iter().any(|i| matches!(i, Instruction::Closure { .. })));
+    assert!(script_insts.iter().any(|i| matches!(i, Instruction::Constant(_))));
+    assert!(script_insts.iter().any(|i| matches!(i, Instruction::Call(_))));
+}
+
+#[test]
+fn test_lambda_in_block_scope() {
+    let (chunk, heap) = compile_with_heap("{ var f = fun(x) { return x * 2; }; }");
+    let script_insts = instructions(&chunk, &heap);
+    // Closure + SetLocal + Pop (end of scope) + Nil + Return
+    assert!(script_insts.iter().any(|i| matches!(i, Instruction::Closure { .. })));
+}
+
+#[test]
+fn test_lambda_named_function_unaffected() {
+    // Verify that named function declarations still work correctly.
+    let (chunk, heap) = compile_with_heap("fun add(a, b) { return a + b; }");
+    let script_insts = instructions(&chunk, &heap);
+    assert!(script_insts.iter().any(|i| matches!(i, Instruction::Closure { .. })));
+    assert!(script_insts.iter().any(|i| matches!(i, Instruction::DefineGlobal(_))));
+    // The function should have the correct name
+    let fn_handle = script_insts
+        .iter()
+        .find_map(|i| if let Instruction::Closure { function, .. } = i { Some(*function) } else { None })
+        .expect("should have Closure");
+    let fn_obj = heap.get(fn_handle).as_function().unwrap();
+    assert_eq!(fn_obj.name.as_str(), "add");
+}
+
+#[test]
+fn test_lambda_nested_in_function() {
+    let (chunk, heap) = compile_with_heap(
+        "fun outer() { var f = fun(x, y) { return x + y; }; return f(1, 2); }",
+    );
+    let script_insts = instructions(&chunk, &heap);
+    let outer_fn_handle = script_insts
+        .iter()
+        .find_map(|i| if let Instruction::Closure { function, .. } = i { Some(*function) } else { None })
+        .expect("should have outer Closure");
+    let outer_fn = heap.get(outer_fn_handle).as_function().unwrap();
+    let outer_insts = instructions(&outer_fn.chunk, &heap);
+    // The lambda inside should have 2 params
+    let (inner_fn_handle, _) = outer_insts
+        .iter()
+        .find_map(|i| if let Instruction::Closure { function, upvalues } = i { Some((*function, upvalues.clone())) } else { None })
+        .expect("should have inner lambda");
+    let inner_fn = heap.get(inner_fn_handle).as_function().unwrap();
+    assert_eq!(inner_fn.arity, 2);
+    assert_eq!(inner_fn.name.as_str(), "<lambda>");
+}
+
+#[test]
+fn test_lambda_expression_statement() {
+    // A lambda as a standalone expression statement should compile
+    // (closure is pushed then popped).
+    let (chunk, heap) = compile_with_heap("fun(x) { return x; };");
+    let script_insts = instructions(&chunk, &heap);
+    assert!(script_insts.iter().any(|i| matches!(i, Instruction::Closure { .. })));
+    assert!(script_insts.iter().any(|i| matches!(i, Instruction::Pop)));
+}
+
+// ------------------------------------------------------------------------
+//  Two closures capturing the same upvalues — compile-time check
+// ------------------------------------------------------------------------
+
+/// Verify that at compile time, two closures in the same function that
+/// capture the same upvalues produce correct upvalue descriptors.
+#[test]
+fn test_two_closures_same_upvalues_compile() {
+    let (chunk, heap) = compile_with_heap(
+        "fun outer(a, b) { fun inner1() { return a + b; } fun inner2() { return a * b; } }",
+    );
+    let script_insts = instructions(&chunk, &heap);
+
+    // Find outer function
+    let outer_fn_handle = script_insts
+        .iter()
+        .find_map(|i| if let Instruction::Closure { function, .. } = i { Some(*function) } else { None })
+        .expect("should have outer Closure");
+    let outer_fn = heap.get(outer_fn_handle).as_function().unwrap();
+    let outer_insts = instructions(&outer_fn.chunk, &heap);
+
+    // Both inner1 and inner2 should each capture 2 upvalues (a and b).
+    let closures: Vec<_> = outer_insts
+        .iter()
+        .filter_map(|i| {
+            if let Instruction::Closure { function, upvalues } = i {
+                Some((*function, upvalues.clone()))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    assert_eq!(closures.len(), 2, "expected two inner closures (inner1 and inner2)");
+
+    for (_fn_handle, upvalues) in &closures {
+        assert_eq!(upvalues.len(), 2, "each closure should capture both a and b");
+        assert!(upvalues[0].is_local);
+        assert_eq!(upvalues[0].index, 1); // a
+        assert!(upvalues[1].is_local);
+        assert_eq!(upvalues[1].index, 2); // b
+    }
+}
+
+/// Same as above but with lambdas instead of named functions.
+#[test]
+fn test_two_lambdas_same_upvalues_compile() {
+    let (chunk, heap) = compile_with_heap(
+        "fun outer(a, b) { var f1 = fun() { return a + b; }; var f2 = fun() { return a * b; }; }",
+    );
+    let script_insts = instructions(&chunk, &heap);
+
+    let outer_fn_handle = script_insts
+        .iter()
+        .find_map(|i| if let Instruction::Closure { function, .. } = i { Some(*function) } else { None })
+        .expect("should have outer Closure");
+    let outer_fn = heap.get(outer_fn_handle).as_function().unwrap();
+    let outer_insts = instructions(&outer_fn.chunk, &heap);
+
+    let closures: Vec<_> = outer_insts
+        .iter()
+        .filter_map(|i| {
+            if let Instruction::Closure { function, upvalues } = i {
+                Some((*function, upvalues.clone()))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    assert_eq!(closures.len(), 2, "expected two inner lambda closures");
+
+    for (_fn_handle, upvalues) in &closures {
+        assert_eq!(upvalues.len(), 2);
+        assert!(upvalues[0].is_local, "first upvalue should be local");
+        assert_eq!(upvalues[0].index, 1); // a
+        assert!(upvalues[1].is_local, "second upvalue should be local");
+        assert_eq!(upvalues[1].index, 2); // b
+    }
 }
