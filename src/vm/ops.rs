@@ -187,10 +187,7 @@ impl VirtualMachine {
             }
 
             Instruction::Class(class_name) => {
-                let class = self.obj_heap.alloc_class(class_name);
-                // Back-link the class to its owning module so that
-                // lookup_module_export can find sibling classes at runtime.
-                self.obj_heap.get_class_mut(class).expect("class").module = Some(module);
+                let class = self.obj_heap.alloc_class(class_name, module);
                 self.push_stack(class);
             }
 

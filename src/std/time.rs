@@ -2,6 +2,7 @@ use crate::vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine};
 use crate::{NativeFunction, ObjectHandle, ShrString};
 use std::collections::HashMap;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use super::ModuleBuilder;
 
 impl VirtualMachine {
     /// Create the `time` std module.
@@ -21,17 +22,11 @@ impl VirtualMachine {
     ///
     /// All fields are in UTC.
     pub(crate) fn create_time_module(&mut self) -> RuntimeResult<ObjectHandle> {
-        let time_fn = self.obj_heap.alloc_native_fn("time", NativeFunction::a0(time));
-        let sleep_fn = self.obj_heap.alloc_native_fn("sleep", NativeFunction::a1(sleep));
-        let now_fn = self.obj_heap.alloc_native_fn("now", NativeFunction::a0(now));
-
-        let mut exports: HashMap<ShrString, ObjectHandle> = HashMap::new();
-        exports.insert(ShrString::new_str("time"), time_fn);
-        exports.insert(ShrString::new_str("sleep"), sleep_fn);
-        exports.insert(ShrString::new_str("now"), now_fn);
-
-        let module = self.obj_heap.alloc_module_with("time", exports);
-        Ok(module)
+        let mut m = ModuleBuilder::new(&mut self.obj_heap, "time");
+        m.define_fn("time", NativeFunction::a0(time));
+        m.define_fn("sleep", NativeFunction::a1(sleep));
+        m.define_fn("now", NativeFunction::a0(now));
+        Ok(m.build())
     }
 }
 
@@ -88,7 +83,7 @@ fn now(vm: &mut VirtualMachine) -> RuntimeResult<ObjectHandle> {
     exports.insert(ShrString::new_str("yday"), vm.obj_heap.alloc_integer_instance(yday));
     exports.insert(ShrString::new_str("timestamp"), vm.obj_heap.alloc_float_instance(ts));
 
-    let class = vm.obj_heap.alloc_class("DataTime");
+    let class = vm.obj_heap.alloc_class("DataTime", vm.main_module);
     let obj = vm.obj_heap.alloc_fields_instance(class, exports);
     Ok(obj)
 }

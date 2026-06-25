@@ -404,7 +404,7 @@ pub fn test_dict_pop_method() {
 #[test]
 pub fn test_class_instantiate() {
     let mut vm = run_chunk(|c, h| {
-        let cls = h.alloc_class("Foo");
+        let cls = h.alloc_class("Foo", h.builtins_module);
         c.write_instruction(Instruction::Constant(cls), 1, 1, h);
         c.write_instruction(Instruction::Call(0), 1, 1, h);
         c.write_instruction(Instruction::Return, 1, 1, h);
@@ -421,7 +421,7 @@ pub fn test_class_instantiate() {
 #[test]
 pub fn test_class_with_method() {
     let mut vm = run_chunk(|c, h| {
-        let cls = h.alloc_class("Calc");
+        let cls = h.alloc_class("Calc", h.builtins_module);
         let mut mc = Chunk::new();
         mc.write_instruction(Instruction::GetLocal(1), 1, 1, h);
         mc.write_instruction(Instruction::Constant(h.alloc_integer_instance(2)), 1, 1, h);
@@ -501,7 +501,7 @@ pub fn test_builtin_type() {
 #[test]
 pub fn test_super_invoke() {
     let mut vm = run_chunk(|c, h| {
-        let base = h.alloc_class("Base");
+        let base = h.alloc_class("Base", h.builtins_module);
         let mut bc = Chunk::new();
         bc.write_instruction(Instruction::Constant(h.alloc_integer_instance(1)), 1, 1, h);
         bc.write_instruction(Instruction::Return, 1, 1, h);
@@ -509,7 +509,7 @@ pub fn test_super_invoke() {
         let bm_cl = h.alloc_closure(bm, ObjectHandle::NIL);
         h.get_class_mut(base).unwrap().methods.insert("m".into(), crate::Method::User(bm_cl));
 
-        let derived = h.alloc_class("Derived");
+        let derived = h.alloc_class("Derived", h.builtins_module);
         h.get_class_mut(derived).unwrap().superclass = Some(base);
         let mut dc = Chunk::new();
         dc.write_instruction(Instruction::GetLocal(0), 1, 1, h);

@@ -258,8 +258,7 @@ impl VirtualMachine {
     pub fn lookup_module_export(&self, instance: ObjectHandle, name: &str) -> Option<ObjectHandle> {
         let inst = self.obj_heap.get_instance(instance)?;
         let class = self.obj_heap.get_class(inst.class)?;
-        let module = class.module?;
-        let mod_obj = self.obj_heap.get_module(module)?;
+        let mod_obj = self.obj_heap.get_module(class.module)?;
         mod_obj.fields.get(name).copied()
     }
 

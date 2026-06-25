@@ -38,11 +38,15 @@ pub struct CallFrame {
 
 impl VirtualMachine {
     pub fn new() -> Self {
+        let obj_heap = crate::ObjectHeap::new();
+        // The heap creates its own `__main__` module for builtin classes;
+        // reuse it as the VM's root module for directly executed scripts.
+        let main_module = obj_heap.builtins_module;
         let mut vm = Self {
-            obj_heap: crate::ObjectHeap::new(),
+            obj_heap,
             frames: vec![],
             stack: vec![],
-            main_module: ObjectHandle::NIL, // set after init_builtins()
+            main_module,
             builtins: HashMap::new(),
             open_upvalues: vec![],
             gc_threshold: 1024 * 1024,
@@ -50,11 +54,6 @@ impl VirtualMachine {
             modules: module::Modules::default(),
         };
         vm.init_builtins();
-        // Create the __main__ module — this is the root namespace for directly
-        // executed scripts.  All DefineGlobal / SetGlobal / GetGlobal
-        // instructions operate on this module's fields when running at the
-        // top level.
-        vm.main_module = vm.obj_heap.alloc_module("__main__");
         vm
     }
 

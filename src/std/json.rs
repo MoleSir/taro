@@ -2,6 +2,7 @@ use crate::object::ObjectDict;
 use crate::vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine};
 use crate::{NativeFunction, ObjectHandle, ShrString};
 use std::collections::HashMap;
+use super::ModuleBuilder;
 
 impl VirtualMachine {
     /// Create the `json` std module.
@@ -13,15 +14,10 @@ impl VirtualMachine {
     /// | `encode(value)`  | serialize a Taro value to a JSON string  |
     /// | `decode(string)` | parse a JSON string into a Taro value    |
     pub(crate) fn create_json_module(&mut self) -> RuntimeResult<ObjectHandle> {
-        let encode_fn = self.obj_heap.alloc_native_fn("encode", NativeFunction::a1(encode));
-        let decode_fn = self.obj_heap.alloc_native_fn("decode", NativeFunction::a1(decode));
-
-        let mut exports: HashMap<ShrString, ObjectHandle> = HashMap::new();
-        exports.insert(ShrString::new_str("encode"), encode_fn);
-        exports.insert(ShrString::new_str("decode"), decode_fn);
-
-        let module = self.obj_heap.alloc_module_with("json", exports);
-        Ok(module)
+        let mut m = ModuleBuilder::new(&mut self.obj_heap, "json");
+        m.define_fn("encode", NativeFunction::a1(encode));
+        m.define_fn("decode", NativeFunction::a1(decode));
+        Ok(m.build())
     }
 }
 

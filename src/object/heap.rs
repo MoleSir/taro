@@ -58,6 +58,9 @@ pub struct ObjectHeap {
     pub bytes_class: ObjectHandle,
     pub module_class: ObjectHandle,
 
+    /// Module object that owns all builtin classes (also serves as `__main__`).
+    pub builtins_module: ObjectHandle,
+
     /// Singleton instances for `true` and `false` so repeated use of
     /// boolean literals doesn't allocate.
     pub true_instance: ObjectHandle,
@@ -95,6 +98,7 @@ impl ObjectHeap {
             set_class: ObjectHandle::NIL,
             bytes_class: ObjectHandle::NIL,
             module_class: ObjectHandle::NIL,
+            builtins_module: ObjectHandle::NIL,
             true_instance: ObjectHandle::NIL,
             false_instance: ObjectHandle::NIL,
             list_iter_class: ObjectHandle::NIL,
@@ -104,21 +108,25 @@ impl ObjectHeap {
             bytes_iter_class: ObjectHandle::NIL,
         };
 
-        heap.nil_class = heap.alloc_class("Nil");
-        heap.int_class = heap.alloc_class("Int");
-        heap.float_class = heap.alloc_class("Float");
-        heap.bool_class = heap.alloc_class("Bool");
-        heap.string_class = heap.alloc_class("String");
-        heap.list_class = heap.alloc_class("List");
-        heap.dict_class = heap.alloc_class("Dict");
-        heap.set_class = heap.alloc_class("Set");
-        heap.bytes_class = heap.alloc_class("Bytes");
-        heap.module_class = heap.alloc_class("Module");
-        heap.list_iter_class = heap.alloc_class("ObjectListIterator");
-        heap.string_iter_class = heap.alloc_class("ObjectStringIterator");
-        heap.dict_iter_class = heap.alloc_class("ObjectDictIterator");
-        heap.set_iter_class = heap.alloc_class("ObjectSetIterator");
-        heap.bytes_iter_class = heap.alloc_class("ObjectBytesIterator");
+        // Create the module that owns all builtin classes.  It also serves
+        // as `__main__` — the root namespace for directly executed scripts.
+        heap.builtins_module = heap.alloc_module("__main__");
+
+        heap.nil_class = heap.alloc_builtin_class("Nil");
+        heap.int_class = heap.alloc_builtin_class("Int");
+        heap.float_class = heap.alloc_builtin_class("Float");
+        heap.bool_class = heap.alloc_builtin_class("Bool");
+        heap.string_class = heap.alloc_builtin_class("String");
+        heap.list_class = heap.alloc_builtin_class("List");
+        heap.dict_class = heap.alloc_builtin_class("Dict");
+        heap.set_class = heap.alloc_builtin_class("Set");
+        heap.bytes_class = heap.alloc_builtin_class("Bytes");
+        heap.module_class = heap.alloc_builtin_class("Module");
+        heap.list_iter_class = heap.alloc_builtin_class("ObjectListIterator");
+        heap.string_iter_class = heap.alloc_builtin_class("ObjectStringIterator");
+        heap.dict_iter_class = heap.alloc_builtin_class("ObjectDictIterator");
+        heap.set_iter_class = heap.alloc_builtin_class("ObjectSetIterator");
+        heap.bytes_iter_class = heap.alloc_builtin_class("ObjectBytesIterator");
 
         // Allocate singleton bool instances (after bool_class exists).
         heap.true_instance = heap.alloc_instance(heap.bool_class, ObjectBool::new(true));
@@ -181,8 +189,13 @@ impl ObjectHeap {
         self.alloc(obj)
     }
 
-    pub fn alloc_class(&mut self, name: impl Into<ShrString>) -> ObjectHandle {
-        let obj = ObjectClass::new(name);
+    pub fn alloc_class(&mut self, name: impl Into<ShrString>, module: ObjectHandle) -> ObjectHandle {
+        let obj = ObjectClass::new(name, module);
+        self.alloc(obj)
+    }
+
+    pub fn alloc_builtin_class(&mut self, name: impl Into<ShrString>) -> ObjectHandle {
+        let obj = ObjectClass::new(name, self.builtins_module);
         self.alloc(obj)
     }
 
@@ -568,9 +581,7 @@ impl ObjectHeap {
                     if let Some(superclass) = class.superclass {
                         self.mark_object(superclass);
                     }
-                    if let Some(module) = class.module {
-                        self.mark_object(module);
-                    }
+                    self.mark_object(class.module);
                     for method in class.methods.values() {
                         match method {
                             Method::User(method_handle) => self.mark_object(*method_handle),
@@ -610,3 +621,4 @@ impl ObjectHeap {
         }
     }
 }
+

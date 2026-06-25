@@ -1,5 +1,5 @@
 use crate::vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine};
-use crate::{Method, NativeFunction};
+use crate::NativeFunction;
 use crate::{Object, ObjectBytes, ObjectHandle, ObjectSet};
 use std::collections::HashMap;
 
@@ -40,12 +40,6 @@ impl VirtualMachine {
         self.register_builtin_fn("is_iter_end", NativeFunction::a1(VirtualMachine::is_iter_end));
         self.register_builtin_fn("iter", NativeFunction::a1(VirtualMachine::iter));
         self.register_builtin_fn("next", NativeFunction::a1(VirtualMachine::next));
-    }
-
-    pub(crate) fn register_native_method(&mut self, class_handle: ObjectHandle, name: &'static str, function: impl Into<NativeFunction>) {
-        let handle = self.obj_heap.alloc_native_fn(name, function);
-        let class = self.obj_heap.get_class_mut(class_handle).expect("class");
-        class.methods.insert(name.into(), Method::Native(handle));
     }
 
     fn register_builtin_fn(&mut self, name: &'static str, function: NativeFunction) {

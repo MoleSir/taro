@@ -3,6 +3,7 @@ use crate::vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine};
 use crate::{NativeFunction, ObjectHandle, ShrString};
 use std::collections::HashMap;
 use std::process::Command;
+use super::ModuleBuilder;
 
 impl VirtualMachine {
     /// Create the `os` std module.
@@ -21,31 +22,17 @@ impl VirtualMachine {
     /// | `tmpdir()`      | path to the system temp directory            |
     /// | `system(cmd)`   | run a shell command, return exit code        |
     pub(crate) fn create_os_module(&mut self) -> RuntimeResult<ObjectHandle> {
-        // ---- function handles ----
-        let args_fn = self.obj_heap.alloc_native_fn("args", NativeFunction::a0(args));
-        let getenv_fn = self.obj_heap.alloc_native_fn("getenv", NativeFunction::a1(getenv));
-        let setenv_fn = self.obj_heap.alloc_native_fn("setenv", NativeFunction::a2(setenv));
-        let env_fn = self.obj_heap.alloc_native_fn("env", NativeFunction::a0(env));
-        let cwd_fn = self.obj_heap.alloc_native_fn("cwd", NativeFunction::a0(cwd));
-        let chdir_fn = self.obj_heap.alloc_native_fn("chdir", NativeFunction::a1(chdir));
-        let pid_fn = self.obj_heap.alloc_native_fn("pid", NativeFunction::a0(pid));
-        let tmpdir_fn = self.obj_heap.alloc_native_fn("tmpdir", NativeFunction::a0(tmpdir));
-        let system_fn = self.obj_heap.alloc_native_fn("system", NativeFunction::a1(system));
-
-        // ---- assemble module ----
-        let mut exports: HashMap<ShrString, ObjectHandle> = HashMap::new();
-        exports.insert(ShrString::new_str("args"), args_fn);
-        exports.insert(ShrString::new_str("getenv"), getenv_fn);
-        exports.insert(ShrString::new_str("setenv"), setenv_fn);
-        exports.insert(ShrString::new_str("env"), env_fn);
-        exports.insert(ShrString::new_str("cwd"), cwd_fn);
-        exports.insert(ShrString::new_str("chdir"), chdir_fn);
-        exports.insert(ShrString::new_str("pid"), pid_fn);
-        exports.insert(ShrString::new_str("tmpdir"), tmpdir_fn);
-        exports.insert(ShrString::new_str("system"), system_fn);
-
-        let module = self.obj_heap.alloc_module_with("os", exports);
-        Ok(module)
+        let mut m = ModuleBuilder::new(&mut self.obj_heap, "os");
+        m.define_fn("args", NativeFunction::a0(args));
+        m.define_fn("getenv", NativeFunction::a1(getenv));
+        m.define_fn("setenv", NativeFunction::a2(setenv));
+        m.define_fn("env", NativeFunction::a0(env));
+        m.define_fn("cwd", NativeFunction::a0(cwd));
+        m.define_fn("chdir", NativeFunction::a1(chdir));
+        m.define_fn("pid", NativeFunction::a0(pid));
+        m.define_fn("tmpdir", NativeFunction::a0(tmpdir));
+        m.define_fn("system", NativeFunction::a1(system));
+        Ok(m.build())
     }
 }
 

@@ -113,14 +113,15 @@ pub struct ObjectClass {
     pub name: ShrString,
     pub methods: HashMap<ShrString, Method>,
     pub superclass: Option<ObjectHandle>,
-    /// Owning module for classes created as part of a native std module.
-    /// `None` for builtin classes and user-script classes.
-    pub module: Option<ObjectHandle>,
+    /// Owning module for this class.  Every class belongs to exactly one module
+    /// — builtin classes use `__main__`, user-defined classes use the current
+    /// module, and native std classes use their owning module.
+    pub module: ObjectHandle,
 }
 
 impl ObjectClass {
-    pub fn new(name: impl Into<ShrString>) -> Self {
-        Self { name: name.into(), methods: HashMap::new(), superclass: None, module: None }
+    pub fn new(name: impl Into<ShrString>, module: ObjectHandle) -> Self {
+        Self { name: name.into(), methods: HashMap::new(), superclass: None, module }
     }
 }
 

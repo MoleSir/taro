@@ -1,63 +1,50 @@
 use crate::vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine};
-use crate::{NativeFunction, ObjectHandle, ShrString};
-use std::collections::HashMap;
+use crate::{NativeFunction, ObjectHandle};
+use super::ModuleBuilder;
 
 impl VirtualMachine {
     /// Create the `math` std module.
     pub(crate) fn create_math_module(&mut self) -> RuntimeResult<ObjectHandle> {
-        // ---- function handles ----
-        let sin = self.obj_heap.alloc_native_fn("sin", NativeFunction::a1(sin));
-        let cos = self.obj_heap.alloc_native_fn("cos", NativeFunction::a1(cos));
-        let tan = self.obj_heap.alloc_native_fn("tan", NativeFunction::a1(tan));
-        let asin = self.obj_heap.alloc_native_fn("asin", NativeFunction::a1(asin));
-        let acos = self.obj_heap.alloc_native_fn("acos", NativeFunction::a1(acos));
-        let atan = self.obj_heap.alloc_native_fn("atan", NativeFunction::a1(atan));
-        let atan2 = self.obj_heap.alloc_native_fn("atan2", NativeFunction::a2(atan2));
-        let sqrt = self.obj_heap.alloc_native_fn("sqrt", NativeFunction::a1(sqrt));
-        let pow = self.obj_heap.alloc_native_fn("pow", NativeFunction::a2(pow));
-        let exp = self.obj_heap.alloc_native_fn("exp", NativeFunction::a1(exp));
-        let ln = self.obj_heap.alloc_native_fn("ln", NativeFunction::a1(ln));
-        let log2 = self.obj_heap.alloc_native_fn("log2", NativeFunction::a1(log2));
-        let log10 = self.obj_heap.alloc_native_fn("log10", NativeFunction::a1(log10));
-        let hypot = self.obj_heap.alloc_native_fn("hypot", NativeFunction::a2(hypot));
-        let floor = self.obj_heap.alloc_native_fn("floor", NativeFunction::a1(floor));
-        let ceil = self.obj_heap.alloc_native_fn("ceil", NativeFunction::a1(ceil));
-        let round = self.obj_heap.alloc_native_fn("round", NativeFunction::a1(round));
-        let degrees = self.obj_heap.alloc_native_fn("degrees", NativeFunction::a1(degrees));
-        let radians = self.obj_heap.alloc_native_fn("radians", NativeFunction::a1(radians));
-
-        // ---- constants ----
+        // Pre-allocate constants before handing &mut heap to the builder.
         let pi = self.obj_heap.alloc_float_instance(std::f64::consts::PI);
-        let e = self.obj_heap.alloc_float_instance(std::f64::consts::E);
+        let e_val = self.obj_heap.alloc_float_instance(std::f64::consts::E);
         let tau = self.obj_heap.alloc_float_instance(std::f64::consts::TAU);
 
-        // ---- assemble module ----
-        let mut exports: HashMap<ShrString, ObjectHandle> = HashMap::new();
-        exports.insert(ShrString::new_str("PI"), pi);
-        exports.insert(ShrString::new_str("E"), e);
-        exports.insert(ShrString::new_str("TAU"), tau);
-        exports.insert(ShrString::new_str("sin"), sin);
-        exports.insert(ShrString::new_str("cos"), cos);
-        exports.insert(ShrString::new_str("tan"), tan);
-        exports.insert(ShrString::new_str("asin"), asin);
-        exports.insert(ShrString::new_str("acos"), acos);
-        exports.insert(ShrString::new_str("atan"), atan);
-        exports.insert(ShrString::new_str("atan2"), atan2);
-        exports.insert(ShrString::new_str("sqrt"), sqrt);
-        exports.insert(ShrString::new_str("pow"), pow);
-        exports.insert(ShrString::new_str("exp"), exp);
-        exports.insert(ShrString::new_str("ln"), ln);
-        exports.insert(ShrString::new_str("log2"), log2);
-        exports.insert(ShrString::new_str("log10"), log10);
-        exports.insert(ShrString::new_str("hypot"), hypot);
-        exports.insert(ShrString::new_str("floor"), floor);
-        exports.insert(ShrString::new_str("ceil"), ceil);
-        exports.insert(ShrString::new_str("round"), round);
-        exports.insert(ShrString::new_str("degrees"), degrees);
-        exports.insert(ShrString::new_str("radians"), radians);
+        let mut m = ModuleBuilder::new(&mut self.obj_heap, "math");
 
-        let module = self.obj_heap.alloc_module_with("math", exports);
-        Ok(module)
+        // ---- constants ----
+        m.define_value("PI", pi);
+        m.define_value("E", e_val);
+        m.define_value("TAU", tau);
+
+        // ---- trig ----
+        m.define_fn("sin", NativeFunction::a1(sin));
+        m.define_fn("cos", NativeFunction::a1(cos));
+        m.define_fn("tan", NativeFunction::a1(tan));
+        m.define_fn("asin", NativeFunction::a1(asin));
+        m.define_fn("acos", NativeFunction::a1(acos));
+        m.define_fn("atan", NativeFunction::a1(atan));
+        m.define_fn("atan2", NativeFunction::a2(atan2));
+
+        // ---- power / log ----
+        m.define_fn("sqrt", NativeFunction::a1(sqrt));
+        m.define_fn("pow", NativeFunction::a2(pow));
+        m.define_fn("exp", NativeFunction::a1(exp));
+        m.define_fn("ln", NativeFunction::a1(ln));
+        m.define_fn("log2", NativeFunction::a1(log2));
+        m.define_fn("log10", NativeFunction::a1(log10));
+        m.define_fn("hypot", NativeFunction::a2(hypot));
+
+        // ---- rounding ----
+        m.define_fn("floor", NativeFunction::a1(floor));
+        m.define_fn("ceil", NativeFunction::a1(ceil));
+        m.define_fn("round", NativeFunction::a1(round));
+
+        // ---- conversion ----
+        m.define_fn("degrees", NativeFunction::a1(degrees));
+        m.define_fn("radians", NativeFunction::a1(radians));
+
+        Ok(m.build())
     }
 }
 

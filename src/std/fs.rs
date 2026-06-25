@@ -1,7 +1,7 @@
 use crate::vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine};
 use crate::{NativeFunction, ObjectHandle, ShrString, impl_object_instance_data};
-use std::collections::HashMap;
 use std::io::{BufRead, BufReader, Read, Seek, Write};
+use super::ModuleBuilder;
 
 impl VirtualMachine {
     /// Create the `fs` std module.
@@ -24,46 +24,33 @@ impl VirtualMachine {
     /// | `list_dir(path)`| list of entry names in a directory        |
     /// | `mkdir(path)`   | create a directory (including parents)    |
     pub(crate) fn create_fs_module(&mut self) -> RuntimeResult<ObjectHandle> {
-        let file_class = self.obj_heap.alloc_class("File");
+        let mut m = ModuleBuilder::new(&mut self.obj_heap, "fs");
 
-        self.register_native_method(file_class, "__new__", NativeFunction::var(FileInstance::__new__));
-        self.register_native_method(file_class, "__init__", NativeFunction::var(FileInstance::__init__));
-        self.register_native_method(file_class, "read", NativeFunction::a1(FileInstance::read));
-        self.register_native_method(file_class, "write", NativeFunction::a2(FileInstance::write));
-        self.register_native_method(file_class, "readline", NativeFunction::a1(FileInstance::readline));
-        self.register_native_method(file_class, "close", NativeFunction::a1(FileInstance::close));
-        self.register_native_method(file_class, "seek", NativeFunction::a2(FileInstance::seek));
-        self.register_native_method(file_class, "tell", NativeFunction::a1(FileInstance::tell));
-        self.register_native_method(file_class, "read_bytes", NativeFunction::a1(FileInstance::read_bytes));
-        self.register_native_method(file_class, "__str__", NativeFunction::a1(FileInstance::__str__));
+        m.define_class("File", |class| {
+            class.method("__new__", NativeFunction::var(FileInstance::__new__));
+            class.method("__init__", NativeFunction::var(FileInstance::__init__));
+            class.method("read", NativeFunction::a1(FileInstance::read));
+            class.method("write", NativeFunction::a2(FileInstance::write));
+            class.method("readline", NativeFunction::a1(FileInstance::readline));
+            class.method("close", NativeFunction::a1(FileInstance::close));
+            class.method("seek", NativeFunction::a2(FileInstance::seek));
+            class.method("tell", NativeFunction::a1(FileInstance::tell));
+            class.method("read_bytes", NativeFunction::a1(FileInstance::read_bytes));
+            class.method("__str__", NativeFunction::a1(FileInstance::__str__));
+        });
 
-        // Standalone function handles.
-        let exists = self.obj_heap.alloc_native_fn("exists", NativeFunction::a1(exists));
-        let is_file = self.obj_heap.alloc_native_fn("is_file", NativeFunction::a1(is_file));
-        let is_dir = self.obj_heap.alloc_native_fn("is_dir", NativeFunction::a1(is_dir));
-        let remove = self.obj_heap.alloc_native_fn("remove", NativeFunction::a1(remove));
-        let rename = self.obj_heap.alloc_native_fn("rename", NativeFunction::a2(rename));
-        let read = self.obj_heap.alloc_native_fn("read", NativeFunction::a1(read));
-        let read_bytes = self.obj_heap.alloc_native_fn("read_bytes", NativeFunction::a1(read_bytes));
-        let write = self.obj_heap.alloc_native_fn("write", NativeFunction::a2(write));
-        let list_dir = self.obj_heap.alloc_native_fn("list_dir", NativeFunction::a1(list_dir));
-        let mkdir = self.obj_heap.alloc_native_fn("mkdir", NativeFunction::a1(mkdir));
+        m.define_fn("exists", NativeFunction::a1(exists));
+        m.define_fn("is_file", NativeFunction::a1(is_file));
+        m.define_fn("is_dir", NativeFunction::a1(is_dir));
+        m.define_fn("remove", NativeFunction::a1(remove));
+        m.define_fn("rename", NativeFunction::a2(rename));
+        m.define_fn("read", NativeFunction::a1(read));
+        m.define_fn("read_bytes", NativeFunction::a1(read_bytes));
+        m.define_fn("write", NativeFunction::a2(write));
+        m.define_fn("list_dir", NativeFunction::a1(list_dir));
+        m.define_fn("mkdir", NativeFunction::a1(mkdir));
 
-        let mut exports: HashMap<ShrString, ObjectHandle> = HashMap::new();
-        exports.insert(ShrString::new_str("File"), file_class);
-        exports.insert(ShrString::new_str("exists"), exists);
-        exports.insert(ShrString::new_str("is_file"), is_file);
-        exports.insert(ShrString::new_str("is_dir"), is_dir);
-        exports.insert(ShrString::new_str("remove"), remove);
-        exports.insert(ShrString::new_str("rename"), rename);
-        exports.insert(ShrString::new_str("read"), read);
-        exports.insert(ShrString::new_str("read_bytes"), read_bytes);
-        exports.insert(ShrString::new_str("write"), write);
-        exports.insert(ShrString::new_str("list_dir"), list_dir);
-        exports.insert(ShrString::new_str("mkdir"), mkdir);
-
-        let module = self.obj_heap.alloc_module_with("fs", exports);
-        Ok(module)
+        Ok(m.build())
     }
 }
 

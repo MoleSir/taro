@@ -1,9 +1,9 @@
 use crate::vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine};
 use crate::{NativeFunction, ObjectHandle, ShrString, impl_object_instance_data};
-use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::time::Duration;
+use super::ModuleBuilder;
 
 impl VirtualMachine {
     /// Create the `net` std module.
@@ -31,37 +31,27 @@ impl VirtualMachine {
     /// | `accept()`          | accept a connection → Socket      |
     /// | `close()`           | close the listener                |
     pub(crate) fn create_net_module(&mut self) -> RuntimeResult<ObjectHandle> {
-        // ---- Socket class ----
-        let socket_class = self.obj_heap.alloc_class("Socket");
-        self.register_native_method(socket_class, "__new__", NativeFunction::var(Socket::__new__));
-        self.register_native_method(socket_class, "connect", NativeFunction::var(Socket::connect));
-        self.register_native_method(socket_class, "send", NativeFunction::a2(Socket::send));
-        self.register_native_method(socket_class, "recv", NativeFunction::a2(Socket::recv));
-        self.register_native_method(socket_class, "close", NativeFunction::a1(Socket::close));
-        self.register_native_method(socket_class, "settimeout", NativeFunction::a2(Socket::settimeout));
-        self.register_native_method(socket_class, "__str__", NativeFunction::a1(Socket::__str__));
+        let mut m = ModuleBuilder::new(&mut self.obj_heap, "net");
 
-        // ---- Server class ----
-        let server_class = self.obj_heap.alloc_class("Server");
-        self.register_native_method(server_class, "__new__", NativeFunction::var(Server::__new__));
-        self.register_native_method(server_class, "bind", NativeFunction::var(Server::bind));
-        self.register_native_method(server_class, "accept", NativeFunction::a1(Server::accept));
-        self.register_native_method(server_class, "close", NativeFunction::a1(Server::close));
-        self.register_native_method(server_class, "__str__", NativeFunction::a1(Server::__str__));
+        m.define_class("Socket", |class| {
+            class.method("__new__", NativeFunction::var(Socket::__new__));
+            class.method("connect", NativeFunction::var(Socket::connect));
+            class.method("send", NativeFunction::a2(Socket::send));
+            class.method("recv", NativeFunction::a2(Socket::recv));
+            class.method("close", NativeFunction::a1(Socket::close));
+            class.method("settimeout", NativeFunction::a2(Socket::settimeout));
+            class.method("__str__", NativeFunction::a1(Socket::__str__));
+        });
 
-        // ---- assemble module ----
-        let mut exports: HashMap<ShrString, ObjectHandle> = HashMap::new();
-        exports.insert(ShrString::new_str("Socket"), socket_class);
-        exports.insert(ShrString::new_str("Server"), server_class);
+        m.define_class("Server", |class| {
+            class.method("__new__", NativeFunction::var(Server::__new__));
+            class.method("bind", NativeFunction::var(Server::bind));
+            class.method("accept", NativeFunction::a1(Server::accept));
+            class.method("close", NativeFunction::a1(Server::close));
+            class.method("__str__", NativeFunction::a1(Server::__str__));
+        });
 
-        let module = self.obj_heap.alloc_module_with("net", exports);
-
-        // Back-link both classes to their owning module so native methods can
-        // find sibling classes (e.g. Server.accept() → Socket class).
-        self.obj_heap.get_class_mut(socket_class).expect("Socket class").module = Some(module);
-        self.obj_heap.get_class_mut(server_class).expect("Server class").module = Some(module);
-
-        Ok(module)
+        Ok(m.build())
     }
 }
 

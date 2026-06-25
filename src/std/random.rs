@@ -1,27 +1,17 @@
 use crate::vm::{RuntimeErrorKind, RuntimeResult, VirtualMachine};
-use crate::{NativeFunction, ObjectHandle, ShrString};
-use std::collections::HashMap;
+use crate::{NativeFunction, ObjectHandle};
+use super::ModuleBuilder;
 
 impl VirtualMachine {
     /// Create the `random` std module.
     pub(crate) fn create_random_module(&mut self) -> RuntimeResult<ObjectHandle> {
-        // ---- function handles ----
-        let random_fn = self.obj_heap.alloc_native_fn("random", NativeFunction::a0(random));
-        let randint_fn = self.obj_heap.alloc_native_fn("randint", NativeFunction::a2(randint));
-        let uniform_fn = self.obj_heap.alloc_native_fn("uniform", NativeFunction::a2(uniform));
-        let choice_fn = self.obj_heap.alloc_native_fn("choice", NativeFunction::a1(choice));
-        let shuffle_fn = self.obj_heap.alloc_native_fn("shuffle", NativeFunction::a1(shuffle));
-
-        // ---- assemble module ----
-        let mut exports: HashMap<ShrString, ObjectHandle> = HashMap::new();
-        exports.insert(ShrString::new_str("random"), random_fn);
-        exports.insert(ShrString::new_str("randint"), randint_fn);
-        exports.insert(ShrString::new_str("uniform"), uniform_fn);
-        exports.insert(ShrString::new_str("choice"), choice_fn);
-        exports.insert(ShrString::new_str("shuffle"), shuffle_fn);
-
-        let module = self.obj_heap.alloc_module_with("random", exports);
-        Ok(module)
+        let mut m = ModuleBuilder::new(&mut self.obj_heap, "random");
+        m.define_fn("random", NativeFunction::a0(random));
+        m.define_fn("randint", NativeFunction::a2(randint));
+        m.define_fn("uniform", NativeFunction::a2(uniform));
+        m.define_fn("choice", NativeFunction::a1(choice));
+        m.define_fn("shuffle", NativeFunction::a1(shuffle));
+        Ok(m.build())
     }
 }
 
