@@ -62,7 +62,7 @@ impl VirtualMachine {
         exports.insert(ShrString::new_str("list_dir"), list_dir);
         exports.insert(ShrString::new_str("mkdir"), mkdir);
 
-        let module = self.obj_heap.alloc_fields_instance(self.obj_heap.module_class, exports);
+        let module = self.obj_heap.alloc_module_with("fs", exports);
         Ok(module)
     }
 }

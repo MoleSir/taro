@@ -20,7 +20,7 @@ impl VirtualMachine {
         exports.insert(ShrString::new_str("encode"), encode_fn);
         exports.insert(ShrString::new_str("decode"), decode_fn);
 
-        let module = self.obj_heap.alloc_fields_instance(self.obj_heap.module_class, exports);
+        let module = self.obj_heap.alloc_module_with("json", exports);
         Ok(module)
     }
 }

@@ -30,7 +30,7 @@ impl VirtualMachine {
         exports.insert(ShrString::new_str("sleep"), sleep_fn);
         exports.insert(ShrString::new_str("now"), now_fn);
 
-        let module = self.obj_heap.alloc_fields_instance(self.obj_heap.module_class, exports);
+        let module = self.obj_heap.alloc_module_with("time", exports);
         Ok(module)
     }
 }

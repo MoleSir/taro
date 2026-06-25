@@ -143,7 +143,7 @@ pub fn test_function_call() {
         f.write_instruction(Instruction::Add, 1, 1, h);
         f.write_instruction(Instruction::Return, 1, 1, h);
         let fn_h = h.alloc_function("add", 2, 2, vec![], vec![], f);
-        let cl_h = h.alloc_closure(fn_h);
+        let cl_h = h.alloc_closure(fn_h, ObjectHandle::NIL);
         c.write_instruction(Instruction::Constant(cl_h), 1, 1, h);
         c.write_instruction(Instruction::Constant(h.alloc_integer_instance(10)), 1, 1, h);
         c.write_instruction(Instruction::Constant(h.alloc_integer_instance(20)), 1, 1, h);
@@ -428,7 +428,7 @@ pub fn test_class_with_method() {
         mc.write_instruction(Instruction::Mul, 1, 1, h);
         mc.write_instruction(Instruction::Return, 1, 1, h);
         let mfn = h.alloc_function("double", 2, 2, vec![], vec![], mc);
-        let mcl = h.alloc_closure(mfn);
+        let mcl = h.alloc_closure(mfn, ObjectHandle::NIL);
         h.get_class_mut(cls).unwrap().methods.insert("double".into(), crate::Method::User(mcl));
         c.write_instruction(Instruction::Constant(cls), 1, 1, h);
         c.write_instruction(Instruction::Call(0), 1, 1, h);
@@ -506,7 +506,7 @@ pub fn test_super_invoke() {
         bc.write_instruction(Instruction::Constant(h.alloc_integer_instance(1)), 1, 1, h);
         bc.write_instruction(Instruction::Return, 1, 1, h);
         let bm = h.alloc_function("m", 1, 1, vec![], vec![], bc);
-        let bm_cl = h.alloc_closure(bm);
+        let bm_cl = h.alloc_closure(bm, ObjectHandle::NIL);
         h.get_class_mut(base).unwrap().methods.insert("m".into(), crate::Method::User(bm_cl));
 
         let derived = h.alloc_class("Derived");
@@ -516,7 +516,7 @@ pub fn test_super_invoke() {
         dc.write_instruction(Instruction::SuperInvoke("m".into(), 0), 1, 1, h);
         dc.write_instruction(Instruction::Return, 1, 1, h);
         let dm = h.alloc_function("m", 1, 1, vec![], vec![], dc);
-        let dm_cl = h.alloc_closure(dm);
+        let dm_cl = h.alloc_closure(dm, ObjectHandle::NIL);
         h.get_class_mut(derived).unwrap().methods.insert("m".into(), crate::Method::User(dm_cl));
 
         c.write_instruction(Instruction::Constant(derived), 1, 1, h);
@@ -1668,7 +1668,7 @@ pub fn test_import_module_caching() {
     let module_handle = vm.modules.loaded.get(&ModuleKey::File(canonical.clone())).copied().unwrap();
 
     // After first import, x == 42.
-    let fields = vm.obj_heap.get_fields_instance(module_handle).unwrap();
+    let fields = vm.obj_heap.get_module(module_handle).map(|m| &m.fields).unwrap();
     let x_handle = fields.get(&crate::ShrString::new_str("x")).copied().unwrap();
     assert_eq!(*vm.obj_heap.expect_integer(x_handle).unwrap(), 42);
 
@@ -1676,7 +1676,7 @@ pub fn test_import_module_caching() {
     vm.interpret(&format!("{module_name}.x = 100;")).unwrap();
 
     // Verify the modification took effect on the module object.
-    let fields = vm.obj_heap.get_fields_instance(module_handle).unwrap();
+    let fields = vm.obj_heap.get_module(module_handle).map(|m| &m.fields).unwrap();
     let x_handle = fields.get(&crate::ShrString::new_str("x")).copied().unwrap();
     assert_eq!(*vm.obj_heap.expect_integer(x_handle).unwrap(), 100);
 
@@ -1684,7 +1684,7 @@ pub fn test_import_module_caching() {
     vm.interpret(&format!("import \"{path}\";")).unwrap();
 
     // The global should still point to the same cached module with x == 100.
-    let fields = vm.obj_heap.get_fields_instance(module_handle).unwrap();
+    let fields = vm.obj_heap.get_module(module_handle).map(|m| &m.fields).unwrap();
     let x_handle = fields.get(&crate::ShrString::new_str("x")).copied().unwrap();
     assert_eq!(*vm.obj_heap.expect_integer(x_handle).unwrap(), 100,
         "second import should return the cached module with x == 100, not a fresh module with x == 42");

@@ -3,6 +3,7 @@ use crate::{
     ShrString,
     vm::{RuntimeResult, VirtualMachine},
 };
+use std::collections::HashMap;
 
 // ========================================================================== //
 //                    Method (unified user + native)
@@ -168,17 +169,37 @@ pub struct ObjectUpvalue {
 }
 
 // ========================================================================== //
+//                    Module
+// ========================================================================== //
+
+pub struct ObjectModule {
+    pub name: ShrString,
+    pub fields: HashMap<ShrString, ObjectHandle>,
+}
+
+impl ObjectModule {
+    pub fn new(name: impl Into<ShrString>) -> Self {
+        Self { name: name.into(), fields: HashMap::new() }
+    }
+}
+
+// ========================================================================== //
 //                    Closure
 // ========================================================================== //
 
 pub struct ObjectClosure {
     pub function: ObjectHandle,
     pub upvalues: Vec<ObjectHandle>,
+    /// Owning module for this closure.  Always set during execution
+    /// (either the root `__main__` module for directly executed scripts,
+    /// or the imported module object).  `GetGlobal` / `SetGlobal` /
+    /// `DefineGlobal` operate on this module's fields.
+    pub module: ObjectHandle,
 }
 
 impl ObjectClosure {
-    pub fn new(function: ObjectHandle) -> Self {
-        Self { function, upvalues: vec![] }
+    pub fn new(function: ObjectHandle, module: ObjectHandle) -> Self {
+        Self { function, upvalues: vec![], module }
     }
 }
 

@@ -55,7 +55,6 @@ pub enum ByteCode {
     BuildList,
     BuildDict,
     BuildSet,
-    BuildModule,
     IndexGet,
     IndexSet,
     Import,
@@ -145,7 +144,6 @@ pub enum Instruction {
     BuildList(usize),
     BuildDict(usize),
     BuildSet(usize),
-    BuildModule(usize),
     IndexGet,
     IndexSet,
 

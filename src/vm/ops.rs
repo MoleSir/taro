@@ -1,5 +1,5 @@
 use super::{RuntimeErrorKind, RuntimeResult, VirtualMachine};
-use crate::{Instruction, Method, Object, ObjectFields, ObjectHandle, ShrString};
+use crate::{Instruction, Method, Object, ObjectFields, ObjectHandle};
 use std::collections::HashMap;
 
 macro_rules! binary_op {
@@ -28,8 +28,10 @@ impl VirtualMachine {
     pub(crate) fn step(&mut self) -> RuntimeResult<()> {
         let mut ip = self.frame()?.ip;
 
+        let closure = self.obj_heap.get_closure(self.frame()?.closure).expect("must closure");
+        let module = self.current_module();
+
         let inst = {
-            let closure = self.obj_heap.get_closure(self.frame()?.closure).expect("must closure");
             let function = self.obj_heap.get_function(closure.function).expect("must function");
             function.chunk.read_instruction(&mut ip, &self.obj_heap)?
         };
@@ -38,20 +40,20 @@ impl VirtualMachine {
             Instruction::Constant(handle) => self.push_stack(handle),
             Instruction::DefineGlobal(name) => {
                 let value = self.pop_stack()?;
-                self.globals.insert(name, value);
+                self.obj_heap.get_module_mut(module).expect("module").fields.insert(name, value);
             }
             Instruction::GetGlobal(name) => {
                 let value = self
-                    .globals
-                    .get(&name)
-                    .or_else(|| self.builtins.get(&name))
-                    .copied()
+                    .obj_heap
+                    .get_module(module)
+                    .and_then(|m| m.fields.get(&name).copied())
+                    .or_else(|| self.builtins.get(&name).copied())
                     .ok_or_else(|| RuntimeErrorKind::VariableNotFound(name.as_str().to_string()))?;
                 self.push_stack(value);
             }
             Instruction::SetGlobal(name) => {
                 let value = self.stack.last().copied().ok_or(RuntimeErrorKind::StackEmpty)?;
-                self.globals.insert(name, value);
+                self.obj_heap.get_module_mut(module).expect("module").fields.insert(name, value);
             }
             Instruction::GetLocal(slot) => {
                 let base = self.frame()?.slots_start;
@@ -137,7 +139,7 @@ impl VirtualMachine {
             }
 
             Instruction::Closure { function, upvalues } => {
-                let closure_handle = self.obj_heap.alloc_closure(function);
+                let closure_handle = self.obj_heap.alloc_closure(function, module);
                 for uv_desc in upvalues {
                     let upvalue = if uv_desc.is_local {
                         let slot = self.frame()?.slots_start + uv_desc.index;
@@ -186,6 +188,9 @@ impl VirtualMachine {
 
             Instruction::Class(class_name) => {
                 let class = self.obj_heap.alloc_class(class_name);
+                // Back-link the class to its owning module so that
+                // lookup_module_export can find sibling classes at runtime.
+                self.obj_heap.get_class_mut(class).expect("class").module = Some(module);
                 self.push_stack(class);
             }
 
@@ -219,6 +224,16 @@ impl VirtualMachine {
                             }
                         }
                     }
+                    Object::Module(module) => {
+                        // Module field access — fields take priority over
+                        // any implicit class-like behaviour.
+                        if let Some(&value) = module.fields.get(&field_name) {
+                            self.pop_stack()?; // discard the module handle
+                            self.push_stack(value);
+                        } else {
+                            return Err(RuntimeErrorKind::UndefinedProperty(field_name.to_string()));
+                        }
+                    }
                     Object::Class(class) => {
                         if let Some(method) = class.methods.get(&field_name).copied() {
                             self.pop_stack()?; // discard the class
@@ -244,9 +259,13 @@ impl VirtualMachine {
                 let value = self.peek_stack(0)?;
                 let instance_handle = self.peek_stack(1)?;
 
-                // If the instance has ObjectFields, use the fast path.
-                {
-                    let instance = self.obj_heap.get_instance_mut(instance_handle).expect("must instance");
+                // Module field assignment.
+                if let Some(module) = self.obj_heap.get_module_mut(instance_handle) {
+                    module.fields.insert(field_name, value);
+                    let value = self.pop_stack()?;
+                    self.pop_stack()?;
+                    self.push_stack(value);
+                } else if let Some(instance) = self.obj_heap.get_instance_mut(instance_handle) {
                     if let Some(fields) = instance.get_data_mut::<ObjectFields>() {
                         fields.fields.insert(field_name, value);
                         let value = self.pop_stack()?;
@@ -286,14 +305,13 @@ impl VirtualMachine {
             Instruction::Invoke(method_name, arg_count) => {
                 let receiver = self.peek_stack(arg_count)?;
 
-                // First, check if the receiver is an Instance with a field
-                // named `method_name`.  If so, try to call it directly (this
-                // makes module exports and dynamically-assigned callable fields
-                // work naturally).
+                // First, check if the receiver is an Instance/Module with a
+                // field named `method_name`.  If so, try to call it directly.
                 let field_value = match self.obj_heap.get(receiver) {
                     Object::Instance(inst) => {
                         inst.data.as_any_ref().downcast_ref::<ObjectFields>().and_then(|f| f.fields.get(&method_name).copied())
                     }
+                    Object::Module(module) => module.fields.get(&method_name).copied(),
                     _ => None,
                 };
 
@@ -377,21 +395,6 @@ impl VirtualMachine {
                 }
                 let dict = self.obj_heap.alloc_dict_instance(map);
                 self.push_stack(dict);
-            }
-            Instruction::BuildModule(count) => {
-                let mut fields = HashMap::with_capacity(count);
-                for _ in 0..count {
-                    let val = self.pop_stack()?;
-                    let key = self.pop_stack()?;
-                    let name = self
-                        .obj_heap
-                        .get_string_instance(key)
-                        .cloned()
-                        .unwrap_or_else(|| ShrString::new_str("?"));
-                    fields.insert(name, val);
-                }
-                let module = self.obj_heap.alloc_fields_instance(self.obj_heap.module_class, fields);
-                self.push_stack(module);
             }
             Instruction::BuildSet(count) => {
                 let mut map: HashMap<u64, Vec<ObjectHandle>> = HashMap::new();

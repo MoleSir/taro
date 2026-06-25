@@ -155,7 +155,7 @@ impl VirtualMachine {
         exports.insert(ShrString::new_str("CType"), ctype_class);
         exports.insert(ShrString::new_str("CStruct"), struct_instance_class);
 
-        let module = self.obj_heap.alloc_fields_instance(self.obj_heap.module_class, exports);
+        let module = self.obj_heap.alloc_module_with("ffi", exports);
 
         self.obj_heap.get_class_mut(ci8_class).expect("CI8").module = Some(module);
         self.obj_heap.get_class_mut(cuint8_class).expect("CUint8").module = Some(module);

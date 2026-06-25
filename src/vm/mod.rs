@@ -17,7 +17,10 @@ pub struct VirtualMachine {
     pub obj_heap: crate::ObjectHeap,
     pub(crate) frames: Vec<CallFrame>,
     pub(crate) stack: Vec<ObjectHandle>,
-    pub(crate) globals: HashMap<ShrString, ObjectHandle>,
+    /// Persistent root module (`__main__`).  All top-level definitions in
+    /// directly executed scripts are stored in this module's fields, so they
+    /// survive across `interpret()` calls (important for REPL use).
+    pub(crate) main_module: ObjectHandle,
     pub(crate) builtins: HashMap<ShrString, ObjectHandle>,
     pub(crate) open_upvalues: Vec<ObjectHandle>,
     pub(crate) gc_threshold: usize,
@@ -39,7 +42,7 @@ impl VirtualMachine {
             obj_heap: crate::ObjectHeap::new(),
             frames: vec![],
             stack: vec![],
-            globals: HashMap::new(),
+            main_module: ObjectHandle::NIL, // set after init_builtins()
             builtins: HashMap::new(),
             open_upvalues: vec![],
             gc_threshold: 1024 * 1024,
@@ -47,6 +50,11 @@ impl VirtualMachine {
             modules: module::Modules::default(),
         };
         vm.init_builtins();
+        // Create the __main__ module — this is the root namespace for directly
+        // executed scripts.  All DefineGlobal / SetGlobal / GetGlobal
+        // instructions operate on this module's fields when running at the
+        // top level.
+        vm.main_module = vm.obj_heap.alloc_module("__main__");
         vm
     }
 
@@ -85,7 +93,7 @@ impl VirtualMachine {
     }
 
     pub(crate) fn interpret_function(&mut self, function: ObjectHandle) -> Result<(), InterpretError> {
-        let closure = self.obj_heap.alloc_closure(function);
+        let closure = self.obj_heap.alloc_closure(function, self.main_module);
         self.reset();
         self.push_stack(closure);
         self.call_closure(closure, 0, true).expect("can't failed in script call");
@@ -103,6 +111,16 @@ impl VirtualMachine {
                 return Err(RuntimeError { line, column, reason });
             }
         }
+    }
+
+    /// Return the module object for the currently executing closure.
+    ///
+    /// During execution every closure has a `.module` set (either the root
+    /// `__main__` module or an imported module).  This is the Taro equivalent
+    /// of Python's `func.__globals__`.
+    pub(crate) fn current_module(&self) -> ObjectHandle {
+        let closure = self.obj_heap.get_closure(self.frame().expect("no frame").closure).expect("must closure");
+        closure.module
     }
 
     #[inline]

@@ -307,6 +307,7 @@ impl VirtualMachine {
             Object::Closure(_) => Ok("<closure>".into()),
             Object::Function(function) => Ok(format_shr!("<function {} at {}>", function.name, handle.0)),
             Object::Upvalue(_) => Ok("<upvalue>".into()),
+            Object::Module(module) => Ok(format_shr!("<module {}>", module.name)),
         }
     }
 

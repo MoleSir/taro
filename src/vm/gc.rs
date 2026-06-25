@@ -20,10 +20,8 @@ impl VirtualMachine {
             self.obj_heap.mark_object(handle);
         }
 
-        // mark globals
-        for &handle in self.globals.values() {
-            self.obj_heap.mark_object(handle);
-        }
+        // mark root module (holds all top-level globals)
+        self.obj_heap.mark_object(self.main_module);
 
         // mark builtins (persistent, but must be traced so the objects they
         // reference stay alive across GC cycles).

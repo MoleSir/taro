@@ -56,7 +56,7 @@ impl VirtualMachine {
         exports.insert(ShrString::new_str("degrees"), degrees);
         exports.insert(ShrString::new_str("radians"), radians);
 
-        let module = self.obj_heap.alloc_fields_instance(self.obj_heap.module_class, exports);
+        let module = self.obj_heap.alloc_module_with("math", exports);
         Ok(module)
     }
 }

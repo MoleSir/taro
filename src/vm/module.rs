@@ -152,22 +152,35 @@ impl VirtualMachine {
     /// Compile `source` as a module and execute it in an isolated scope,
     /// returning a module object containing the top-level definitions.
     ///
+    /// Module semantics are handled at runtime: the module's closure gets
+    /// `.module` set to the module object, and `DefineGlobal` /
+    /// `GetGlobal` operate on that module's fields (just like the root
+    /// `__main__` module does for directly executed scripts).
+    ///
     /// `display_name` is used only in error messages.
     pub(crate) fn import_source_module(&mut self, source: &str, display_name: &str) -> RuntimeResult<ObjectHandle> {
-        // 1. Compile the module source (uses local scope so nested functions
-        //    capture module-level names as upvalues).
-        let function = crate::compile::compile_module(source, &mut self.obj_heap)
+        // 1. Compile normally — definitions become DefineGlobal instructions.
+        let function = crate::compile::compile(source, &mut self.obj_heap)
             .map_err(|e| RuntimeErrorKind::ImportError(format!("compile error in '{display_name}': {e:?}")))?;
 
-        // 2. Execute in an isolated scope.  The module's `BuildModule`
-        //    instruction leaves the finished module object on the stack.
-        let (result, module) = self.with_module_scope(|vm| {
-            let result = vm.interpret_function(function);
-            let module = vm.pop_stack().unwrap_or(ObjectHandle::NIL);
-            (result, module)
+        // 2. Create an empty module object with a meaningful name.
+        //    DefineGlobal will populate its fields during execution.
+        let module = self.obj_heap.alloc_module(ShrString::new_string(display_name));
+
+        // Keep the module alive across GC cycles during execution.
+        self.extra_gc_roots.push(module);
+
+        // 3. Execute in an isolated scope with the module context set.
+        let result = self.with_module_scope(|vm| {
+            let closure = vm.obj_heap.alloc_closure(function, module);
+            vm.reset();
+            vm.push_stack(closure);
+            vm.call_closure(closure, 0, true).expect("can't fail in script call");
+            vm.run()
         });
 
-        // 3. Propagate execution errors.
+        self.extra_gc_roots.pop();
+
         result.map_err(|e| RuntimeErrorKind::ImportError(format!("error in module '{display_name}': {e}")))?;
 
         Ok(module)
@@ -182,17 +195,21 @@ impl VirtualMachine {
 struct ModuleScope {
     frames: Vec<super::CallFrame>,
     stack: Vec<ObjectHandle>,
-    globals: HashMap<ShrString, ObjectHandle>,
     open_upvalues: Vec<ObjectHandle>,
+    // globals are always stored in closure.module.fields — no separate
+    // globals map exists to save/restore.
 }
 
 impl VirtualMachine {
     /// Execute `f` in an isolated module scope.
     ///
-    /// The VM's current execution state (frames, stack, globals, upvalues) is
-    /// saved, an empty global scope is set up (builtins are always available
-    /// via the persistent `self.builtins` fallback), `f` is called,
-    /// and then the original state is restored unconditionally.
+    /// The VM's current execution state (frames, stack, upvalues) is saved,
+    /// `f` is called, and then the original state is restored unconditionally.
+    ///
+    /// Global operations (`GetGlobal` / `DefineGlobal`) always operate on
+    /// `closure.module.fields`, so there is no separate globals map to
+    /// save/restore.  Builtins are always available via `self.builtins`
+    /// fallback.
     ///
     /// GC is allowed to run during module execution; the saved importing state
     /// is kept alive via `extra_gc_roots`.  Nested imports are supported — each
@@ -202,19 +219,14 @@ impl VirtualMachine {
         let saved = ModuleScope {
             frames: std::mem::take(&mut self.frames),
             stack: std::mem::take(&mut self.stack),
-            globals: std::mem::take(&mut self.globals),
             open_upvalues: std::mem::take(&mut self.open_upvalues),
         };
 
-        // Append the importing state to extra_gc_roots so the GC can still
-        // reach it.  Save the previous length to support nested imports.
+        // Keep the importing state alive during GC.
         let prev_root_count = self.extra_gc_roots.len();
         self.extra_gc_roots.extend_from_slice(&saved.stack);
         for frame in &saved.frames {
             self.extra_gc_roots.push(frame.closure);
-        }
-        for &handle in saved.globals.values() {
-            self.extra_gc_roots.push(handle);
         }
         self.extra_gc_roots.extend_from_slice(&saved.open_upvalues);
 
@@ -225,7 +237,6 @@ impl VirtualMachine {
         self.frames = saved.frames;
         self.stack = saved.stack;
         self.open_upvalues = saved.open_upvalues;
-        self.globals = saved.globals;
 
         // Pop our roots, leaving any outer scope's roots in place.
         self.extra_gc_roots.truncate(prev_root_count);
@@ -248,8 +259,8 @@ impl VirtualMachine {
         let inst = self.obj_heap.get_instance(instance)?;
         let class = self.obj_heap.get_class(inst.class)?;
         let module = class.module?;
-        let exports = self.obj_heap.get_fields_instance(module)?;
-        exports.get(name).copied()
+        let mod_obj = self.obj_heap.get_module(module)?;
+        mod_obj.fields.get(name).copied()
     }
 
     /// Look up an export from a module that was previously loaded via `import`.
@@ -259,7 +270,7 @@ impl VirtualMachine {
     pub fn lookup_loaded_module_export(&self, module_path: &str, name: &str) -> Option<ObjectHandle> {
         let key = ModuleKey::Native(ShrString::new_string(module_path));
         let module = self.modules.loaded.get(&key)?;
-        let exports = self.obj_heap.get_fields_instance(*module)?;
-        exports.get(name).copied()
+        let mod_obj = self.obj_heap.get_module(*module)?;
+        mod_obj.fields.get(name).copied()
     }
 }

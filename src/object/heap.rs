@@ -3,9 +3,9 @@ use std::{collections::HashMap, sync::LazyLock};
 use super::{
     Method, NativeFunction, Object, ObjectBool, ObjectBoundMethod, ObjectBytes, ObjectBytesIterator, ObjectClass, ObjectClosure,
     ObjectDict, ObjectDictIterator, ObjectFields, ObjectFloat, ObjectFunction, ObjectInstance, ObjectInstanceData, ObjectInt,
-    ObjectIterEnd, ObjectList, ObjectListIterator, ObjectNativeFn, ObjectNil, ObjectSet, ObjectSetIterator, ObjectString,
-    ObjectStringIterator, ObjectUpvalue, register_bool_builtins, register_bytes_builtins, register_dict_builtins, register_float_builtins,
-    register_int_builtins, register_list_builtins, register_set_builtins, register_string_builtins,
+    ObjectIterEnd, ObjectList, ObjectListIterator, ObjectModule, ObjectNativeFn, ObjectNil, ObjectSet, ObjectSetIterator,
+    ObjectString, ObjectStringIterator, ObjectUpvalue, register_bool_builtins, register_bytes_builtins, register_dict_builtins,
+    register_float_builtins, register_int_builtins, register_list_builtins, register_set_builtins, register_string_builtins,
 };
 use crate::vm::{RuntimeErrorKind, RuntimeResult};
 use crate::{Chunk, ShrString};
@@ -143,8 +143,18 @@ impl ObjectHeap {
     //           Alloc — convenience helpers
     // ================================================================================== //
 
-    pub fn alloc_closure(&mut self, function: ObjectHandle) -> ObjectHandle {
-        let obj = ObjectClosure::new(function);
+    pub fn alloc_closure(&mut self, function: ObjectHandle, module: ObjectHandle) -> ObjectHandle {
+        let obj = ObjectClosure::new(function, module);
+        self.alloc(obj)
+    }
+
+    pub fn alloc_module(&mut self, name: impl Into<ShrString>) -> ObjectHandle {
+        let obj = ObjectModule::new(name);
+        self.alloc(obj)
+    }
+
+    pub fn alloc_module_with(&mut self, name: impl Into<ShrString>, fields: HashMap<ShrString, ObjectHandle>) -> ObjectHandle {
+        let obj = ObjectModule { name: name.into(), fields };
         self.alloc(obj)
     }
 
@@ -349,6 +359,7 @@ impl ObjectHeap {
             Object::Closure(_) => "closure",
             Object::Function(_) => "function",
             Object::Upvalue(_) => "upvalue",
+            Object::Module(_) => "module",
         }
     }
 
@@ -359,6 +370,7 @@ impl ObjectHeap {
     impl_getters!(instance, ObjectInstance, "instance");
     impl_getters!(class, ObjectClass, "class");
     impl_getters!(bound_method, ObjectBoundMethod, "bound method");
+    impl_getters!(module, ObjectModule, "module");
 }
 
 macro_rules! impl_instance_data_getter {
@@ -523,11 +535,17 @@ impl ObjectHeap {
                         self.mark_object(default_handle);
                     }
                 }
+                Object::Module(module) => {
+                    for &handle in module.fields.values() {
+                        self.mark_object(handle);
+                    }
+                }
                 Object::Closure(closure) => {
                     self.mark_object(closure.function);
                     for &upvalue in &closure.upvalues {
                         self.mark_object(upvalue);
                     }
+                    self.mark_object(closure.module);
                 }
                 Object::Upvalue(upvalue) => {
                     self.mark_object(upvalue.closed);

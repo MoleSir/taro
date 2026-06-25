@@ -148,12 +148,10 @@ enum FunctionKind {
     /// `OP_INVOKE` or bound-method call).  No dummy needed because the
     /// user-declared `self` parameter naturally occupies slot 0.
     Method,
-    /// Top-level script — same layout as `Function`.
+    /// Top-level script (also used for module source files).  Definitions
+    /// become globals.  For modules, the closure's `.module` field directs
+    /// `GetGlobal` to the module's own fields.
     Script,
-    /// Module — like Function but top-level definitions use locals so nested
-    /// functions capture them as upvalues.  The function returns a fields
-    /// instance containing all top-level definitions.
-    Module,
 }
 
 struct CompilationUnit {
@@ -328,7 +326,7 @@ impl CompilationUnit {
         let locals = if kind == FunctionKind::Method { vec![] } else { vec![Local { depth: 0, name: "".into(), is_captured: false }] };
         // Modules start at scope depth 1 so top-level definitions use locals
         // (capturable by nested functions as upvalues) instead of globals.
-        let scope_depth = if kind == FunctionKind::Module { 1 } else { 0 };
+        let scope_depth = 0;
         Self {
             name: name.clone(),
             arity: 0,
@@ -353,20 +351,6 @@ impl CompilationUnit {
 impl<'a> Parser<'a> {
     pub fn new(tokens: Vec<Token<'a>>, obj_heap: &'a mut ObjectHeap) -> Self {
         let unit = CompilationUnit::new(obj_heap, "", FunctionKind::Script, 0);
-        Self {
-            obj_heap,
-            tokens,
-            current: 0,
-            errors: vec![],
-            units: vec![unit],
-            current_unit: 0,
-            loop_stack: vec![],
-            declared_globals: HashSet::new(),
-        }
-    }
-
-    pub fn new_module(tokens: Vec<Token<'a>>, obj_heap: &'a mut ObjectHeap) -> Self {
-        let unit = CompilationUnit::new(obj_heap, "__module__", FunctionKind::Module, 0);
         Self {
             obj_heap,
             tokens,
@@ -411,31 +395,15 @@ impl<'a> Parser<'a> {
     /// pop the unit from the stack, and restore the enclosing unit.
     fn finish_compilation_unit(&mut self) -> ObjectHandle {
         let is_init = self.cur_unit().name.as_str() == "__init__";
-        let is_module = self.cur_unit().kind == FunctionKind::Module;
 
         if is_init {
             // __init__() should return the receiver (self), not nil.
             self.emit(Instruction::GetLocal(0));
             self.emit(Instruction::Return);
-        } else if is_module {
-            // Build a module object directly from the module's top-level locals.
-            // The Return instruction that follows will close upvalues for any
-            // locals captured by nested functions / class methods.
-            let num_locals = self.cur_unit().locals.len();
-            let mut export_count: usize = 0;
-            for i in 1..num_locals {
-                let local = &self.cur_unit().locals[i];
-                if local.name.as_str().is_empty() {
-                    continue; // skip dummy closure slot
-                }
-                let name_handle = self.obj_heap.alloc_string_instance(local.name.clone());
-                self.emit(Instruction::Constant(name_handle));
-                self.emit(Instruction::GetLocal(i));
-                export_count += 1;
-            }
-            self.emit(Instruction::BuildModule(export_count));
-            self.emit(Instruction::Return);
         } else {
+            // Script / module: implicit `return nil`.
+            // For modules, the closure's `.module` field captures the module
+            // object and DefineGlobal writes exports there directly.
             self.emit(Instruction::Nil);
             self.emit(Instruction::Return);
         }

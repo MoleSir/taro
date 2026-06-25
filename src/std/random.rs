@@ -20,7 +20,7 @@ impl VirtualMachine {
         exports.insert(ShrString::new_str("choice"), choice_fn);
         exports.insert(ShrString::new_str("shuffle"), shuffle_fn);
 
-        let module = self.obj_heap.alloc_fields_instance(self.obj_heap.module_class, exports);
+        let module = self.obj_heap.alloc_module_with("random", exports);
         Ok(module)
     }
 }

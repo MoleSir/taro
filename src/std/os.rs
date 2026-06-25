@@ -44,7 +44,7 @@ impl VirtualMachine {
         exports.insert(ShrString::new_str("tmpdir"), tmpdir_fn);
         exports.insert(ShrString::new_str("system"), system_fn);
 
-        let module = self.obj_heap.alloc_fields_instance(self.obj_heap.module_class, exports);
+        let module = self.obj_heap.alloc_module_with("os", exports);
         Ok(module)
     }
 }

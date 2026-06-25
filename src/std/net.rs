@@ -54,7 +54,7 @@ impl VirtualMachine {
         exports.insert(ShrString::new_str("Socket"), socket_class);
         exports.insert(ShrString::new_str("Server"), server_class);
 
-        let module = self.obj_heap.alloc_fields_instance(self.obj_heap.module_class, exports);
+        let module = self.obj_heap.alloc_module_with("net", exports);
 
         // Back-link both classes to their owning module so native methods can
         // find sibling classes (e.g. Server.accept() → Socket class).

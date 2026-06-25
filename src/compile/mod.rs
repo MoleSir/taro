@@ -10,27 +10,14 @@ mod tests;
 
 /// Scan `source` and compile it into a single [`Chunk`].
 ///
-/// This is the main entry point for the compile pipeline.
+/// This is the main entry point for the compile pipeline.  Also used for
+/// module source files — module semantics are handled at runtime via
+/// the closure's `.module` field, not at compile time.
 pub fn compile(source: &str, obj_heap: &mut ObjectHeap) -> Result<ObjectHandle, CompileError> {
     let mut scanner = Scanner::new(source);
     let tokens = scanner.scan_tokens().map_err(|e| CompileError::Scan(e))?;
 
     let parser = Parser::new(tokens, obj_heap);
-    let function = parser.parse().map_err(|e| CompileError::Parse(e))?;
-
-    Ok(function)
-}
-
-/// Compile `source` as a module.  In module mode top-level definitions become
-/// locals so that nested functions / class methods capture them as upvalues
-/// rather than referencing globals (which would not exist after the import
-/// completes).  The module function returns a dict containing all top-level
-/// definitions (name → value).
-pub fn compile_module(source: &str, obj_heap: &mut ObjectHeap) -> Result<ObjectHandle, CompileError> {
-    let mut scanner = Scanner::new(source);
-    let tokens = scanner.scan_tokens().map_err(|e| CompileError::Scan(e))?;
-
-    let parser = Parser::new_module(tokens, obj_heap);
     let function = parser.parse().map_err(|e| CompileError::Parse(e))?;
 
     Ok(function)
