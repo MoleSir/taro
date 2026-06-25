@@ -1046,25 +1046,6 @@ fn test_invoke_bytecode() {
 }
 
 #[test]
-fn test_init_method_returns_self() {
-    let (chunk, heap) = compile_with_heap("class Foo { fun __init__(self, x) { self.x = x; } }");
-    let script_insts = instructions(&chunk, &heap);
-    for inst in &script_insts {
-        if let Instruction::Closure { function, .. } = inst {
-            let fn_obj = heap.get(*function).as_function().unwrap();
-            if fn_obj.name.as_str() == "__init__" {
-                let fn_insts = instructions(&fn_obj.chunk, &heap);
-                let last = &fn_insts[fn_insts.len() - 2];
-                assert!(matches!(last, Instruction::GetLocal(0)), "__init__ should end with GetLocal(0)");
-                assert!(matches!(fn_insts.last().unwrap(), Instruction::Return));
-                return;
-            }
-        }
-    }
-    panic!("__init__ method not found");
-}
-
-#[test]
 fn test_self_parameter_is_slot_zero() {
     let (chunk, heap) = compile_with_heap("class Foo { fun m(self) { return self; } }");
     let script_insts = instructions(&chunk, &heap);

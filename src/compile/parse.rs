@@ -394,19 +394,11 @@ impl<'a> Parser<'a> {
     /// Finish the current compilation unit: emit an implicit `return nil`,
     /// pop the unit from the stack, and restore the enclosing unit.
     fn finish_compilation_unit(&mut self) -> ObjectHandle {
-        let is_init = self.cur_unit().name.as_str() == "__init__";
-
-        if is_init {
-            // __init__() should return the receiver (self), not nil.
-            self.emit(Instruction::GetLocal(0));
-            self.emit(Instruction::Return);
-        } else {
-            // Script / module: implicit `return nil`.
-            // For modules, the closure's `.module` field captures the module
-            // object and DefineGlobal writes exports there directly.
-            self.emit(Instruction::Nil);
-            self.emit(Instruction::Return);
-        }
+        // Implicit `return nil`.
+        // For modules, the closure's `.module` field captures the module
+        // object and DefineGlobal writes exports there directly.
+        self.emit(Instruction::Nil);
+        self.emit(Instruction::Return);
         let unit = self.units.pop().expect("at least the root unit");
         self.current_unit = unit.enclosing;
         let function = unit.finish(self.obj_heap);
